@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -599,14 +598,21 @@ function updateSyncStatusUI(status) {
 }
 
 async function checkOnlineStatus() {
-    isOnline = navigator.onLine;
-    if (isOnline) {
-        updateSyncStatusUI('synced'); // Optimistically set to synced, syncWithServer will update if needed
-        showToast('Kembali online, sinkronisasi data dimulai.', 2000);
-        await window.syncWithServer();
-    } else {
-        updateSyncStatusUI('offline');
-        showToast('Anda sekarang offline. Perubahan akan disimpan secara lokal.', 3000);
+    const currentlyOnline = navigator.onLine;
+    
+    // Only act on changes in status to avoid redundant checks
+    if (currentlyOnline !== isOnline) {
+        isOnline = currentlyOnline;
+        
+        if (isOnline) {
+            console.log('Connection restored. Starting synchronization.');
+            updateSyncStatusUI('synced'); // Optimistically set to synced
+            await window.syncWithServer();
+        } else {
+            console.log('Connection lost. Operating in offline mode.');
+            updateSyncStatusUI('offline');
+            showToast('Anda sekarang offline. Perubahan akan disimpan secara lokal.', 3000);
+        }
     }
 }
 
@@ -3618,8 +3624,8 @@ async function initApp() {
 
     // Set up periodic sync and online/offline listeners
     checkOnlineStatus();
-    setInterval(checkOnlineStatus, 15000); // Check every 15 seconds
-    setInterval(() => syncWithServer(false), 15 * 60 * 1000); // Auto-sync every 15 mins
+    setInterval(checkOnlineStatus, 60000); // Check every 1 minute
+    setInterval(() => syncWithServer(false), 30 * 60 * 1000); // Auto-sync every 30 mins
 
     // Set up UI components and data
     updateDashboardDate();
