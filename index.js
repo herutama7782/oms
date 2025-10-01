@@ -1,3 +1,5 @@
+
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -30,250 +32,11 @@ let currentPinInput = "";
 let pinAttemptCount = 0;
 let lastDashboardLoadDate = null;
 let audioContext = null; // For Web Audio API
-let licenseCheckInterval = null;
 
 
 // Bluetooth printing state
 let bluetoothDevice = null;
 let bluetoothCharacteristic = null;
-
-
-// --- MOCK LICENSE SERVER ---
-// In a real application, this logic would be on a secure backend server.
-const MOCK_LICENSE_SERVER_DB = {
-    // Format: 'LICENSE-KEY': { lastUsedDeviceId: 'uuid', lastUsedTimestamp: 'iso-string' }
-    'POS-2024-ABCD-1234': { lastUsedDeviceId: null, lastUsedTimestamp: null },
-    'POS-2024-WXYZ-5678': { lastUsedDeviceId: null, lastUsedTimestamp: null },
-    'POS-2024-PREM-0001': { lastUsedDeviceId: 'existing-device-id-for-testing', lastUsedTimestamp: new Date().toISOString() },
-};
-
-/**
- * Simulates a server call to verify and activate a license.
- * Implements a "last one wins" policy. The most recent device to activate
- * becomes the authorized device for that license key.
- * @param {string} licenseKey The license key to verify.
- * @param {string} deviceId The unique ID of the device making the request.
- * @returns {Promise<object>} A promise resolving with the verification result.
- */
-function mockVerifyLicense(licenseKey, deviceId) {
-    console.log(`[LICENSE_SERVER] Verifying key: ${licenseKey} for device: ${deviceId}`);
-    return new Promise(resolve => {
-        setTimeout(() => { // Simulate network latency
-            if (MOCK_LICENSE_SERVER_DB.hasOwnProperty(licenseKey)) {
-                // "Last one wins": The new device takes over the license.
-                MOCK_LICENSE_SERVER_DB[licenseKey] = {
-                    lastUsedDeviceId: deviceId,
-                    lastUsedTimestamp: new Date().toISOString(),
-                };
-                console.log(`[LICENSE_SERVER] Key ${licenseKey} is now assigned to device ${deviceId}.`);
-                resolve({ success: true, message: 'Lisensi berhasil diaktifkan!' });
-            } else {
-                resolve({ success: false, message: 'Kode lisensi tidak valid atau tidak ditemukan.' });
-            }
-        }, 1500);
-    });
-}
-
-/**
- * Simulates a periodic server check to ensure the license is still valid for this device.
- * @param {string} licenseKey The license key to check.
- * @param {string} deviceId The unique ID of the device.
- * @returns {Promise<object>} A promise resolving with the license status.
- */
-function mockCheckLicenseStatus(licenseKey, deviceId) {
-     return new Promise(resolve => {
-        setTimeout(() => { // Simulate network latency
-            const license = MOCK_LICENSE_SERVER_DB[licenseKey];
-            if (!license) {
-                resolve({ status: 'REVOKED', message: 'Lisensi tidak lagi valid.' });
-            } else if (license.lastUsedDeviceId !== deviceId) {
-                resolve({ status: 'REVOKED', message: 'Lisensi ini telah diaktifkan di perangkat lain.' });
-            } else {
-                resolve({ status: 'ACTIVE' });
-            }
-        }, 1000);
-    });
-}
-// --- END MOCK LICENSE SERVER ---
-
-
-// --- DEVICE & LICENSE HELPERS ---
-
-/**
- * Gets a unique device ID. Generates and stores it in localStorage if not present.
- * @returns {string} The unique device ID.
- */
-function getDeviceId() {
-    let deviceId = localStorage.getItem('posDeviceId');
-    if (!deviceId) {
-        deviceId = crypto.randomUUID();
-        localStorage.setItem('posDeviceId', deviceId);
-    }
-    return deviceId;
-}
-
-/**
- * Handles the click on the license activation button.
- */
-async function handleActivateLicense() {
-    const keyInput = document.getElementById('licenseKeyInput');
-    const statusEl = document.getElementById('licenseStatusMessage');
-    const activateBtn = document.getElementById('activateLicenseBtn');
-    const licenseKey = keyInput.value.trim().toUpperCase();
-
-    if (!licenseKey) {
-        statusEl.textContent = 'Silakan masukkan kode lisensi.';
-        statusEl.className = 'text-yellow-500 text-center text-sm';
-        return;
-    }
-
-    activateBtn.disabled = true;
-    activateBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Memverifikasi...';
-    statusEl.textContent = '';
-
-    const deviceId = getDeviceId();
-    const result = await mockVerifyLicense(licenseKey, deviceId);
-
-    if (result.success) {
-        await putSettingToDB({ key: 'licenseKey', value: licenseKey });
-        await putSettingToDB({ key: 'licenseStatus', value: 'ACTIVE' });
-        
-        statusEl.textContent = result.message;
-        statusEl.className = 'text-green-500 text-center text-sm';
-        
-        setTimeout(() => {
-            document.getElementById('licenseModal').classList.add('hidden');
-            initApp(); // Initialize the main application
-        }, 1000);
-
-    } else {
-        statusEl.textContent = result.message;
-        statusEl.className = 'text-red-500 text-center text-sm';
-        activateBtn.disabled = false;
-        activateBtn.innerHTML = 'Aktivasi Lisensi';
-    }
-}
-window.handleActivateLicense = handleActivateLicense;
-
-
-/**
- * Starts a periodic check to validate the license against the server.
- */
-async function startPeriodicLicenseCheck() {
-    if (licenseCheckInterval) {
-        clearInterval(licenseCheckInterval);
-    }
-    
-    const check = async () => {
-        console.log('[LICENSE] Performing periodic license check...');
-        const licenseKey = await getSettingFromDB('licenseKey');
-        const deviceId = getDeviceId();
-        
-        if (!licenseKey) {
-            handleLicenseRevoked('Tidak ada lisensi lokal yang ditemukan.');
-            return;
-        }
-
-        const result = await mockCheckLicenseStatus(licenseKey, deviceId);
-        if (result.status === 'REVOKED') {
-            handleLicenseRevoked(result.message);
-        } else {
-            console.log('[LICENSE] Check successful. License is active.');
-        }
-    };
-    
-    // Check immediately on start, then every 5 minutes
-    check();
-    licenseCheckInterval = setInterval(check, 5 * 60 * 1000); // 5 minutes
-}
-
-/**
- * Handles the scenario where the license is revoked by the server.
- * @param {string} message The reason for revocation.
- */
-async function handleLicenseRevoked(message) {
-    console.warn(`[LICENSE] License revoked: ${message}`);
-    if (licenseCheckInterval) {
-        clearInterval(licenseCheckInterval);
-    }
-
-    // Clear local license state
-    await putToDB('settings', { key: 'licenseStatus', value: 'INACTIVE' });
-
-    // Show a modal that cannot be dismissed, forcing a reload.
-    const modal = document.getElementById('licenseModal');
-    modal.innerHTML = `
-        <div class="bg-white rounded-2xl p-6 w-full max-w-sm text-center shadow-lg">
-            <i class="fas fa-exclamation-triangle text-5xl text-red-500 mb-4"></i>
-            <h2 class="text-xl font-bold mb-2">Lisensi Tidak Valid</h2>
-            <p class="text-gray-600 mb-6">${message}</p>
-            <p class="text-sm text-gray-500">Aplikasi akan dimuat ulang.</p>
-        </div>
-    `;
-    modal.classList.remove('hidden');
-
-    setTimeout(() => {
-        location.reload();
-    }, 4000);
-}
-
-
-/**
- * Populates the license information on the settings page.
- */
-async function loadLicenseInfoToSettings() {
-    const infoEl = document.getElementById('licenseInfo');
-    const licenseKey = await getSettingFromDB('licenseKey');
-    const deviceId = getDeviceId();
-
-    if (licenseKey) {
-        const maskedKey = '****-****-****-' + licenseKey.slice(-4);
-        infoEl.innerHTML = `
-            <div class="flex justify-between">
-                <span class="text-gray-600">Status:</span>
-                <span class="font-semibold text-green-600">Aktif</span>
-            </div>
-            <div class="flex justify-between">
-                <span class="text-gray-600">Kode Lisensi:</span>
-                <span class="font-mono">${maskedKey}</span>
-            </div>
-            <div class="flex justify-between items-start">
-                <span class="text-gray-600">ID Perangkat:</span>
-                <span class="font-mono text-xs text-right">${deviceId.substring(0, 13)}...</span>
-            </div>
-        `;
-    } else {
-         infoEl.innerHTML = `
-            <div class="flex justify-between">
-                <span class="text-gray-600">Status:</span>
-                <span class="font-semibold text-red-600">Tidak Aktif</span>
-            </div>
-            <p class="text-xs text-gray-500 text-center pt-2">Tidak ada lisensi yang terdeteksi di perangkat ini.</p>
-         `;
-    }
-}
-
-/**
- * Deactivates the license on the current device.
- */
-async function deactivateDevice() {
-    showConfirmationModal(
-        'Nonaktifkan Lisensi',
-        'Anda yakin ingin menonaktifkan lisensi di perangkat ini? Anda perlu mengaktifkannya kembali untuk menggunakan aplikasi.',
-        async () => {
-            await putToDB('settings', { key: 'licenseStatus', value: 'INACTIVE' });
-            await putToDB('settings', { key: 'licenseKey', value: null });
-            if (licenseCheckInterval) {
-                clearInterval(licenseCheckInterval);
-            }
-            showToast('Lisensi dinonaktifkan. Aplikasi akan dimuat ulang.');
-            setTimeout(() => location.reload(), 2000);
-        },
-        'Ya, Nonaktifkan',
-        'bg-red-500'
-    );
-}
-window.deactivateDevice = deactivateDevice;
 
 // --- AUDIO FUNCTIONS ---
 /**
@@ -598,21 +361,14 @@ function updateSyncStatusUI(status) {
 }
 
 async function checkOnlineStatus() {
-    const currentlyOnline = navigator.onLine;
-    
-    // Only act on changes in status to avoid redundant checks
-    if (currentlyOnline !== isOnline) {
-        isOnline = currentlyOnline;
-        
-        if (isOnline) {
-            console.log('Connection restored. Starting synchronization.');
-            updateSyncStatusUI('synced'); // Optimistically set to synced
-            await window.syncWithServer();
-        } else {
-            console.log('Connection lost. Operating in offline mode.');
-            updateSyncStatusUI('offline');
-            showToast('Anda sekarang offline. Perubahan akan disimpan secara lokal.', 3000);
-        }
+    isOnline = navigator.onLine;
+    if (isOnline) {
+        updateSyncStatusUI('synced'); // Optimistically set to synced, syncWithServer will update if needed
+        showToast('Kembali online, sinkronisasi data dimulai.', 2000);
+        await window.syncWithServer();
+    } else {
+        updateSyncStatusUI('offline');
+        showToast('Anda sekarang offline. Perubahan akan disimpan secara lokal.', 3000);
     }
 }
 
@@ -2271,9 +2027,6 @@ async function loadSettings() {
         if (currentStoreLogoData) {
             (document.getElementById('storeLogoPreview')).innerHTML = `<img src="${currentStoreLogoData}" alt="Logo Preview" class="image-preview">`;
         }
-
-        loadLicenseInfoToSettings();
-
     } catch (error) {
         console.error("Failed to load settings:", error);
     }
@@ -2399,7 +2152,7 @@ async function clearAllStores() {
 window.clearAllData = function() {
     showConfirmationModal(
         'Hapus Semua Data',
-        'PERINGATAN: Ini akan menghapus semua produk, transaksi, dan pengaturan secara permanen. Lisensi Anda juga akan dinonaktifkan. Tindakan ini tidak dapat dibatalkan.',
+        'PERINGATAN: Ini akan menghapus semua produk, transaksi, dan pengaturan secara permanen. Tindakan ini tidak dapat dibatalkan. Apakah Anda benar-benar yakin?',
         async () => {
             await clearAllStores();
             showToast('Semua data berhasil dihapus. Aplikasi akan dimuat ulang.');
@@ -3003,547 +2756,104 @@ async function _generateReceiptHTML(data, isPreview) {
     // Header
     if (storeName) html += `<div class="receipt-line text-center bold">${escapeHtml(storeName)}</div>`;
     if (storeAddress) html += `<div class="receipt-line text-center">${escapeHtml(storeAddress.replace(/\n/g, '<br>'))}</div>`;
-    if (feedbackPhone) html += `<div class="receipt-line text-center">Kritik/Saran: ${escapeHtml(feedbackPhone)}</div>`;
+    if (feedbackPhone) html += `<div class="receipt-line text-center">Telp: ${escapeHtml(feedbackPhone)}</div>`;
     
-    // Transaction Info
-    const date = isPreview ? new Date() : new Date(data.date);
-    const dateStr = date.toLocaleDateString('id-ID');
-    const timeStr = date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-
-    html += `<div class="divider">${receiptLine('-', paperWidthChars)}</div>`;
-    html += `<div class="receipt-line flex-between">
-                <span>Kasir: ${isPreview ? 'Preview' : `Kasir 1`}</span>
-                <span>${dateStr}</span>
-             </div>`;
-    html += `<div class="receipt-line flex-between">
-                <span>No: ${isPreview ? 'PREVIEW' : data.id.toString().padStart(6, '0')}</span>
-                <span>${timeStr}</span>
-             </div>`;
-    html += `<div class="divider">${receiptLine('=', paperWidthChars)}</div>`;
-
-    // Items
-    let subtotal = 0;
-    let totalDiscount = 0;
+    // Info Section
+    html += `<div class="divider">${'='.repeat(paperWidthChars)}</div>`;
+    html += `<div class="receipt-line flex-between"><span>No:</span><span>${isPreview ? 'PREVIEW' : data.id}</span></div>`;
+    html += `<div class="receipt-line flex-between"><span>Tgl:</span><span>${new Date(isPreview ? Date.now() : data.date).toLocaleString('id-ID')}</span></div>`;
     
+    // Items Section
+    html += `<div class="divider">${'-'.repeat(paperWidthChars)}</div>`;
     data.items.forEach(item => {
-        subtotal += item.price * item.quantity;
-        const discountAmount = item.price * (item.discountPercentage / 100);
-        totalDiscount += discountAmount * item.quantity;
-
-        html += `<div class="receipt-line item-line bold">${escapeHtml(item.name)}</div>`;
-        html += `<div class="receipt-line item-details-line flex-between">
-                    <span>${item.quantity}x @ ${formatCurrency(item.price)}</span>
-                    <span>${formatCurrency(item.quantity * item.price)}</span>
-                 </div>`;
+        html += `<div class="receipt-line item-line">
+                    <div>${escapeHtml(item.name)}</div>`;
         if (item.discountPercentage > 0) {
-            html += `<div class="receipt-line item-details-line flex-between">
-                        <span>Disc ${item.discountPercentage}%</span>
-                        <span>-${formatCurrency(discountAmount * item.quantity)}</span>
-                     </div>`;
+            html += `<div class="item-details-line">Disc ${item.discountPercentage}% @ <s>Rp ${formatCurrency(item.price)}</s></div>`;
         }
+        html += `<div class="item-details-line flex-between">
+                        <span>${item.quantity} x ${formatCurrency(item.effectivePrice)}</span>
+                        <span>Rp ${formatCurrency(item.effectivePrice * item.quantity)}</span>
+                    </div>
+                </div>`;
     });
 
-    // Totals
-    const subtotalAfterDiscount = subtotal - totalDiscount;
-    html += `<div class="divider">${receiptLine('-', paperWidthChars)}</div>`;
+    // Totals Section
+    html += `<div class="divider">${'-'.repeat(paperWidthChars)}</div>`;
+    const subtotal = data.subtotal - (data.totalDiscount || 0);
+    html += `<div class="receipt-line flex-between total-line"><span>Subtotal</span><span>Rp ${formatCurrency(subtotal)}</span></div>`;
+    
+    (data.fees || []).forEach(fee => {
+        html += `<div class="receipt-line flex-between total-line"><span>${escapeHtml(fee.name)}</span><span>Rp ${formatCurrency(fee.amount)}</span></div>`;
+    });
 
-    if (totalDiscount > 0) {
-        html += `<div class="receipt-line total-line flex-between">
-                    <span>Subtotal</span>
-                    <span class="text-right">${formatCurrency(subtotal)}</span>
-                 </div>`;
-        html += `<div class="receipt-line total-line flex-between">
-                    <span>Diskon</span>
-                    <span class="text-right">-${formatCurrency(totalDiscount)}</span>
-                 </div>`;
+    // Final Totals Section
+    html += `<div class="divider">${'-'.repeat(paperWidthChars)}</div>`;
+    html += `<div class="receipt-line flex-between total-line bold"><span>TOTAL</span><span>Rp ${formatCurrency(data.total)}</span></div>`;
+    if (!isPreview) {
+        html += `<div class="receipt-line flex-between total-line bold"><span>TUNAI</span><span>Rp ${formatCurrency(data.cashPaid)}</span></div>`;
+        html += `<div class="receipt-line flex-between total-line bold"><span>KEMBALI</span><span>Rp ${formatCurrency(data.change)}</span></div>`;
     }
 
-    html += `<div class="receipt-line total-line flex-between">
-                <span>Total Item</span>
-                <span class="text-right">${formatCurrency(subtotalAfterDiscount)}</span>
-             </div>`;
-    
-    let totalFeeAmount = 0;
-    const feesToDisplay = isPreview ? data.fees : data.fees || [];
-    
-    feesToDisplay.forEach(fee => {
-        let feeAmount;
-        if (isPreview) {
-             feeAmount = fee.type === 'percentage'
-                ? subtotalAfterDiscount * (fee.value / 100)
-                : fee.value;
-        } else {
-            feeAmount = fee.amount;
-        }
-        totalFeeAmount += feeAmount;
-        
-        const feeLabel = `${fee.name} ${fee.type === 'percentage' ? `(${fee.value}%)` : ''}`;
-        html += `<div class="receipt-line total-line flex-between">
-                    <span>${escapeHtml(feeLabel)}</span>
-                    <span class="text-right">${formatCurrency(feeAmount)}</span>
-                 </div>`;
-    });
-    
-    const total = subtotalAfterDiscount + totalFeeAmount;
-    
-    html += `<div class="divider">${receiptLine('-', paperWidthChars)}</div>`;
-    html += `<div class="receipt-line total-line flex-between bold">
-                <span>GRAND TOTAL</span>
-                <span class="text-right">${formatCurrency(total)}</span>
-             </div>`;
-             
-    const cashPaid = isPreview ? 0 : data.cashPaid;
-    const change = isPreview ? 0 : data.change;
-
-    html += `<div class="receipt-line total-line flex-between">
-                <span>Tunai</span>
-                <span class="text-right">${formatCurrency(cashPaid)}</span>
-             </div>`;
-    html += `<div class="receipt-line total-line flex-between">
-                <span>Kembali</span>
-                <span class="text-right">${formatCurrency(change)}</span>
-             </div>`;
-             
     // Footer
-    html += `<div class="divider">${receiptLine('=', paperWidthChars)}</div>`;
-    html += `<div class="receipt-line text-center">${escapeHtml(footerText)}</div>`;
+    html += `<div class="divider">${'='.repeat(paperWidthChars)}</div>`;
+    if (footerText) html += `<div class="receipt-line text-center" style="margin-top: 8px;">${escapeHtml(footerText)}</div>`;
     
-    html += '</div>'; // Close receipt-container-wrapper
+    html += `</div>`; // close wrapper
+    
     return html;
 }
 
+
 async function generateReceiptContent(transaction) {
-    const contentEl = document.getElementById('receiptContent');
-    if (contentEl) {
-        contentEl.innerHTML = await _generateReceiptHTML(transaction, false);
-    }
+    const receiptContentEl = document.getElementById('receiptContent');
+    receiptContentEl.innerHTML = await _generateReceiptHTML(transaction, false);
 }
 
-async function showPreviewReceiptModal() {
-    if (cart.items.length === 0) {
-        showToast("Keranjang kosong, tidak ada yang bisa di-preview.");
-        return;
-    }
-    
-    const previewData = {
-        items: cart.items.map(item => ({...item})), // shallow copy
-        fees: cart.fees,
-        // other fields will be handled by the preview flag in _generateReceiptHTML
-    };
 
-    const contentEl = document.getElementById('previewReceiptContent');
-    const modal = document.getElementById('previewReceiptModal');
-    
-    if (contentEl && modal) {
-        contentEl.innerHTML = await _generateReceiptHTML(previewData, true);
-        modal.classList.remove('hidden');
-    }
-}
-window.showPreviewReceiptModal = showPreviewReceiptModal;
-
-function closePreviewReceiptModal() {
-    document.getElementById('previewReceiptModal').classList.add('hidden');
-}
-window.closePreviewReceiptModal = closePreviewReceiptModal;
-
-function printReceipt(isAutoPrint = false) {
-    // 1. Prepare Stylesheet for Printing
-    const styleOverrides = document.getElementById('print-style-overrides');
-    const receiptContent = document.getElementById('receiptContent');
-    const wrapper = receiptContent.querySelector('.receipt-container-wrapper');
-
-    if (!styleOverrides || !receiptContent || !wrapper) {
-        console.error("Receipt elements not found for printing.");
-        showToast("Gagal menyiapkan cetak struk.");
-        return;
-    }
-
-    const paperWidth = wrapper.style.width; // e.g., '210px' or '290px'
-    styleOverrides.innerHTML = `
-        @media print {
-            @page {
-                margin: 0;
-                size: auto;
-            }
-            body {
-                margin: 0;
-                padding: 0;
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
-            }
-            #receiptContent {
-                visibility: visible;
-                position: absolute;
-                left: 0;
-                top: 0;
-                width: 100%;
-                color: #000;
-            }
-             .receipt-container-wrapper {
-                width: ${paperWidth} !important;
-                margin: 0;
-                padding: 0;
-            }
-            body > *:not(#receiptContent) {
-                visibility: hidden;
-            }
-        }
-    `;
-
-    // 2. Trigger Print
-    if (isPrinterReady && bluetoothDevice) {
-        printViaBluetooth(currentReceiptTransaction);
+window.printReceipt = async function(isAutoPrint = false) {
+    if (isPrinterReady && bluetoothDevice && bluetoothCharacteristic) {
+        await printViaBluetooth();
     } else {
         if (!isAutoPrint) {
-            showToast('Printer Bluetooth tidak terhubung. Menggunakan print browser.');
-        }
-        window.print();
-    }
-}
-window.printReceipt = printReceipt;
-
-// --- BLUETOOTH PRINTING ---
-window.showPrintHelpModal = function() {
-    document.getElementById('printHelpModal').classList.remove('hidden');
-}
-window.closePrintHelpModal = function() {
-    document.getElementById('printHelpModal').classList.add('hidden');
-}
-
-async function connectToBluetoothPrinter() {
-    try {
-        if (!navigator.bluetooth) {
-            showToast("Web Bluetooth tidak didukung di browser ini.");
-            return;
-        }
-
-        updateBluetoothStatus("Mencari perangkat...", 'loading');
-
-        bluetoothDevice = await navigator.bluetooth.requestDevice({
-            filters: [{ services: ['000018f0-0000-1000-8000-00805f9b34fb'] }], // Generic Attribute Profile
-            optionalServices: ['00001101-0000-1000-8000-00805f9b34fb'] // Serial Port Profile
-        });
-
-        updateBluetoothStatus("Menghubungkan ke " + bluetoothDevice.name + "...", 'loading');
-        
-        const server = await bluetoothDevice.gatt.connect();
-        const service = await server.getPrimaryService('00001101-0000-1000-8000-00805f9b34fb');
-        bluetoothCharacteristic = await service.getCharacteristic('00002a37-0000-1000-8000-00805f9b34fb'); // Example characteristic, might need adjustment
-        
-        if (!bluetoothCharacteristic) {
-             // Fallback to find the first writable characteristic
-             const characteristics = await service.getCharacteristics();
-             bluetoothCharacteristic = characteristics.find(c => c.properties.write || c.properties.writeWithoutResponse);
-        }
-
-        if (!bluetoothCharacteristic) {
-            throw new Error("Tidak ada characteristic yang dapat ditulis ditemukan.");
-        }
-
-
-        updateBluetoothStatus(`Terhubung ke ${bluetoothDevice.name}`, 'connected');
-        bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
-
-    } catch (error) {
-        console.error("Bluetooth connection failed:", error);
-        showToast(`Gagal terhubung: ${error.message}`);
-        updateBluetoothStatus("Gagal terhubung", 'error');
-    }
-}
-window.connectToBluetoothPrinter = connectToBluetoothPrinter;
-
-function onDisconnected() {
-    updateBluetoothStatus("Terputus", 'disconnected');
-    bluetoothDevice = null;
-    bluetoothCharacteristic = null;
-}
-
-function disconnectBluetoothPrinter() {
-    if (bluetoothDevice && bluetoothDevice.gatt.connected) {
-        bluetoothDevice.gatt.disconnect();
-    }
-}
-window.disconnectBluetoothPrinter = disconnectBluetoothPrinter;
-
-function updateBluetoothStatus(message, status) {
-    const statusEl = document.getElementById('bluetoothStatus');
-    const connectBtn = document.getElementById('connectBluetoothBtn');
-    const disconnectBtn = document.getElementById('disconnectBluetoothBtn');
-    const testPrintBtn = document.getElementById('testPrintBtn');
-
-    if (!statusEl || !connectBtn || !disconnectBtn || !testPrintBtn) return;
-    
-    statusEl.textContent = `Status: ${message}`;
-    statusEl.classList.remove('bg-gray-100', 'text-gray-500', 'bg-blue-100', 'text-blue-700', 'bg-green-100', 'text-green-700', 'bg-red-100', 'text-red-700');
-    
-    if (status === 'connected') {
-        statusEl.classList.add('bg-green-100', 'text-green-700');
-        connectBtn.classList.add('hidden');
-        disconnectBtn.classList.remove('hidden');
-        testPrintBtn.disabled = false;
-    } else {
-        statusEl.classList.add(status === 'error' ? 'bg-red-100' : 'bg-gray-100', status === 'error' ? 'text-red-700' : 'text-gray-500');
-        if (status === 'loading') {
-            statusEl.classList.add('bg-blue-100', 'text-blue-700');
-        }
-        connectBtn.classList.remove('hidden');
-        disconnectBtn.classList.add('hidden');
-        testPrintBtn.disabled = true;
-    }
-}
-
-async function printViaBluetooth(transactionData) {
-    if (!bluetoothCharacteristic || !isPrinterReady) {
-        showToast("Printer tidak siap atau tidak terhubung.");
-        return;
-    }
-
-    try {
-        const settings = await getAllFromDB('settings');
-        const settingsMap = new Map(settings.map(s => [s.key, s.value]));
-        
-        const paperSize = settingsMap.get('printerPaperSize') || '80mm';
-        
-        let encoder = new EscPosEncoder.default();
-        encoder.initialize().align('center');
-
-        if (settingsMap.get('storeName')) encoder.bold(true).size(2,2).line(settingsMap.get('storeName')).bold(false).size(1,1);
-        if (settingsMap.get('storeAddress')) encoder.line(settingsMap.get('storeAddress'));
-        if (settingsMap.get('storeFeedbackPhone')) encoder.line(`Kritik/Saran: ${settingsMap.get('storeFeedbackPhone')}`);
-
-        encoder.line(receiptLine('-', paperSize === '58mm' ? 32 : 42));
-
-        const date = new Date(transactionData.date);
-        const dateStr = `${date.toLocaleDateString('id-ID')} ${date.toLocaleTimeString('id-ID')}`;
-        encoder.align('left');
-        encoder.line(`No: ${transactionData.id.toString().padStart(6, '0')}`);
-        encoder.line(`Tanggal: ${dateStr}`);
-        encoder.line(`Kasir: Kasir 1`);
-        
-        encoder.line(receiptLine('=', paperSize === '58mm' ? 32 : 42));
-
-        transactionData.items.forEach(item => {
-            encoder.line(item.name);
-            const priceLine = `${item.quantity}x @ ${formatCurrency(item.price)}`.padEnd(paperSize === '58mm' ? 16 : 24) + `${formatCurrency(item.price * item.quantity)}`.padStart(paperSize === '58mm' ? 16 : 18);
-            encoder.line(priceLine);
-            if(item.discountPercentage > 0) {
-                 const discountAmount = item.price * (item.discountPercentage / 100);
-                 const discountLine = ` Disc ${item.discountPercentage}%`.padEnd(paperSize === '58mm' ? 16 : 24) + `-${formatCurrency(discountAmount * item.quantity)}`.padStart(paperSize === '58mm' ? 16 : 18);
-                 encoder.line(discountLine);
-            }
-        });
-
-        encoder.line(receiptLine('-', paperSize === '58mm' ? 32 : 42));
-        
-        const total = `TOTAL`.padEnd(paperSize === '58mm' ? 16 : 24) + `${formatCurrency(transactionData.total)}`.padStart(paperSize === '58mm' ? 16 : 18);
-        encoder.bold(true).line(total).bold(false);
-        
-        const cash = `TUNAI`.padEnd(paperSize === '58mm' ? 16 : 24) + `${formatCurrency(transactionData.cashPaid)}`.padStart(paperSize === '58mm' ? 16 : 18);
-        encoder.line(cash);
-        
-        const change = `KEMBALI`.padEnd(paperSize === '58mm' ? 16 : 24) + `${formatCurrency(transactionData.change)}`.padStart(paperSize === '58mm' ? 16 : 18);
-        encoder.line(change);
-
-        encoder.line(receiptLine('=', paperSize === '58mm' ? 32 : 42));
-
-        if (settingsMap.get('storeFooterText')) {
-            encoder.align('center').line(settingsMap.get('storeFooterText'));
-        }
-        
-        const commands = encoder.feed(3).cut().encode();
-
-        await bluetoothCharacteristic.writeValue(commands);
-        showToast("Struk dikirim ke printer.");
-
-    } catch (error) {
-        console.error("Bluetooth printing failed:", error);
-        showToast("Gagal mencetak: " + error.message);
-    }
-}
-
-async function testPrint() {
-     if (!bluetoothCharacteristic || !isPrinterReady) {
-        showToast("Printer tidak siap atau tidak terhubung.");
-        return;
-    }
-     try {
-        const settings = await getAllFromDB('settings');
-        const settingsMap = new Map(settings.map(s => [s.key, s.value]));
-        const paperSize = settingsMap.get('printerPaperSize') || '80mm';
-
-        let encoder = new EscPosEncoder.default();
-        const commands = encoder.initialize()
-            .align('center')
-            .line('Test Cetak Berhasil!')
-            .line(`Ukuran Kertas: ${paperSize}`)
-            .line(new Date().toLocaleString('id-ID'))
-            .feed(3)
-            .cut()
-            .encode();
-        
-        await bluetoothCharacteristic.writeValue(commands);
-        showToast("Test cetak dikirim.");
-    } catch (error) {
-        showToast("Test cetak gagal: " + error.message);
-    }
-}
-window.testPrint = testPrint;
-
-// --- KIOSK MODE ---
-function showSetKioskPinModal() {
-    document.getElementById('setKioskPinModal').classList.remove('hidden');
-}
-
-function closeSetKioskPinModal() {
-    document.getElementById('setKioskPinModal').classList.add('hidden');
-    // Uncheck the toggle if user cancels setting the PIN
-    document.getElementById('kioskModeToggle').checked = false;
-}
-
-async function saveKioskPinAndActivate() {
-    const newPin = document.getElementById('newKioskPin').value;
-    const confirmPin = document.getElementById('confirmKioskPin').value;
-
-    if (newPin.length !== 4 || newPin !== confirmPin) {
-        showToast('PIN tidak valid. Pastikan PIN 4 digit dan konfirmasi cocok.');
-        return;
-    }
-    
-    // In a real app, hash the PIN before storing
-    await putSettingToDB({ key: 'kioskPin', value: newPin });
-    await putSettingToDB({ key: 'kioskModeEnabled', value: true });
-    
-    closeSetKioskPinModal();
-    showToast('Mode Kios diaktifkan.');
-    enterKioskMode();
-}
-
-function showEnterKioskPinModal() {
-    currentPinInput = "";
-    pinAttemptCount = 0; // Reset attempts when modal is shown
-    document.getElementById('kioskPinError').textContent = '';
-    updatePinDisplay();
-    document.getElementById('enterKioskPinModal').classList.remove('hidden');
-}
-window.showEnterKioskPinModal = showEnterKioskPinModal;
-
-function closeEnterKioskPinModal() {
-    document.getElementById('enterKioskPinModal').classList.add('hidden');
-}
-
-async function handleKioskModeToggle(isEnabled) {
-    if (isEnabled) {
-        const pin = await getSettingFromDB('kioskPin');
-        if (pin) {
-            await putSettingToDB({ key: 'kioskModeEnabled', value: true });
-            showToast('Mode Kios diaktifkan.');
-            enterKioskMode();
+            const printStyle = `
+                #receiptContent { 
+                    font-family: 'Courier New', monospace; 
+                    color: black; 
+                    font-size: 10pt;
+                    width: 300px;
+                }
+                #receiptLogoContainer img { display: block; margin: 0 auto; }
+            `;
+            document.getElementById('print-style-overrides').innerHTML = printStyle;
+            window.print();
         } else {
-            showSetKioskPinModal();
-        }
-    } else {
-        // Disabling requires PIN
-        showEnterKioskPinModal();
-    }
-}
-window.handleKioskModeToggle = handleKioskModeToggle;
-
-async function handlePinKeyPress(key) {
-    const pinDisplay = document.getElementById('kioskPinDisplay');
-    const pinError = document.getElementById('kioskPinError');
-    pinError.textContent = ''; // Clear error on new keypress
-
-    if (key === 'backspace') {
-        currentPinInput = currentPinInput.slice(0, -1);
-    } else if (key === 'clear') {
-        currentPinInput = "";
-    } else if (currentPinInput.length < 4) {
-        currentPinInput += key;
-    }
-
-    updatePinDisplay();
-
-    if (currentPinInput.length === 4) {
-        const savedPin = await getSettingFromDB('kioskPin');
-        if (currentPinInput === savedPin) {
-            closeEnterKioskPinModal();
-            // If the user was trying to exit kiosk mode, exit it
-            if (isKioskModeActive) {
-                exitKioskMode();
-            } else {
-                // If they were trying to disable from settings, it's already done
-                await putSettingToDB({ key: 'kioskModeEnabled', value: false });
-                document.getElementById('kioskModeToggle').checked = false;
-                showToast('Mode Kios dinonaktifkan.');
-            }
-        } else {
-            pinAttemptCount++;
-            pinError.textContent = `PIN Salah (${pinAttemptCount}/5)`;
-            pinDisplay.classList.add('animate-shake');
-            setTimeout(() => {
-                pinDisplay.classList.remove('animate-shake');
-                currentPinInput = "";
-                updatePinDisplay();
-            }, 500);
-
-            if (pinAttemptCount >= 5) {
-                // Security measure
-                showToast('Terlalu banyak percobaan salah. Data akan dihapus.');
-                setTimeout(() => {
-                    clearAllData();
-                }, 2000);
-            }
+            console.warn("Auto-print skipped: Bluetooth printer not connected.");
         }
     }
 }
-window.handlePinKeyPress = handlePinKeyPress;
 
-function updatePinDisplay() {
-    const dots = document.querySelectorAll('#kioskPinDisplay div');
-    dots.forEach((dot, index) => {
-        dot.style.backgroundColor = index < currentPinInput.length ? '#3b82f6' : '#d1d5db';
-    });
-}
 
-function enterKioskMode() {
-    isKioskModeActive = true;
-    document.getElementById('bottomNav').style.pointerEvents = 'none';
-    document.getElementById('bottomNav').style.opacity = '0.5';
-    document.getElementById('exitKioskBtn').classList.remove('hidden');
-    if (currentPage !== 'kasir') {
-        showPage('kasir');
-    }
-}
-
-function exitKioskMode() {
-    isKioskModeActive = false;
-    document.getElementById('bottomNav').style.pointerEvents = 'auto';
-    document.getElementById('bottomNav').style.opacity = '1';
-    document.getElementById('exitKioskBtn').classList.add('hidden');
-    showPage('dashboard');
-}
-
-// --- BARCODE LABEL GENERATOR ---
-document.addEventListener('DOMContentLoaded', () => {
-    const generateBtn = document.getElementById('generateBarcodeLabelBtn');
-    if (generateBtn) {
-        generateBtn.addEventListener('click', generateBarcodeLabel);
-    }
-});
-
-function generateBarcodeLabel() {
-    const name = document.getElementById('product-name').value;
-    const price = document.getElementById('product-price').value;
-    const code = document.getElementById('barcode-code').value;
+// --- BARCODE/LABEL GENERATOR ---
+document.getElementById('generateBarcodeLabelBtn')?.addEventListener('click', () => {
+    const code = document.getElementById('barcode-code').value.trim();
+    const productName = document.getElementById('product-name').value.trim();
+    const productPrice = document.getElementById('product-price').value;
 
     if (!code) {
-        showToast("Teks/Angka untuk Barcode wajib diisi.");
+        showToast('Teks/Angka untuk Barcode wajib diisi.');
         return;
     }
 
-    document.getElementById('output-product-name').textContent = name;
-    document.getElementById('output-product-price').textContent = price ? `Rp ${formatCurrency(parseFloat(price))}` : '';
-    document.getElementById('output-barcode-text').textContent = code;
+    const outputContainer = document.getElementById('barcodeLabelOutput');
+    const nameEl = document.getElementById('output-product-name');
+    const priceEl = document.getElementById('output-product-price');
+    const textEl = document.getElementById('output-barcode-text');
+    const downloadButtons = document.getElementById('download-buttons');
+
+    nameEl.textContent = productName || '';
+    priceEl.textContent = productPrice ? `Rp ${formatCurrency(parseFloat(productPrice))}` : '';
+    textEl.textContent = code;
 
     try {
         JsBarcode("#barcode", code, {
@@ -3551,31 +2861,113 @@ function generateBarcodeLabel() {
             lineColor: "#000",
             width: 2,
             height: 50,
-            displayValue: false
+            displayValue: false // The value is displayed manually below
         });
-        document.getElementById('barcodeLabelOutput').classList.remove('hidden');
-        document.getElementById('download-buttons').classList.remove('hidden');
+        outputContainer.classList.remove('hidden');
+        downloadButtons.classList.remove('hidden');
     } catch (e) {
-        showToast("Gagal membuat barcode. Pastikan teks valid.");
-        console.error("JsBarcode error:", e);
-    }
-}
-
-document.getElementById('downloadPngBtn')?.addEventListener('click', async () => {
-    try {
-        const { default: html2canvas } = await import('https://cdn.skypack.dev/html2canvas');
-        const labelContent = document.getElementById('labelContent');
-        const canvas = await html2canvas(labelContent, { backgroundColor: '#ffffff' });
-        const link = document.createElement('a');
-        link.download = `label-${document.getElementById('barcode-code').value}.png`;
-        link.href = canvas.toDataURL('image/png');
-        link.click();
-    } catch (error) {
-        console.error("html2canvas failed to load or run:", error);
-        showToast("Gagal mengunduh gambar. Library eksternal mungkin gagal dimuat.");
+        showToast('Gagal membuat barcode. Coba kode yang berbeda.');
+        outputContainer.classList.add('hidden');
+        downloadButtons.classList.add('hidden');
+        console.error("Barcode generation error:", e);
     }
 });
 
+document.getElementById('downloadPngBtn')?.addEventListener('click', () => {
+    const productName = document.getElementById('product-name').value.trim() || 'label';
+    const code = document.getElementById('barcode-code').value.trim();
+
+    // Create a canvas
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    // Get SVG element and its XML
+    const svgElement = document.getElementById('barcode');
+    const svgXML = new XMLSerializer().serializeToString(svgElement);
+    const svgSize = svgElement.getBoundingClientRect();
+
+    // Define label dimensions, padding and spacing
+    const padding = 20;
+    const spacing = 4; // Consistent 4px spacing between elements
+
+    const elementsToDraw = [
+        { el: document.getElementById('output-product-name'), isSvg: false },
+        { el: document.getElementById('output-product-price'), isSvg: false },
+        { el: svgElement, isSvg: true },
+        { el: document.getElementById('output-barcode-text'), isSvg: false },
+    ];
+
+    let totalHeight = padding * 2;
+    let maxWidth = svgSize.width;
+
+    // Pre-calculate metrics for all elements
+    const elementMetrics = elementsToDraw.map(({ el, isSvg }) => {
+        if (!el.textContent && !isSvg) return null; // Skip empty text elements
+        if (isSvg) {
+            totalHeight += svgSize.height + spacing;
+            return { type: 'svg', width: svgSize.width, height: svgSize.height };
+        } else {
+            const style = window.getComputedStyle(el);
+            const font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+            ctx.font = font;
+            const textMetrics = ctx.measureText(el.textContent);
+            const height = parseInt(style.fontSize, 10);
+            
+            totalHeight += height + spacing;
+            if (textMetrics.width > maxWidth) {
+                maxWidth = textMetrics.width;
+            }
+            return {
+                type: 'text',
+                text: el.textContent,
+                font,
+                width: textMetrics.width,
+                height
+            };
+        }
+    }).filter(Boolean); // Remove null entries for empty text elements
+
+    // Final canvas dimensions
+    canvas.width = maxWidth + padding * 2;
+    canvas.height = totalHeight;
+
+    // Start drawing
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const svgBlob = new Blob([svgXML], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    const img = new Image();
+
+    img.onload = () => {
+        let currentY = padding;
+
+        elementMetrics.forEach(metric => {
+            const x = (canvas.width - metric.width) / 2;
+
+            if (metric.type === 'svg') {
+                ctx.drawImage(img, x, currentY, metric.width, metric.height);
+                currentY += metric.height + spacing;
+            } else {
+                ctx.font = metric.font;
+                ctx.fillStyle = 'black';
+                ctx.textBaseline = 'top';
+                ctx.fillText(metric.text, x, currentY);
+                currentY += metric.height + spacing;
+            }
+        });
+
+        // Trigger download
+        const dataUrl = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.download = `${productName}-${code}.png`;
+        link.href = dataUrl;
+        link.click();
+        URL.revokeObjectURL(url);
+    };
+
+    img.src = url;
+});
 
 document.getElementById('printLabelBtn')?.addEventListener('click', () => {
     const labelContent = document.getElementById('labelContent').innerHTML;
@@ -3585,10 +2977,20 @@ document.getElementById('printLabelBtn')?.addEventListener('click', () => {
             <head>
                 <title>Cetak Label</title>
                 <style>
-                    @page { margin: 5mm; }
-                    body { font-family: sans-serif; text-align: center; }
-                    #labelContent { display: inline-block; padding: 10px; border: 1px solid #ccc; }
+                    body { margin: 0; padding: 10px; font-family: sans-serif; text-align: center; }
+                    #labelContent { display: inline-block; text-align: center; }
                     p { margin: 2px 0; }
+                    #output-product-name { font-weight: bold; font-size: 14px; }
+                    #output-product-price { font-weight: 500; font-size: 14px; }
+                    svg { margin: 4px 0; }
+                    #output-barcode-text { font-family: monospace; font-size: 10px; }
+                    @media print {
+                      @page {
+                        size: auto;
+                        margin: 5mm;
+                      }
+                      body { -webkit-print-color-adjust: exact; }
+                    }
                 </style>
             </head>
             <body>
@@ -3605,119 +3007,505 @@ document.getElementById('printLabelBtn')?.addEventListener('click', () => {
     printWindow.document.close();
 });
 
+// --- BLUETOOTH PRINTING ---
 
-// --- INITIALIZATION ---
-// This is the new main entry point after the license check
-async function initApp() {
-    document.getElementById('appContainer').style.opacity = 1; // Show app
+window.showPrintHelpModal = function() {
+    (document.getElementById('printHelpModal')).classList.remove('hidden');
+}
 
-    await initDB();
-    await loadSettings();
+window.closePrintHelpModal = function() {
+    (document.getElementById('printHelpModal')).classList.add('hidden');
+}
 
-    // Check if kiosk mode was enabled previously
-    const kioskEnabled = await getSettingFromDB('kioskModeEnabled');
-    if (kioskEnabled) {
-        enterKioskMode();
+async function connectToBluetoothPrinter() {
+    if (!navigator.bluetooth) {
+        showToast("Web Bluetooth API tidak didukung di browser ini.");
+        return;
+    }
+    
+    try {
+        showToast("Mencari printer Bluetooth...", 2000);
+        bluetoothDevice = await navigator.bluetooth.requestDevice({
+            filters: [{ services: ['000018f0-0000-1000-8000-00805f9b34fb'] }],
+            optionalServices: ['00002af1-0000-1000-8000-00805f9b34fb']
+        });
+        
+        const server = await bluetoothDevice.gatt.connect();
+        const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+        bluetoothCharacteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+        
+        updateBluetoothUI(true);
+        showToast(`Terhubung ke: ${bluetoothDevice.name}`);
+        bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+    } catch(error) {
+        console.error("Bluetooth connection error: ", error);
+        showToast("Gagal terhubung ke printer.");
+        updateBluetoothUI(false);
+    }
+}
+
+function onDisconnected() {
+    showToast(`Koneksi ke ${bluetoothDevice.name} terputus.`);
+    updateBluetoothUI(false);
+    bluetoothDevice = null;
+    bluetoothCharacteristic = null;
+}
+
+function disconnectBluetoothPrinter() {
+    if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+        bluetoothDevice.gatt.disconnect();
     } else {
-        showPage('dashboard');
+       onDisconnected();
+    }
+}
+
+function updateBluetoothUI(isConnected) {
+    const statusEl = document.getElementById('bluetoothStatus');
+    const connectBtn = document.getElementById('connectBluetoothBtn');
+    const disconnectBtn = document.getElementById('disconnectBluetoothBtn');
+    const testPrintBtn = document.getElementById('testPrintBtn');
+
+    if (isConnected) {
+        statusEl.textContent = `Status: Terhubung ke ${bluetoothDevice.name}`;
+        statusEl.classList.remove('text-gray-500', 'bg-gray-100');
+        statusEl.classList.add('text-green-700', 'bg-green-100');
+        connectBtn.classList.add('hidden');
+        disconnectBtn.classList.remove('hidden');
+        testPrintBtn.disabled = false;
+    } else {
+        statusEl.textContent = `Status: Belum Terhubung`;
+        statusEl.classList.remove('text-green-700', 'bg-green-100');
+        statusEl.classList.add('text-gray-500', 'bg-gray-100');
+        connectBtn.classList.remove('hidden');
+        disconnectBtn.classList.add('hidden');
+        testPrintBtn.disabled = true;
+    }
+}
+
+async function printViaBluetooth() {
+    if (!bluetoothCharacteristic) {
+        showToast("Tidak terhubung ke printer Bluetooth.");
+        return;
+    }
+    showToast("Mengirim data ke printer...");
+
+    try {
+        const encoder = new EscPosEncoder.default();
+        const settings = await getAllFromDB('settings');
+        const settingsMap = new Map(settings.map(s => [s.key, s.value]));
+
+        const storeName = settingsMap.get('storeName') || '';
+        const storeAddress = settingsMap.get('storeAddress') || '';
+        const feedbackPhone = settingsMap.get('storeFeedbackPhone') || '';
+        const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
+        const paperSize = settingsMap.get('printerPaperSize') || '80mm';
+        const paperWidthChars = paperSize === '58mm' ? 32 : 42;
+
+        const transaction = currentReceiptTransaction;
+        if (!transaction) {
+            showToast("Tidak ada data transaksi untuk dicetak.");
+            return;
+        }
+
+        encoder.initialize();
+
+        if (storeName) {
+            encoder.align('center').size(2, 2).line(storeName).size(1, 1);
+        }
+        if (storeAddress) {
+            encoder.align('center').line(storeAddress);
+        }
+        if (feedbackPhone) {
+            encoder.align('center').line(`Telp: ${feedbackPhone}`);
+        }
+        encoder.line(receiptLine('=', paperWidthChars));
+        
+        encoder.align('left');
+        encoder.text('No:'.padEnd(5)).text(transaction.id.toString()).newline();
+        encoder.text('Tgl:'.padEnd(5)).text(new Date(transaction.date).toLocaleString('id-ID')).newline();
+        encoder.line(receiptLine('-', paperWidthChars));
+
+        transaction.items.forEach(item => {
+            encoder.line(item.name);
+            const priceLine = `${item.quantity} x ${formatCurrency(item.effectivePrice)}`;
+            const totalLine = `Rp ${formatCurrency(item.effectivePrice * item.quantity)}`;
+            const padding = paperWidthChars - priceLine.length - totalLine.length;
+            encoder.line(`${priceLine}${' '.repeat(Math.max(0, padding))}${totalLine}`);
+        });
+
+        encoder.line(receiptLine('-', paperWidthChars));
+        
+        const subtotal = transaction.subtotal - (transaction.totalDiscount || 0);
+        encoder.align('right').line(`Subtotal: Rp ${formatCurrency(subtotal)}`);
+        
+        (transaction.fees || []).forEach(fee => {
+            encoder.align('right').line(`${fee.name}: Rp ${formatCurrency(fee.amount)}`);
+        });
+
+        encoder.line(receiptLine('-', paperWidthChars));
+        encoder.size(2, 2).line(`TOTAL: Rp ${formatCurrency(transaction.total)}`).size(1, 1);
+        encoder.line(`TUNAI: Rp ${formatCurrency(transaction.cashPaid)}`);
+        encoder.line(`KEMBALI: Rp ${formatCurrency(transaction.change)}`);
+        
+        encoder.line(receiptLine('=', paperWidthChars));
+        encoder.align('center').line(footerText);
+
+        encoder.feed(3).cut();
+        
+        const command = encoder.encode();
+        await bluetoothCharacteristic.writeValue(command);
+        showToast("Berhasil dicetak!");
+        
+    } catch (error) {
+        console.error("Bluetooth printing failed: ", error);
+        showToast("Gagal mencetak. Coba hubungkan ulang.");
+        disconnectBluetoothPrinter();
+    }
+}
+
+async function testPrint() {
+     if (!bluetoothCharacteristic) {
+        showToast("Tidak terhubung ke printer Bluetooth.");
+        return;
+    }
+    showToast("Mencetak halaman tes...");
+    try {
+        const encoder = new EscPosEncoder.default();
+        const settings = await getAllFromDB('settings');
+        const settingsMap = new Map(settings.map(s => [s.key, s.value]));
+        const paperSize = settingsMap.get('printerPaperSize') || '80mm';
+
+        encoder
+            .initialize()
+            .align('center')
+            .size(2, 2)
+            .line('Tes Cetak')
+            .size(1, 1)
+            .line('Koneksi Berhasil!')
+            .line(`Ukuran Kertas: ${paperSize}`)
+            .line(new Date().toLocaleString('id-ID'))
+            .feed(3)
+            .cut();
+        
+        const command = encoder.encode();
+        await bluetoothCharacteristic.writeValue(command);
+        showToast("Tes cetak berhasil!");
+    } catch (error) {
+        console.error("Test print failed: ", error);
+        showToast("Gagal tes cetak. Coba hubungkan ulang.");
+        disconnectBluetoothPrinter();
+    }
+}
+window.testPrint = testPrint;
+
+
+// --- PREVIEW RECEIPT MODAL ---
+window.showPreviewReceiptModal = async function() {
+    if (cart.items.length === 0) {
+        showToast('Keranjang kosong. Tidak ada yang bisa ditampilkan.');
+        return;
     }
 
-    // Set up periodic sync and online/offline listeners
-    checkOnlineStatus();
-    setInterval(checkOnlineStatus, 60000); // Check every 1 minute
-    setInterval(() => syncWithServer(false), 30 * 60 * 1000); // Auto-sync every 30 mins
+    const previewContentEl = document.getElementById('previewReceiptContent');
+    previewContentEl.innerHTML = '<div class="spinner mx-auto"></div>';
+    (document.getElementById('previewReceiptModal')).classList.remove('hidden');
 
-    // Set up UI components and data
-    updateDashboardDate();
-    loadDashboard();
-    loadProductsGrid();
-    document.getElementById('confirmButton').onclick = () => {
-        if (confirmCallback) confirmCallback();
-        closeConfirmationModal();
-    };
-    document.getElementById('cancelButton').onclick = closeConfirmationModal;
+    const subtotal = cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const totalDiscount = cart.items.reduce((sum, item) => {
+        const discountAmount = item.price * ((item.discountPercentage || 0) / 100);
+        return sum + (discountAmount * item.quantity);
+    }, 0);
     
-    // Date pickers for reports
-    const today = new Date().toISOString().split('T')[0];
-    const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-    document.getElementById('dateFrom').value = firstDayOfMonth;
-    document.getElementById('dateTo').value = today;
+    const subtotalAfterDiscount = subtotal - totalDiscount;
 
-    // Set up event listeners that need the DB
-    document.getElementById('searchProduct').addEventListener('input', (e) => {
+    let calculatedFees = [];
+    let totalFeeAmount = 0;
+
+    cart.fees.forEach(fee => {
+        const feeAmount = fee.type === 'percentage' 
+            ? subtotalAfterDiscount * (fee.value / 100) 
+            : fee.value;
+        calculatedFees.push({ ...fee, amount: feeAmount });
+        totalFeeAmount += feeAmount;
+    });
+
+    const total = subtotalAfterDiscount + totalFeeAmount;
+    
+    const previewData = {
+        items: cart.items,
+        subtotal: subtotal,
+        totalDiscount: totalDiscount,
+        fees: calculatedFees,
+        total: total
+    };
+    
+    previewContentEl.innerHTML = await _generateReceiptHTML(previewData, true);
+};
+
+
+window.closePreviewReceiptModal = function() {
+    (document.getElementById('previewReceiptModal')).classList.add('hidden');
+}
+
+
+// --- KIOSK MODE ---
+window.handleKioskModeToggle = function(isChecked) {
+    if (isChecked) {
+        // Show modal to set PIN
+        showSetKioskPinModal();
+    } else {
+        // Deactivate kiosk mode (no PIN needed)
+        deactivateKioskMode();
+    }
+}
+
+function showSetKioskPinModal() {
+    const newPinInput = document.getElementById('newKioskPin');
+    const confirmPinInput = document.getElementById('confirmKioskPin');
+    newPinInput.value = '';
+    confirmPinInput.value = '';
+    (document.getElementById('setKioskPinModal')).classList.remove('hidden');
+    newPinInput.focus();
+}
+
+window.closeSetKioskPinModal = function() {
+    // If user cancels setting PIN, revert the toggle
+    document.getElementById('kioskModeToggle').checked = false;
+    (document.getElementById('setKioskPinModal')).classList.add('hidden');
+}
+
+window.saveKioskPinAndActivate = async function() {
+    const newPin = document.getElementById('newKioskPin').value;
+    const confirmPin = document.getElementById('confirmKioskPin').value;
+
+    if (newPin.length !== 4 || newPin !== confirmPin) {
+        showToast('PIN harus 4 digit dan cocok.');
+        return;
+    }
+
+    // In a real app, hash the PIN. For this simple case, we store it directly.
+    await putSettingToDB({ key: 'kioskPin', value: newPin });
+    activateKioskMode();
+    closeSetKioskPinModal();
+}
+
+async function activateKioskMode() {
+    isKioskModeActive = true;
+    await putSettingToDB({ key: 'kioskModeEnabled', value: true });
+
+    document.getElementById('bottomNav').style.display = 'none';
+    document.getElementById('exitKioskBtn').classList.remove('hidden');
+
+    showPage('kasir');
+    showToast('Mode Kios diaktifkan.', 3000);
+}
+
+function deactivateKioskMode() {
+    isKioskModeActive = false;
+    putSettingToDB({ key: 'kioskModeEnabled', value: false });
+
+    document.getElementById('kioskModeToggle').checked = false;
+    document.getElementById('bottomNav').style.display = '';
+    document.getElementById('exitKioskBtn').classList.add('hidden');
+    
+    showPage('pengaturan');
+    showToast('Mode Kios dinonaktifkan.', 3000);
+}
+
+window.showEnterKioskPinModal = function() {
+    currentPinInput = "";
+    pinAttemptCount = 0; // Reset counter when modal is shown
+    updatePinDisplay();
+    document.getElementById('kioskPinError').textContent = '';
+    (document.getElementById('enterKioskPinModal')).classList.remove('hidden');
+}
+
+window.closeEnterKioskPinModal = function() {
+    (document.getElementById('enterKioskPinModal')).classList.add('hidden');
+    pinAttemptCount = 0; // Reset counter on cancel
+}
+
+window.handlePinKeyPress = async function(key) {
+    const errorEl = document.getElementById('kioskPinError');
+
+    if (key === 'backspace') {
+        currentPinInput = currentPinInput.slice(0, -1);
+    } else if (key === 'clear') {
+        currentPinInput = "";
+    } else if (currentPinInput.length < 4) {
+        currentPinInput += key;
+    }
+    
+    updatePinDisplay();
+
+    if (currentPinInput.length === 4) {
+        const savedPin = await getSettingFromDB('kioskPin');
+        if (currentPinInput === savedPin) {
+            pinAttemptCount = 0; // Reset on success
+            closeEnterKioskPinModal();
+            deactivateKioskMode();
+        } else {
+            pinAttemptCount++; // Increment on failure
+            const remainingAttempts = 5 - pinAttemptCount;
+
+            if (remainingAttempts <= 0) {
+                await forceClearAllData();
+                return; // Stop further execution
+            }
+            
+            errorEl.textContent = `PIN Salah. Sisa percobaan: ${remainingAttempts}`;
+            const pinDisplay = document.getElementById('kioskPinDisplay');
+            pinDisplay.classList.add('animate-shake');
+            
+            setTimeout(() => {
+                pinDisplay.classList.remove('animate-shake');
+                currentPinInput = "";
+                updatePinDisplay();
+            }, 600);
+        }
+    } else {
+        // Clear error message if user is still typing
+        errorEl.textContent = '';
+    }
+}
+
+async function forceClearAllData() {
+    // Close modal immediately
+    const modal = document.getElementById('enterKioskPinModal');
+    if (modal) modal.classList.add('hidden');
+    
+    await clearAllStores();
+    
+    // Prevent further interaction by showing an overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'fixed inset-0 bg-white z-[9999] flex flex-col items-center justify-center';
+    overlay.innerHTML = `
+        <div class="spinner"></div>
+        <p class="mt-4 text-gray-600">PIN salah 5 kali. Menghapus semua data...</p>
+    `;
+    document.body.appendChild(overlay);
+
+    showToast('Semua data aplikasi telah dihapus.', 5000);
+    setTimeout(() => location.reload(), 5000);
+}
+
+function updatePinDisplay() {
+    const dots = document.querySelectorAll('#kioskPinDisplay div');
+    dots.forEach((dot, index) => {
+        if (index < currentPinInput.length) {
+            dot.classList.add('bg-blue-500');
+            dot.classList.remove('bg-gray-300');
+        } else {
+            dot.classList.remove('bg-blue-500');
+            dot.classList.add('bg-gray-300');
+        }
+    });
+}
+
+
+// --- INITIALIZATION ---
+document.addEventListener('DOMContentLoaded', async () => {
+    
+    // Check for library dependencies
+    if (typeof EscPosEncoder !== 'undefined') {
+        isPrinterReady = true;
+    } else {
+        console.error("EscPosEncoder library failed to load.");
+    }
+    
+    if (typeof Html5Qrcode !== 'undefined') {
+        try {
+            html5QrCode = new Html5Qrcode("qr-reader");
+            isScannerReady = true;
+        } catch (e) {
+            console.error("Failed to initialize Html5Qrcode:", e);
+        }
+    } else {
+        console.error("Html5Qrcode library failed to load.");
+    }
+
+    if (typeof Chart !== 'undefined') {
+        isChartJsReady = true;
+    } else {
+        console.error("Chart.js library failed to load.");
+    }
+    
+    updateFeatureAvailability();
+
+    try {
+        await initDB();
+        await loadSettings();
+        await applyDefaultFees(); // Load default fees into cart state on startup
+
+        // Kiosk Mode check on startup
+        const kioskEnabled = await getSettingFromDB('kioskModeEnabled');
+        if (kioskEnabled) {
+            isKioskModeActive = true;
+            document.getElementById('bottomNav').style.display = 'none';
+            document.getElementById('exitKioskBtn').classList.remove('hidden');
+            showPage('kasir');
+        } else {
+            loadDashboard();
+        }
+    } catch (error) {
+        console.error("Initialization failed:", error);
+        // Loading overlay will remain if DB fails, which is handled in initDB
+    } finally {
+        // Hide loading overlay
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        if (loadingOverlay) {
+            loadingOverlay.classList.add('opacity-0', 'pointer-events-none');
+            setTimeout(() => loadingOverlay.style.display = 'none', 300);
+        }
+    }
+    
+    // Set up event listeners
+    document.getElementById('confirmButton')?.addEventListener('click', () => {
+        if (confirmCallback) {
+            confirmCallback();
+        }
+        closeConfirmationModal();
+    });
+
+    document.getElementById('cancelButton')?.addEventListener('click', closeConfirmationModal);
+    document.getElementById('searchProduct')?.addEventListener('input', (e) => {
         const searchTerm = e.target.value.toLowerCase();
         document.querySelectorAll('#productsGrid .product-item').forEach(item => {
             const name = item.dataset.name || '';
-            const category = item.dataset.category || '';
             const barcode = item.dataset.barcode || '';
-            item.style.display = name.includes(searchTerm) || category.includes(searchTerm) || barcode.includes(searchTerm) ? '' : 'none';
+            const isMatch = name.includes(searchTerm) || barcode.includes(searchTerm);
+            item.style.display = isMatch ? 'block' : 'none';
         });
     });
 
-    await applyDefaultFees();
-    updateCartDisplay();
     setupChartViewToggle();
-
-    // Start periodic license checks
-    startPeriodicLicenseCheck();
-}
-
-
-// This is the very first function that runs on page load
-async function startup() {
-    // 1. Check license status
-    const licenseStatus = await getSettingFromDB('licenseStatus');
-    const licenseKey = await getSettingFromDB('licenseKey');
-
-    if (licenseStatus === 'ACTIVE' && licenseKey) {
-        // If license is active, proceed to initialize the app
-        document.getElementById('licenseModal').classList.add('hidden');
-        initApp();
-    } else {
-        // If no license or inactive, show the activation modal
-        document.getElementById('licenseModal').classList.remove('hidden');
-        document.getElementById('appContainer').style.opacity = 0; // Hide app
-    }
-}
-
-document.addEventListener('DOMContentLoaded', async () => {
-    // Initialize DB first to check license status from settings
-    try {
-        await initDB();
-        await startup(); // This function will decide to show the app or the license modal
-
-        // Lazy load external libraries and update UI based on success
-        if (typeof Html5Qrcode !== 'undefined') {
-            isScannerReady = true;
-            html5QrCode = new Html5Qrcode("qr-reader");
-        } else {
-            console.warn('html5-qrcode.min.js failed to load.');
-        }
-
-        if (typeof EscPosEncoder !== 'undefined') {
-            isPrinterReady = true;
-        } else {
-            console.warn('EscPosEncoder script failed to load.');
-        }
-
-        if (typeof Chart !== 'undefined') {
-            isChartJsReady = true;
-        } else {
-            console.warn('Chart.js failed to load.');
-        }
-
-        updateFeatureAvailability();
-
-    } catch (error) {
-        console.error("Fatal error during startup:", error);
-        // Display a critical error message if the DB fails to initialize
-    }
     
-    // Hide loading overlay once everything is set up
-    const loadingOverlay = document.getElementById('loadingOverlay');
-    loadingOverlay.classList.add('opacity-0');
-    setTimeout(() => loadingOverlay.style.display = 'none', 300);
+    // Offline/Online detection
+    window.addEventListener('online', checkOnlineStatus);
+    window.addEventListener('offline', checkOnlineStatus);
 
-    // Initialize audio context on the first user interaction
+    // Initial sync check
+    checkOnlineStatus().then(() => {
+        if (isOnline) {
+            syncWithServer(); // Perform initial sync
+        }
+    });
+
+     // Check dashboard data freshness on focus
+    window.addEventListener('focus', () => {
+        // When the app comes into focus, always check the online status
+        checkOnlineStatus();
+        
+        // If the user is on the dashboard, call loadDashboard.
+        // The function itself will efficiently decide if a data refresh is needed.
+        if (currentPage === 'dashboard') {
+            loadDashboard();
+        }
+    });
+
+    // Initialize audio context after the first user interaction
     document.body.addEventListener('click', initAudioContext, { once: true });
+    document.body.addEventListener('touchend', initAudioContext, { once: true });
+
 });

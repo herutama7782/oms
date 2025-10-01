@@ -1,5 +1,5 @@
 {
-  "name": "Copy of POS Mobile + Allow Camera, Bluetooth, Location + License",
+  "name": "POS Mobile + Allow Camera, Bluetooth, Location + License",
   "description": "A mobile-first Point of Sale application with barcode scanning for small businesses.",
   "requestFramePermissions": [
     "camera",

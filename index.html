@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -471,17 +470,6 @@
                         </label>
                     </div>
                 </div>
-
-                <!-- License & Device -->
-                <div class="card p-4 mb-4">
-                    <h2 class="text-lg font-semibold mb-3">Lisensi & Perangkat</h2>
-                    <div id="licenseInfo" class="space-y-2 text-sm">
-                        <!-- Populated by JS -->
-                    </div>
-                    <button onclick="deactivateDevice()" class="btn bg-red-500 text-white w-full py-2 mt-4">
-                        <i class="fas fa-power-off mr-2"></i>Nonaktifkan di Perangkat Ini
-                    </button>
-                </div>
                 
                 <!-- Data Management -->
                 <div class="card p-4 mb-4">
@@ -581,23 +569,6 @@
         </nav>
     </main>
     
-    <!-- License Activation Modal -->
-    <div id="licenseModal" class="fixed inset-0 z-[10000] flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl p-6 w-full max-w-sm text-center shadow-lg">
-            <i class="fas fa-shield-alt text-5xl text-blue-500 mb-4"></i>
-            <h2 class="text-xl font-bold mb-2">Aktivasi Lisensi</h2>
-            <p class="text-gray-600 mb-6">Silakan masukkan kode lisensi Anda untuk menggunakan aplikasi.</p>
-            <div class="space-y-4">
-                <input type="text" id="licenseKeyInput" class="input-field w-full" placeholder="XXXX-XXXX-XXXX-XXXX">
-                <p id="licenseStatusMessage" class="text-sm min-h-[20px]"></p>
-                <button id="activateLicenseBtn" onclick="handleActivateLicense()" class="btn bg-blue-500 text-white w-full py-3 font-semibold">
-                    Aktivasi Lisensi
-                </button>
-            </div>
-        </div>
-    </div>
-
-
     <!-- MODALS -->
 
     <!-- Add Product Modal -->
