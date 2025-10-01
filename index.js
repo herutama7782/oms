@@ -32,6 +32,7 @@ let currentPinInput = "";
 let pinAttemptCount = 0;
 let lastDashboardLoadDate = null;
 let audioContext = null; // For Web Audio API
+let deviceId = null;
 
 
 // Bluetooth printing state
@@ -721,6 +722,7 @@ window.showPage = async function(pageName, force = false) {
     } else if (pageName === 'produk') {
         window.loadProductsList();
     } else if (pageName === 'pengaturan') {
+        loadSettings(); // This will also call loadLicenseInfo
         loadFees();
     }
 
@@ -2027,6 +2029,8 @@ async function loadSettings() {
         if (currentStoreLogoData) {
             (document.getElementById('storeLogoPreview')).innerHTML = `<img src="${currentStoreLogoData}" alt="Logo Preview" class="image-preview">`;
         }
+
+        loadLicenseInfo();
     } catch (error) {
         console.error("Failed to load settings:", error);
     }
@@ -3403,6 +3407,125 @@ function updatePinDisplay() {
     });
 }
 
+// --- LICENSE MANAGEMENT ---
+
+function generateUUID() {
+    // A simple UUID generator that works in all environments
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+function validateLicenseKey(deviceId, licenseKey) {
+    if (!deviceId || !licenseKey) return false;
+
+    // A simple, predictable but not obvious transformation.
+    // This simulates a keygen algorithm that would be used by the license provider.
+    // The key is derived from the deviceId to ensure it's device-specific.
+    const reversedId = deviceId.split('').reverse().join('');
+    // Use btoa for simple encoding as a stand-in for a more complex algorithm.
+    const encoded = btoa(reversedId); 
+
+    const expectedPart1 = encoded.substring(0, 4);
+    const expectedPart2 = encoded.substring(10, 14);
+    const expectedPart3 = encoded.substring(20, 24);
+    const expectedPart4 = encoded.substring(30, 34);
+
+    const expectedKey = `${expectedPart1}-${expectedPart2}-${expectedPart3}-${expectedPart4}`.toUpperCase();
+    
+    return licenseKey.toUpperCase().replace(/\s/g, '') === expectedKey;
+}
+
+async function checkAndRunLicense() {
+    // Check for or generate a unique Device ID for this installation
+    let deviceIdSetting = await getSettingFromDB('deviceId');
+    if (!deviceIdSetting) {
+        deviceId = generateUUID();
+        await putSettingToDB({ key: 'deviceId', value: deviceId });
+    } else {
+        deviceId = deviceIdSetting;
+    }
+
+    // Check if the app has been licensed
+    const isLicensed = await getSettingFromDB('isLicensed');
+
+    if (isLicensed) {
+        await proceedWithAppLoad();
+    } else {
+        showLicenseOverlay();
+    }
+}
+
+function showLicenseOverlay() {
+    const overlay = document.getElementById('licenseOverlay');
+    const deviceIdEl = document.getElementById('licenseDeviceId');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+
+    if (deviceIdEl) deviceIdEl.textContent = deviceId;
+    if (overlay) overlay.classList.remove('hidden');
+    
+    // Hide the main loading spinner since the license screen is now the active view
+    if (loadingOverlay) loadingOverlay.style.display = 'none';
+}
+
+async function activateLicense() {
+    const keyInput = document.getElementById('licenseKeyInput');
+    const licenseKey = keyInput.value;
+
+    if (validateLicenseKey(deviceId, licenseKey)) {
+        await putSettingToDB({ key: 'isLicensed', value: true });
+        
+        const overlay = document.getElementById('licenseOverlay');
+        if (overlay) overlay.classList.add('hidden');
+        
+        showToast('Lisensi berhasil diaktivasi!', 2000);
+        await proceedWithAppLoad();
+    } else {
+        showToast('Kunci Lisensi tidak valid untuk perangkat ini.');
+        keyInput.parentElement.parentElement.classList.add('animate-shake');
+        setTimeout(() => {
+            keyInput.parentElement.parentElement.classList.remove('animate-shake');
+        }, 500);
+    }
+}
+
+function loadLicenseInfo() {
+    const statusEl = document.getElementById('licenseStatus');
+    const deviceIdEl = document.getElementById('settingsDeviceId');
+
+    if (statusEl) {
+        statusEl.textContent = 'Aktif';
+        statusEl.className = 'font-bold text-green-600';
+    }
+    if (deviceIdEl) {
+        deviceIdEl.textContent = deviceId;
+    }
+}
+
+async function proceedWithAppLoad() {
+    document.getElementById('appContainer').classList.remove('hidden');
+    
+    await loadSettings();
+    await applyDefaultFees();
+
+    const kioskEnabled = await getSettingFromDB('kioskModeEnabled');
+    if (kioskEnabled) {
+        isKioskModeActive = true;
+        document.getElementById('bottomNav').style.display = 'none';
+        document.getElementById('exitKioskBtn').classList.remove('hidden');
+        showPage('kasir');
+    } else {
+        loadDashboard();
+    }
+
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    if (loadingOverlay) {
+        loadingOverlay.classList.add('opacity-0', 'pointer-events-none');
+        setTimeout(() => loadingOverlay.style.display = 'none', 300);
+    }
+}
+
 
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
@@ -3435,32 +3558,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     try {
         await initDB();
-        await loadSettings();
-        await applyDefaultFees(); // Load default fees into cart state on startup
-
-        // Kiosk Mode check on startup
-        const kioskEnabled = await getSettingFromDB('kioskModeEnabled');
-        if (kioskEnabled) {
-            isKioskModeActive = true;
-            document.getElementById('bottomNav').style.display = 'none';
-            document.getElementById('exitKioskBtn').classList.remove('hidden');
-            showPage('kasir');
-        } else {
-            loadDashboard();
-        }
+        await checkAndRunLicense(); // New license check flow
     } catch (error) {
         console.error("Initialization failed:", error);
         // Loading overlay will remain if DB fails, which is handled in initDB
-    } finally {
-        // Hide loading overlay
-        const loadingOverlay = document.getElementById('loadingOverlay');
-        if (loadingOverlay) {
-            loadingOverlay.classList.add('opacity-0', 'pointer-events-none');
-            setTimeout(() => loadingOverlay.style.display = 'none', 300);
-        }
     }
     
-    // Set up event listeners
+    // --- EVENT LISTENERS ---
+    
+    // License Screen Listeners
+    document.getElementById('activateLicenseBtn')?.addEventListener('click', activateLicense);
+    
+    const copyToClipboard = (text) => {
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(text).then(() => {
+                showToast('Device ID disalin ke clipboard');
+            });
+        }
+    };
+    
+    document.getElementById('licenseDeviceId')?.addEventListener('click', () => copyToClipboard(deviceId));
+    document.getElementById('settingsDeviceId')?.addEventListener('click', () => copyToClipboard(deviceId));
+    
+    // Standard App Listeners
     document.getElementById('confirmButton')?.addEventListener('click', () => {
         if (confirmCallback) {
             confirmCallback();
@@ -3498,14 +3618,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         checkOnlineStatus();
         
         // If the user is on the dashboard, call loadDashboard.
-        // The function itself will efficiently decide if a data refresh is needed.
         if (currentPage === 'dashboard') {
             loadDashboard();
         }
     });
 
-    // Initialize audio context after the first user interaction
-    document.body.addEventListener('click', initAudioContext, { once: true });
-    document.body.addEventListener('touchend', initAudioContext, { once: true });
+    // One-time audio context initialization on first user interaction
+    const initAudio = () => {
+        initAudioContext();
+        // This listener only needs to run once
+        document.body.removeEventListener('click', initAudio);
+        document.body.removeEventListener('touchend', initAudio);
+    };
+    document.body.addEventListener('click', initAudio);
+    document.body.addEventListener('touchend', initAudio);
 
 });
