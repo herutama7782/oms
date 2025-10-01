@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -2701,6 +2702,15 @@ async function checkLicense() {
         licenseOverlay.classList.remove('hidden');
         return false;
     }
+    
+    // Pre-validate that the stored key is a valid Base64 string before attempting to decode.
+    const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+    if (!base64Regex.test(storedKey)) {
+        console.error("Stored key is not a valid Base64 string. Locking app.");
+        licenseOverlay.classList.remove('hidden');
+        showToast('Format lisensi tersimpan tidak valid, silakan aktivasi ulang.', 4000);
+        return false;
+    }
 
     // A key is stored, now we must VALIDATE it against the current device
     try {
@@ -2717,7 +2727,8 @@ async function checkLicense() {
             return false;
         }
     } catch (e) {
-        console.error("Corrupt or old format license key found. Locking app.");
+        // This catch block is now a fallback for other potential decoding errors.
+        console.error("Corrupt or old format license key found. Locking app.", e);
         licenseOverlay.classList.remove('hidden');
         showToast('Format lisensi tidak valid, silakan aktivasi dengan kunci baru.', 4000);
         return false;
@@ -2733,6 +2744,13 @@ async function activateLicense() {
     
     if (!licenseKey) {
         showToast('Kunci lisensi tidak boleh kosong.');
+        return;
+    }
+    
+    // Pre-validate that the input key is a valid Base64 string before attempting to decode.
+    const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+    if (!base64Regex.test(licenseKey)) {
+        showToast('Format kunci lisensi tidak valid.');
         return;
     }
 
@@ -2753,7 +2771,7 @@ async function activateLicense() {
             showToast('Kunci lisensi tidak valid untuk perangkat ini.');
         }
     } catch (e) {
-        // Base64 decoding failed or the format is wrong.
+        // This catch block is now a fallback for other potential decoding errors.
         showToast('Format kunci lisensi tidak valid.');
         console.error("License activation error:", e);
     }
