@@ -7,6 +7,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="index.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#3b82f6">
     <style id="print-style-overrides"></style>
 
     <!-- Pre-load the scanner library to prevent loading failures -->
@@ -609,6 +611,9 @@
     
     <!-- MODALS -->
 
+    <!-- Add/Edit Product Modals etc. -->
+    <!-- ... (rest of the existing modals) ... -->
+
     <!-- Add Product Modal -->
     <div id="addProductModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
         <div class="flex items-center justify-center h-full p-4">
@@ -1008,9 +1013,45 @@
             </div>
         </div>
     </div>
+
+    <!-- Add to Home Screen Modal -->
+    <div id="installModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-[3000]">
+        <div class="flex items-end justify-center h-full p-4 text-center sm:items-center sm:p-0">
+            <div class="bg-white rounded-t-2xl sm:rounded-2xl p-6 w-full max-w-sm shadow-xl transform transition-all" id="installModalContent">
+                <div class="flex items-start gap-4">
+                    <div class="bg-blue-100 text-blue-500 rounded-lg p-3 flex items-center justify-center h-12 w-12">
+                        <i class="fas fa-mobile-alt text-2xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold mb-1 text-left">Install Aplikasi</h3>
+                        <p class="text-gray-600 mb-4 text-sm text-left">Tambahkan POS Mobile ke layar utama Anda untuk akses cepat dan penggunaan offline.</p>
+                    </div>
+                </div>
+                <div class="flex flex-col gap-3 mt-2">
+                    <button id="installAppBtn" class="btn bg-blue-500 text-white w-full py-3 font-semibold">
+                        Install
+                    </button>
+                    <button id="closeInstallBtn" class="btn bg-gray-200 text-gray-700 w-full py-2">
+                        Nanti Saja
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
     
     <!-- Toast Notification -->
     <div id="toast" class="toast"></div>
 
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/service-worker.js').then(registration => {
+            console.log('ServiceWorker registration successful with scope: ', registration.scope);
+          }, err => {
+            console.log('ServiceWorker registration failed: ', err);
+          });
+        });
+      }
+    </script>
 </body>
 </html>
