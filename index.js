@@ -2076,13 +2076,6 @@ async function exportData() {
         if (window.AndroidDownloader) {
             // Panggil fungsi Java
             window.AndroidDownloader.downloadFile(fileContent, fileName, 'application/json');
-            showConfirmationModal(
-                '<div class="flex items-center justify-center"><i class="fas fa-save text-blue-500 mr-3 text-xl"></i><span>Menyimpan File</span></div>',
-                'Silakan pilih lokasi untuk menyimpan file backup Anda.',
-                () => {},
-                'Mengerti',
-                'bg-blue-500'
-            );
         } else {
             // Fallback untuk browser biasa
             const blob = new Blob([fileContent], { type: 'application/json' });
@@ -2094,15 +2087,8 @@ async function exportData() {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            
-            showConfirmationModal(
-                '<div class="flex items-center justify-center"><i class="fas fa-check-circle text-green-500 mr-3 text-xl"></i><span>Export Berhasil</span></div>',
-                'File backup data Anda (.json) telah berhasil di-download dan biasanya tersimpan di folder <strong>\'Downloads\'</strong> atau <strong>\'Unduhan\'</strong> pada perangkat Anda.',
-                () => {},
-                'Mengerti',
-                'bg-blue-500'
-            );
         }
+        showToast('Export data berhasil.');
     } catch (error) {
         console.error('Export failed:', error);
         showToast('Gagal mengexport data.');
@@ -2585,123 +2571,115 @@ async function exportReportToCSV() {
         return;
     }
 
-    // 1. Fetch all products to get purchase price and category info
-    const products = await getAllFromDB('products');
-    const productMap = new Map(products.map(p => [p.id, p]));
+    try {
+        // 1. Fetch all products to get purchase price and category info
+        const products = await getAllFromDB('products');
+        const productMap = new Map(products.map(p => [p.id, p]));
 
-    // 2. Recalculate summary metrics to ensure consistency with the UI
-    let omzet = 0;
-    let hpp = 0;
-    let totalOperationalCost = 0;
+        // 2. Recalculate summary metrics to ensure consistency with the UI
+        let omzet = 0;
+        let hpp = 0;
+        let totalOperationalCost = 0;
 
-    currentReportData.forEach(t => {
-        const subtotalAfterDiscount = t.subtotal - (t.totalDiscount || 0);
-        omzet += subtotalAfterDiscount;
-        t.items.forEach(item => {
-            const product = productMap.get(item.id);
-            const purchasePrice = product ? (product.purchasePrice || 0) : 0;
-            hpp += purchasePrice * item.quantity;
+        currentReportData.forEach(t => {
+            const subtotalAfterDiscount = t.subtotal - (t.totalDiscount || 0);
+            omzet += subtotalAfterDiscount;
+            t.items.forEach(item => {
+                const product = productMap.get(item.id);
+                const purchasePrice = product ? (product.purchasePrice || 0) : 0;
+                hpp += purchasePrice * item.quantity;
+            });
+            (t.fees || []).forEach(fee => {
+                totalOperationalCost += fee.amount;
+            });
         });
-        (t.fees || []).forEach(fee => {
-            totalOperationalCost += fee.amount;
+
+        const grossProfit = omzet - hpp;
+        const netProfit = grossProfit - totalOperationalCost;
+        const dateFrom = document.getElementById('dateFrom').value;
+        const dateTo = document.getElementById('dateTo').value;
+
+        let csvContent = "";
+
+        // 3. Build Summary Block
+        csvContent += "Ringkasan Laporan\n";
+        csvContent += `Periode,"${dateFrom} s/d ${dateTo}"\n`;
+        csvContent += "\n";
+        csvContent += `Total Omzet (Penjualan Kotor),${omzet}\n`;
+        csvContent += `(-) Total Harga Pokok Penjualan (HPP),${hpp}\n`;
+        csvContent += `Laba Kotor,${grossProfit}\n`;
+        csvContent += `(-) Total Biaya Operasional (Pajak/Biaya),${totalOperationalCost}\n`;
+        csvContent += `Laba Bersih,${netProfit}\n`;
+        csvContent += "\n\n";
+
+        // 4. Build Detailed Transactions Block
+        const header = [
+            'ID Transaksi', 'Tanggal', 'Nama Produk', 'Kategori', 'Jumlah',
+            'Harga Jual (Satuan)', 'Total Omzet Item', 'Harga Beli (Satuan)',
+            'Total HPP Item', 'Laba Item'
+        ].join(',');
+        csvContent += header + '\n';
+
+        currentReportData.forEach(t => {
+            const transactionDate = new Date(t.date).toLocaleString('id-ID');
+            t.items.forEach(item => {
+                const product = productMap.get(item.id);
+                const category = product ? product.category : 'N/A';
+                const purchasePrice = product ? (product.purchasePrice || 0) : 0;
+
+                const totalOmzetItem = item.effectivePrice * item.quantity;
+                const totalHppItem = purchasePrice * item.quantity;
+                const labaItem = totalOmzetItem - totalHppItem;
+
+                // Helper to escape commas and quotes for CSV
+                const escapeCSV = (val) => {
+                    if (val === null || val === undefined) return '';
+                    let str = String(val);
+                    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                        return `"${str.replace(/"/g, '""')}"`;
+                    }
+                    return str;
+                };
+
+                const row = [
+                    t.id,
+                    transactionDate,
+                    item.name,
+                    category,
+                    item.quantity,
+                    item.effectivePrice,
+                    totalOmzetItem,
+                    purchasePrice,
+                    totalHppItem,
+                    labaItem
+                ].map(escapeCSV).join(',');
+                
+                csvContent += row + '\n';
+            });
         });
-    });
+        
+        const fileName = `laporan_penjualan_rinci_${dateFrom}_sd_${dateTo}.csv`;
 
-    const grossProfit = omzet - hpp;
-    const netProfit = grossProfit - totalOperationalCost;
-    const dateFrom = document.getElementById('dateFrom').value;
-    const dateTo = document.getElementById('dateTo').value;
-
-    let csvContent = "";
-
-    // 3. Build Summary Block
-    csvContent += "Ringkasan Laporan\n";
-    csvContent += `Periode,"${dateFrom} s/d ${dateTo}"\n`;
-    csvContent += "\n";
-    csvContent += `Total Omzet (Penjualan Kotor),${omzet}\n`;
-    csvContent += `(-) Total Harga Pokok Penjualan (HPP),${hpp}\n`;
-    csvContent += `Laba Kotor,${grossProfit}\n`;
-    csvContent += `(-) Total Biaya Operasional (Pajak/Biaya),${totalOperationalCost}\n`;
-    csvContent += `Laba Bersih,${netProfit}\n`;
-    csvContent += "\n\n";
-
-    // 4. Build Detailed Transactions Block
-    const header = [
-        'ID Transaksi', 'Tanggal', 'Nama Produk', 'Kategori', 'Jumlah',
-        'Harga Jual (Satuan)', 'Total Omzet Item', 'Harga Beli (Satuan)',
-        'Total HPP Item', 'Laba Item'
-    ].join(',');
-    csvContent += header + '\n';
-
-    currentReportData.forEach(t => {
-        const transactionDate = new Date(t.date).toLocaleString('id-ID');
-        t.items.forEach(item => {
-            const product = productMap.get(item.id);
-            const category = product ? product.category : 'N/A';
-            const purchasePrice = product ? (product.purchasePrice || 0) : 0;
-
-            const totalOmzetItem = item.effectivePrice * item.quantity;
-            const totalHppItem = purchasePrice * item.quantity;
-            const labaItem = totalOmzetItem - totalHppItem;
-
-            // Helper to escape commas and quotes for CSV
-            const escapeCSV = (val) => {
-                if (val === null || val === undefined) return '';
-                let str = String(val);
-                if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-                    return `"${str.replace(/"/g, '""')}"`;
-                }
-                return str;
-            };
-
-            const row = [
-                t.id,
-                transactionDate,
-                item.name,
-                category,
-                item.quantity,
-                item.effectivePrice,
-                totalOmzetItem,
-                purchasePrice,
-                totalHppItem,
-                labaItem
-            ].map(escapeCSV).join(',');
-            
-            csvContent += row + '\n';
-        });
-    });
-    
-    const fileName = `laporan_penjualan_rinci_${dateFrom}_sd_${dateTo}.csv`;
-
-    // 5. Cek apakah interface Android ada
-    if (window.AndroidDownloader) {
-        // Panggil fungsi Java
-        window.AndroidDownloader.downloadFile(csvContent, fileName, 'text/csv');
-        showConfirmationModal(
-            '<div class="flex items-center justify-center"><i class="fas fa-save text-blue-500 mr-3 text-xl"></i><span>Menyimpan File</span></div>',
-            'Silakan pilih lokasi untuk menyimpan laporan Anda.',
-            () => {},
-            'Mengerti',
-            'bg-blue-500'
-        );
-    } else {
-        // Fallback untuk browser biasa
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.setAttribute("href", url);
-        link.setAttribute("download", fileName);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        showConfirmationModal(
-            '<div class="flex items-center justify-center"><i class="fas fa-check-circle text-green-500 mr-3 text-xl"></i><span>Export Berhasil</span></div>',
-            'File laporan Anda telah berhasil di-download dan biasanya tersimpan di folder <strong>\'Downloads\'</strong> atau <strong>\'Unduhan\'</strong> pada perangkat Anda.',
-            () => {},
-            'Mengerti',
-            'bg-blue-500'
-        );
+        // 5. Cek apakah interface Android ada
+        if (window.AndroidDownloader) {
+            // Panggil fungsi Java
+            window.AndroidDownloader.downloadFile(csvContent, fileName, 'text/csv');
+        } else {
+            // Fallback untuk browser biasa
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", fileName);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+        showToast('Export laporan berhasil.');
+    } catch (error) {
+        console.error('Export report failed:', error);
+        showToast('Gagal mengekspor laporan.');
     }
 }
 window.exportReportToCSV = exportReportToCSV;
