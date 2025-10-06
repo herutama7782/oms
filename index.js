@@ -32,7 +32,7 @@ let pinAttemptCount = 0;
 let lastDashboardLoadDate = null;
 let audioContext = null; // For Web Audio API
 let deviceId = null;
-
+let currentContactId = null; // For tracking which contact's ledger is open
 
 // Bluetooth printing state
 let bluetoothDevice = null;
@@ -114,7 +114,7 @@ function initDB() {
             return;
         }
 
-        const request = indexedDB.open('POS_DB', 7); 
+        const request = indexedDB.open('POS_DB', 8); 
 
         request.onerror = function(event) {
             console.error("Database error:", event.target.error);
@@ -220,6 +220,17 @@ function initDB() {
                     }
                 };
             }
+
+            if (event.oldVersion < 8) {
+                if (!db.objectStoreNames.contains('contacts')) {
+                    const contactStore = db.createObjectStore('contacts', { keyPath: 'id', autoIncrement: true });
+                    contactStore.createIndex('type', 'type', { unique: false });
+                }
+                if (!db.objectStoreNames.contains('ledgers')) {
+                     const ledgerStore = db.createObjectStore('ledgers', { keyPath: 'id', autoIncrement: true });
+                     ledgerStore.createIndex('contactId', 'contactId', { unique: false });
+                }
+            }
         };
     });
 }
@@ -244,7 +255,7 @@ function getFromDB(storeName, key) {
     });
 }
 
-function getAllFromDB(storeName) {
+function getAllFromDB(storeName, indexName, query) {
     return new Promise((resolve, reject) => {
         if (!db) {
             console.error('Database not initialized on getAllFromDB');
@@ -253,12 +264,13 @@ function getAllFromDB(storeName) {
         }
         const transaction = db.transaction([storeName], 'readonly');
         const store = transaction.objectStore(storeName);
-        const request = store.getAll();
+        const request = indexName ? store.index(indexName).getAll(query) : store.getAll();
+        
         request.onsuccess = (event) => {
             resolve(event.target.result);
         };
         request.onerror = (event) => {
-            reject('Error fetching all from DB: ' + event.target.error);
+            reject(`Error fetching all from DB (${storeName}): ` + event.target.error);
         };
     });
 }
@@ -653,7 +665,9 @@ function updateFeatureAvailability() {
 }
 
 
-window.showPage = async function(pageName, force = false) {
+window.showPage = async function(pageName, options = { force: false, initialTab: null }) {
+     const { force, initialTab } = options;
+
     if (isKioskModeActive && pageName !== 'kasir') {
         showToast('Mode Kios aktif. Fitur lain dinonaktifkan.');
         return; 
@@ -669,7 +683,7 @@ window.showPage = async function(pageName, force = false) {
                 cart = { items: [], fees: [] }; // Reset the cart
                 await applyDefaultFees(); // Re-apply default fees to the now-empty cart
                 updateCartFabBadge(); // Update the badge to 0
-                showPage(pageName, true); // Force navigation
+                showPage(pageName, { force: true }); // Force navigation
             },
             'Ya, Lanjutkan & Kosongkan',
             'bg-yellow-500' 
@@ -720,6 +734,8 @@ window.showPage = async function(pageName, force = false) {
         updateCartFabBadge();
     } else if (pageName === 'produk') {
         window.loadProductsList();
+    } else if (pageName === 'kontak') {
+        loadContactsPage(initialTab);
     } else if (pageName === 'pengaturan') {
         loadSettings(); // This will also call loadLicenseInfo
         loadFees();
@@ -795,6 +811,35 @@ function updateDashboardDate() {
     }
 }
 
+async function updateDashboardSummaries() {
+    const contacts = await getAllFromDB('contacts');
+    const ledgers = await getAllFromDB('ledgers');
+    
+    let totalReceivables = 0;
+    let totalDebts = 0;
+
+    const balanceMap = new Map();
+
+    ledgers.forEach(entry => {
+        const currentBalance = balanceMap.get(entry.contactId) || 0;
+        const amount = entry.type === 'debit' ? entry.amount : -entry.amount;
+        balanceMap.set(entry.contactId, currentBalance + amount);
+    });
+
+    contacts.forEach(contact => {
+        const balance = balanceMap.get(contact.id) || 0;
+        if (contact.type === 'customer') {
+            totalReceivables += balance;
+        } else {
+            totalDebts += balance;
+        }
+    });
+    
+    document.getElementById('totalReceivables').textContent = `Rp ${formatCurrency(totalReceivables)}`;
+    document.getElementById('totalDebts').textContent = `Rp ${formatCurrency(totalDebts)}`;
+}
+
+
 function loadDashboard() {
     // Always update the displayed date string (e.g., "Kamis, 1 Agustus 2024")
     updateDashboardDate();
@@ -843,6 +888,8 @@ function loadDashboard() {
         lowStockEl.textContent = lowStockCount.toString();
         lowStockEl.parentElement?.parentElement?.classList.toggle('animate-pulse', lowStockCount > 0);
     });
+    
+    updateDashboardSummaries();
 
     getSettingFromDB('storeName').then(value => {
         const storeNameEl = document.getElementById('dashboardStoreName');
@@ -2065,6 +2112,8 @@ async function exportData() {
         const settings = await getAllFromDB('settings');
         const categories = await getAllFromDB('categories');
         const fees = await getAllFromDB('fees');
+        const contacts = await getAllFromDB('contacts');
+        const ledgers = await getAllFromDB('ledgers');
         
         const data = {
             products,
@@ -2072,6 +2121,8 @@ async function exportData() {
             settings,
             categories,
             fees,
+            contacts,
+            ledgers,
             exportDate: new Date().toISOString()
         };
         
@@ -2119,20 +2170,22 @@ window.handleImport = function(event) {
                     'Import Data',
                     'Ini akan menimpa semua data saat ini. Apakah Anda yakin ingin melanjutkan?',
                     async () => {
-                        await clearAllStores();
-                        const transaction = db.transaction(['products', 'transactions', 'settings', 'categories', 'fees'], 'readwrite');
+                        const storesToClear = ['products', 'transactions', 'settings', 'categories', 'fees', 'contacts', 'ledgers'];
+                        const transaction = db.transaction(storesToClear, 'readwrite');
                         
-                        if (data.products) transaction.objectStore('products').clear();
-                        if (data.transactions) transaction.objectStore('transactions').clear();
-                        if (data.settings) transaction.objectStore('settings').clear();
-                        if (data.categories) transaction.objectStore('categories').clear();
-                        if (data.fees) transaction.objectStore('fees').clear();
-
+                        storesToClear.forEach(storeName => {
+                            if (data[storeName]) {
+                                transaction.objectStore(storeName).clear();
+                            }
+                        });
+                        
                         if (data.products) data.products.forEach(p => transaction.objectStore('products').put(p));
                         if (data.transactions) data.transactions.forEach(t => transaction.objectStore('transactions').put(t));
                         if (data.settings) data.settings.forEach(s => transaction.objectStore('settings').put(s));
                         if (data.categories) data.categories.forEach(c => transaction.objectStore('categories').put(c));
                         if (data.fees) data.fees.forEach(f => transaction.objectStore('fees').put(f));
+                        if (data.contacts) data.contacts.forEach(c => transaction.objectStore('contacts').put(c));
+                        if (data.ledgers) data.ledgers.forEach(l => transaction.objectStore('ledgers').put(l));
                         
                         transaction.oncomplete = () => {
                             showToast('Data berhasil diimport. Aplikasi akan dimuat ulang.');
@@ -3541,111 +3594,371 @@ async function proceedWithAppLoad() {
     }
 }
 
+// --- CONTACTS & LEDGER (Hutang/Piutang) ---
+
+async function loadContactsPage(initialTab = 'customer') {
+    await renderContactList('customer');
+    await renderContactList('supplier');
+    switchContactTab(initialTab);
+}
+
+window.switchContactTab = function(tabName) {
+    const customerTab = document.getElementById('customerTab');
+    const supplierTab = document.getElementById('supplierTab');
+    const customerContainer = document.getElementById('customerListContainer');
+    const supplierContainer = document.getElementById('supplierListContainer');
+    
+    const contactTypeSelect = document.getElementById('contactType');
+
+    if (tabName === 'customer') {
+        customerTab.classList.add('active');
+        supplierTab.classList.remove('active');
+        customerContainer.classList.remove('hidden');
+        supplierContainer.classList.add('hidden');
+        if (contactTypeSelect) contactTypeSelect.value = 'customer';
+    } else {
+        supplierTab.classList.add('active');
+        customerTab.classList.remove('active');
+        supplierContainer.classList.remove('hidden');
+        customerContainer.classList.add('hidden');
+        if (contactTypeSelect) contactTypeSelect.value = 'supplier';
+    }
+}
+
+async function renderContactList(type) {
+    const listId = type === 'customer' ? 'customerList' : 'supplierList';
+    const listEl = document.getElementById(listId);
+    
+    const contacts = await getAllFromDB('contacts', 'type', type);
+    const ledgers = await getAllFromDB('ledgers');
+
+    const balanceMap = new Map();
+    ledgers.forEach(entry => {
+        const currentBalance = balanceMap.get(entry.contactId) || 0;
+        const amount = entry.type === 'debit' ? entry.amount : -entry.amount;
+        balanceMap.set(entry.contactId, currentBalance + amount);
+    });
+
+    if (contacts.length === 0) {
+        const typeText = type === 'customer' ? 'Pelanggan' : 'Supplier';
+        listEl.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon"><i class="fas fa-user-friends"></i></div>
+                <h3 class="empty-state-title">Belum Ada ${typeText}</h3>
+                <p class="empty-state-description">Tambahkan kontak untuk mulai melacak hutang/piutang.</p>
+                <button onclick="showContactModal()" class="empty-state-action">
+                    <i class="fas fa-plus mr-2"></i>Tambah ${typeText}
+                </button>
+            </div>
+        `;
+        return;
+    }
+
+    listEl.innerHTML = contacts.sort((a,b) => a.name.localeCompare(b.name)).map(contact => {
+        const balance = balanceMap.get(contact.id) || 0;
+        const balanceText = balance > 0 ? `Rp ${formatCurrency(balance)}` : 'Rp 0';
+        const balanceColor = balance > 0 ? (type === 'customer' ? 'text-red-500' : 'text-green-500') : 'text-gray-500';
+        const balanceLabel = type === 'customer' ? 'Piutang' : 'Hutang';
+
+        return `
+            <div class="card p-4 clickable" onclick="showLedgerModal(${contact.id})">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h3 class="font-semibold">${contact.name}</h3>
+                        <p class="text-sm text-gray-500">${contact.phone || 'No. HP tidak ada'}</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm ${balanceColor} font-bold">${balanceText}</p>
+                        <p class="text-xs text-gray-500">${balanceLabel}</p>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+window.showContactModal = function(contactId = null) {
+    const modal = document.getElementById('contactModal');
+    const title = document.getElementById('contactModalTitle');
+    const form = {
+        id: document.getElementById('contactId'),
+        name: document.getElementById('contactName'),
+        phone: document.getElementById('contactPhone'),
+        address: document.getElementById('contactAddress'),
+        notes: document.getElementById('contactNotes'),
+        type: document.getElementById('contactType')
+    };
+
+    if (contactId) {
+        getFromDB('contacts', contactId).then(contact => {
+            title.textContent = 'Edit Kontak';
+            form.id.value = contact.id;
+            form.name.value = contact.name;
+            form.phone.value = contact.phone;
+            form.address.value = contact.address || '';
+            form.notes.value = contact.notes || '';
+            form.type.value = contact.type;
+            modal.classList.remove('hidden');
+        });
+    } else {
+        title.textContent = 'Tambah Kontak';
+        form.id.value = '';
+        form.name.value = '';
+        form.phone.value = '';
+        form.address.value = '';
+        form.notes.value = '';
+        // Type is pre-filled by switchContactTab
+        modal.classList.remove('hidden');
+    }
+}
+
+window.closeContactModal = function() {
+    document.getElementById('contactModal').classList.add('hidden');
+}
+
+window.saveContact = async function() {
+    const id = document.getElementById('contactId').value ? parseInt(document.getElementById('contactId').value) : null;
+    const name = document.getElementById('contactName').value.trim();
+    const phone = document.getElementById('contactPhone').value.trim();
+    const address = document.getElementById('contactAddress').value.trim();
+    const notes = document.getElementById('contactNotes').value.trim();
+    const type = document.getElementById('contactType').value;
+
+    if (!name || !phone) {
+        showToast('Nama dan No. HP wajib diisi.');
+        return;
+    }
+
+    const contactData = { name, phone, address, notes, type, updatedAt: new Date().toISOString() };
+    let action = '';
+
+    if (id) {
+        contactData.id = id;
+        action = 'UPDATE_CONTACT';
+    } else {
+        contactData.createdAt = new Date().toISOString();
+        action = 'CREATE_CONTACT';
+    }
+    
+    try {
+        const savedId = await putToDB('contacts', contactData);
+        await queueSyncAction(action, { ...contactData, id: savedId });
+        showToast(`Kontak berhasil ${id ? 'diperbarui' : 'ditambahkan'}.`);
+        closeContactModal();
+        loadContactsPage(type);
+    } catch (error) {
+        console.error('Failed to save contact:', error);
+        showToast('Gagal menyimpan kontak.');
+    }
+}
+
+window.showLedgerModal = async function(contactId) {
+    currentContactId = contactId;
+    const modal = document.getElementById('ledgerModal');
+    
+    const contact = await getFromDB('contacts', contactId);
+    const ledgers = await getAllFromDB('ledgers', 'contactId', contactId);
+
+    document.getElementById('ledgerContactName').textContent = contact.name;
+    const contactTypeEl = document.getElementById('ledgerContactType');
+    contactTypeEl.textContent = contact.type === 'customer' ? 'Pelanggan (Piutang)' : 'Supplier (Hutang)';
+    contactTypeEl.className = `text-sm font-semibold ${contact.type === 'customer' ? 'text-red-600' : 'text-green-600'}`;
+    
+    document.getElementById('ledgerContactDetails').innerHTML = `
+        <p><i class="fas fa-phone-alt w-4 mr-1"></i> ${contact.phone}</p>
+        ${contact.address ? `<p><i class="fas fa-map-marker-alt w-4 mr-1"></i> ${contact.address}</p>` : ''}
+        ${contact.notes ? `<p><i class="fas fa-sticky-note w-4 mr-1"></i> ${contact.notes}</p>` : ''}
+    `;
+
+    document.getElementById('addDebitButton').innerHTML = `
+        <i class="fas fa-minus-circle"></i> ${contact.type === 'customer' ? 'Tambah Piutang' : 'Tambah Utang'}`;
+
+    const historyEl = document.getElementById('ledgerHistory');
+    let balance = 0;
+    
+    if (ledgers.length === 0) {
+        historyEl.innerHTML = `<p class="text-gray-500 text-center py-4">Belum ada riwayat transaksi.</p>`;
+    } else {
+         historyEl.innerHTML = ledgers.sort((a, b) => new Date(a.date) - new Date(b.date)).map(entry => {
+            const isDebit = entry.type === 'debit';
+            const amount = isDebit ? entry.amount : -entry.amount;
+            balance += amount;
+            
+            let statusBadge = '';
+            if (entry.dueDate) {
+                const dueDate = new Date(entry.dueDate);
+                const today = new Date();
+                today.setHours(0, 0, 0, 0); // Compare dates only
+                
+                if (entry.status !== 'paid' && dueDate < today) {
+                    statusBadge = '<span class="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">Menunggak</span>';
+                }
+            }
+
+            return `
+                <div class="border-b pb-2">
+                    <div class="flex justify-between items-center text-sm">
+                        <span>${new Date(entry.date).toLocaleDateString('id-ID')} - ${entry.description}</span>
+                        <span class="font-semibold ${isDebit ? 'text-red-500' : 'text-green-500'}">
+                            ${isDebit ? '+' : '-'} Rp ${formatCurrency(entry.amount)}
+                        </span>
+                    </div>
+                    <div class="flex justify-between items-center text-xs text-gray-500 mt-1">
+                        <span>Saldo: Rp ${formatCurrency(balance)}</span>
+                        <span>${statusBadge}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    modal.classList.remove('hidden');
+}
+
+
+window.closeLedgerModal = function() {
+    document.getElementById('ledgerModal').classList.add('hidden');
+    currentContactId = null;
+    loadContactsPage(); // Refresh list to update balances
+    loadDashboard(); // Refresh dashboard summaries
+}
+
+window.showAddLedgerEntryModal = function(entryId = null, type) {
+    const modal = document.getElementById('addLedgerEntryModal');
+    const title = document.getElementById('addLedgerEntryTitle');
+    const dueDateContainer = document.getElementById('ledgerDueDateContainer');
+
+    document.getElementById('ledgerAmount').value = '';
+    document.getElementById('ledgerDescription').value = '';
+    document.getElementById('ledgerDueDate').value = '';
+    
+    if (type === 'credit') {
+        title.textContent = 'Catat Pembayaran';
+        dueDateContainer.classList.add('hidden');
+    } else { // debit
+        title.textContent = 'Tambah Utang/Piutang';
+        dueDateContainer.classList.remove('hidden');
+    }
+    
+    modal.dataset.type = type;
+    modal.classList.remove('hidden');
+}
+
+window.closeAddLedgerEntryModal = function() {
+    document.getElementById('addLedgerEntryModal').classList.add('hidden');
+}
+
+
+window.saveLedgerEntry = async function() {
+    const modal = document.getElementById('addLedgerEntryModal');
+    const type = modal.dataset.type;
+    const amount = parseFloat(document.getElementById('ledgerAmount').value);
+    const description = document.getElementById('ledgerDescription').value.trim();
+    const dueDate = document.getElementById('ledgerDueDate').value;
+
+    if (isNaN(amount) || amount <= 0 || !description) {
+        showToast('Jumlah dan Keterangan wajib diisi.');
+        return;
+    }
+
+    const newEntry = {
+        contactId: currentContactId,
+        type,
+        amount,
+        description,
+        dueDate: type === 'debit' ? dueDate : null,
+        status: 'unpaid', // Default status
+        date: new Date().toISOString()
+    };
+    
+    try {
+        const savedId = await putToDB('ledgers', newEntry);
+        await queueSyncAction('CREATE_LEDGER', { ...newEntry, id: savedId });
+        showToast('Transaksi berhasil dicatat.');
+        closeAddLedgerEntryModal();
+        showLedgerModal(currentContactId); // Refresh the detail view
+    } catch (error) {
+        console.error('Failed to save ledger entry:', error);
+        showToast('Gagal menyimpan transaksi.');
+    }
+}
+
 
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
-    
-    // Check for library dependencies
-    if (typeof EscPosEncoder !== 'undefined') {
-        isPrinterReady = true;
-    } else {
-        console.error("EscPosEncoder library failed to load.");
-    }
-    
-    if (typeof Html5Qrcode !== 'undefined') {
-        try {
-            html5QrCode = new Html5Qrcode("qr-reader");
-            isScannerReady = true;
-        } catch (e) {
-            console.error("Failed to initialize Html5Qrcode:", e);
-        }
-    } else {
-        console.error("Html5Qrcode library failed to load.");
-    }
-
-    if (typeof Chart !== 'undefined') {
-        isChartJsReady = true;
-    } else {
-        console.error("Chart.js library failed to load.");
-    }
-    
-    updateFeatureAvailability();
-
     try {
         await initDB();
-        await checkAndRunLicense(); // New license check flow
+        await checkAndRunLicense();
+
+        // Check if required libraries are loaded
+        if (typeof Html5Qrcode !== 'undefined') {
+            isScannerReady = true;
+            html5QrCode = new Html5Qrcode("qr-reader");
+        } else {
+            console.warn('Html5Qrcode library failed to load.');
+        }
+
+        if (typeof EscPosEncoder !== 'undefined' && EscPosEncoder.default) {
+             isPrinterReady = true;
+        } else {
+             console.warn('EscPosEncoder library failed to load.');
+        }
+
+        if (typeof Chart !== 'undefined') {
+             isChartJsReady = true;
+             setupChartViewToggle(); // Setup toggle only if Chart.js is ready
+        } else {
+             console.warn('Chart.js library failed to load.');
+        }
+
+        updateFeatureAvailability();
+
     } catch (error) {
         console.error("Initialization failed:", error);
-        // Loading overlay will remain if DB fails, which is handled in initDB
     }
     
     // --- EVENT LISTENERS ---
     
-    // License Screen Listeners
-    document.getElementById('activateLicenseBtn')?.addEventListener('click', activateLicense);
-    
-    const copyToClipboard = (text) => {
-        if (navigator.clipboard) {
-            navigator.clipboard.writeText(text).then(() => {
-                showToast('Device ID disalin ke clipboard');
-            });
-        }
-    };
-    
-    document.getElementById('licenseDeviceId')?.addEventListener('click', () => copyToClipboard(deviceId));
-    document.getElementById('settingsDeviceId')?.addEventListener('click', () => copyToClipboard(deviceId));
-    
-    // Standard App Listeners
+    // Search product in cashier
+    document.getElementById('searchProduct')?.addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase();
+        document.querySelectorAll('#productsGrid .product-item').forEach(item => {
+            const name = item.dataset.name || '';
+            const category = item.dataset.category || '';
+            const barcode = item.dataset.barcode || '';
+            item.style.display = (name.includes(query) || category.includes(query) || barcode.includes(query)) ? '' : 'none';
+        });
+    });
+
     document.getElementById('confirmButton')?.addEventListener('click', () => {
         if (confirmCallback) {
             confirmCallback();
         }
         closeConfirmationModal();
     });
-
     document.getElementById('cancelButton')?.addEventListener('click', closeConfirmationModal);
-    document.getElementById('searchProduct')?.addEventListener('input', (e) => {
-        const searchTerm = e.target.value.toLowerCase();
-        document.querySelectorAll('#productsGrid .product-item').forEach(item => {
-            const name = item.dataset.name || '';
-            const barcode = item.dataset.barcode || '';
-            const isMatch = name.includes(searchTerm) || barcode.includes(searchTerm);
-            item.style.display = isMatch ? 'block' : 'none';
-        });
-    });
 
-    setupChartViewToggle();
-    
-    // Offline/Online detection
     window.addEventListener('online', checkOnlineStatus);
     window.addEventListener('offline', checkOnlineStatus);
+    
+    // Initialize audio context on the first user interaction
+    document.body.addEventListener('click', initAudioContext, { once: true });
+    document.body.addEventListener('touchend', initAudioContext, { once: true });
 
-    // Initial sync check
-    checkOnlineStatus().then(() => {
-        if (isOnline) {
-            syncWithServer(); // Perform initial sync
+    document.getElementById('activateLicenseBtn')?.addEventListener('click', activateLicense);
+
+    const copyableIds = ['licenseDeviceId', 'settingsDeviceId'];
+    copyableIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('click', () => {
+                navigator.clipboard.writeText(el.textContent)
+                    .then(() => showToast('Device ID disalin!'))
+                    .catch(err => showToast('Gagal menyalin.'));
+            });
         }
     });
 
-     // Check dashboard data freshness on focus
-    window.addEventListener('focus', () => {
-        // When the app comes into focus, always check the online status
-        checkOnlineStatus();
-        
-        // If the user is on the dashboard, call loadDashboard.
-        if (currentPage === 'dashboard') {
-            loadDashboard();
-        }
-    });
-
-    // One-time audio context initialization on first user interaction
-    const initAudio = () => {
-        initAudioContext();
-        // This listener only needs to run once
-        document.body.removeEventListener('click', initAudio);
-        document.body.removeEventListener('touchend', initAudio);
-    };
-    document.body.addEventListener('click', initAudio);
-    document.body.addEventListener('touchend', initAudio);
-
+    checkOnlineStatus();
+    setInterval(updateDashboardDate, 60000); // Update date every minute
 });

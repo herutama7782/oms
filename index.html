@@ -152,6 +152,24 @@
                         <canvas id="salesChart"></canvas>
                     </div>
                 </div>
+                
+                <!-- Receivables and Debts Summary -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div id="receivablesSummaryCard" class="card p-4 clickable" onclick="showPage('kontak', { initialTab: 'customer' })">
+                        <div class="flex items-center justify-between mb-2">
+                            <i class="fas fa-hand-holding-usd text-teal-500 text-2xl"></i>
+                        </div>
+                        <h3 class="text-2xl font-bold" id="totalReceivables">Rp 0</h3>
+                        <p class="text-sm text-gray-600">Total Piutang</p>
+                    </div>
+                    <div id="debtsSummaryCard" class="card p-4 clickable" onclick="showPage('kontak', { initialTab: 'supplier' })">
+                        <div class="flex items-center justify-between mb-2">
+                            <i class="fas fa-file-invoice-dollar text-red-500 text-2xl"></i>
+                        </div>
+                        <h3 class="text-2xl font-bold" id="totalDebts">Rp 0</h3>
+                        <p class="text-sm text-gray-600">Total Hutang</p>
+                    </div>
+                </div>
 
             </div>
         </div>
@@ -257,6 +275,36 @@
                 <!-- Products List -->
                 <div id="productsList" class="space-y-3">
                     <!-- Products will be loaded here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Kontak Page (New) -->
+        <div id="kontak" class="page">
+            <div class="p-4">
+                <div class="flex justify-between items-center mb-4">
+                    <h1 class="text-2xl font-bold">Kontak</h1>
+                    <button onclick="showContactModal()" class="btn bg-blue-500 text-white px-4 py-2">
+                        <i class="fas fa-plus"></i> Tambah
+                    </button>
+                </div>
+
+                <!-- Tabs for Pelanggan/Supplier -->
+                <div class="flex border-b mb-4">
+                    <button id="customerTab" class="tab-item active" onclick="switchContactTab('customer')">Pelanggan</button>
+                    <button id="supplierTab" class="tab-item" onclick="switchContactTab('supplier')">Supplier</button>
+                </div>
+                
+                <div id="customerListContainer">
+                    <div id="customerList" class="space-y-3">
+                        <!-- Customer list rendered here -->
+                    </div>
+                </div>
+                
+                <div id="supplierListContainer" class="hidden">
+                    <div id="supplierList" class="space-y-3">
+                        <!-- Supplier list rendered here -->
+                    </div>
                 </div>
             </div>
         </div>
@@ -592,6 +640,10 @@
                     <i class="fas fa-cash-register nav-icon text-xl mb-1"></i>
                     <span class="nav-text">Kasir</span>
                 </button>
+                 <button class="nav-item flex flex-col items-center p-3" data-page="kontak" onclick="handleNavClick(this)">
+                    <i class="fas fa-users nav-icon text-xl mb-1"></i>
+                    <span class="nav-text">Kontak</span>
+                </button>
                 <button class="nav-item flex flex-col items-center p-3" data-page="produk" onclick="handleNavClick(this)">
                     <i class="fas fa-box nav-icon text-xl mb-1"></i>
                     <span class="nav-text">Produk</span>
@@ -803,6 +855,101 @@
             </div>
         </div>
     </div>
+    
+    <!-- Add/Edit Contact Modal (New) -->
+    <div id="contactModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
+        <div class="flex items-center justify-center h-full p-4">
+            <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+                <h2 id="contactModalTitle" class="text-xl font-bold mb-4">Tambah Kontak</h2>
+                <input type="hidden" id="contactId">
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-sm text-gray-600">Nama Kontak</label>
+                        <input type="text" id="contactName" class="input-field w-full" placeholder="Nama pelanggan/supplier">
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-600">No. HP/WA</label>
+                        <input type="tel" id="contactPhone" class="input-field w-full" placeholder="08123456789">
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-600">Alamat (Opsional)</label>
+                        <textarea id="contactAddress" class="input-field w-full" rows="2" placeholder="Alamat lengkap"></textarea>
+                    </div>
+                     <div>
+                        <label class="text-sm text-gray-600">Catatan (Opsional)</label>
+                        <textarea id="contactNotes" class="input-field w-full" rows="2" placeholder="Catatan penting"></textarea>
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-600">Tipe Kontak</label>
+                        <select id="contactType" class="input-field w-full">
+                            <option value="customer">Pelanggan</option>
+                            <option value="supplier">Supplier</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex gap-3 mt-6">
+                    <button onclick="closeContactModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">Batal</button>
+                    <button onclick="saveContact()" class="btn bg-blue-500 text-white flex-1 py-2">Simpan</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Ledger Detail Modal (New) -->
+    <div id="ledgerModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
+        <div class="flex items-center justify-center h-full p-4">
+            <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+                <div class="flex justify-between items-start mb-4">
+                    <div>
+                        <h2 id="ledgerContactName" class="text-xl font-bold"></h2>
+                        <p id="ledgerContactType" class="text-sm font-semibold"></p>
+                    </div>
+                    <button onclick="closeLedgerModal()" class="text-gray-500 text-2xl">&times;</button>
+                </div>
+                <div id="ledgerContactDetails" class="text-sm text-gray-600 mb-4 p-3 bg-gray-50 rounded-lg"></div>
+                <h3 class="text-lg font-semibold mb-2">Riwayat Transaksi</h3>
+                <div id="ledgerHistory" class="space-y-2 border-t pt-2 max-h-60 overflow-y-auto">
+                    <!-- Ledger history rendered here -->
+                </div>
+                <div class="grid grid-cols-2 gap-3 mt-6">
+                    <button onclick="showAddLedgerEntryModal(null, 'credit')" class="btn bg-green-500 text-white w-full py-2">
+                        <i class="fas fa-plus-circle"></i> Catat Pembayaran
+                    </button>
+                    <button onclick="showAddLedgerEntryModal(null, 'debit')" id="addDebitButton" class="btn bg-red-500 text-white w-full py-2">
+                        <i class="fas fa-minus-circle"></i> Tambah Utang/Piutang
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Ledger Entry Modal (New) -->
+    <div id="addLedgerEntryModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-[1600]">
+        <div class="flex items-center justify-center h-full p-4">
+            <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+                <h2 id="addLedgerEntryTitle" class="text-xl font-bold mb-4"></h2>
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-sm text-gray-600">Jumlah (Rp)</label>
+                        <input type="number" id="ledgerAmount" class="input-field w-full" placeholder="0">
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-600">Keterangan</label>
+                        <input type="text" id="ledgerDescription" class="input-field w-full" placeholder="e.g., Pembelian barang, Cicilan">
+                    </div>
+                    <div id="ledgerDueDateContainer">
+                        <label class="text-sm text-gray-600">Jatuh Tempo (Opsional)</label>
+                        <input type="date" id="ledgerDueDate" class="input-field w-full">
+                    </div>
+                </div>
+                 <div class="flex gap-3 mt-6">
+                    <button onclick="closeAddLedgerEntryModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">Batal</button>
+                    <button onclick="saveLedgerEntry()" class="btn bg-blue-500 text-white flex-1 py-2">Simpan</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 
     <!-- Confirmation Modal -->
     <div id="confirmationModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
