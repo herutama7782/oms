@@ -1,7 +1,3 @@
-
-
-
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -20,6 +16,7 @@ let currentPage = 'dashboard';
 let confirmCallback = null;
 let html5QrCode;
 let currentReportData = [];
+let dashboardTransactions = []; // For the dashboard chart
 let lowStockThreshold = 5; // Default value
 let isOnline = navigator.onLine;
 let isSyncing = false;
@@ -809,6 +806,7 @@ function loadDashboard() {
     const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
     
     getAllFromDB('transactions').then(transactions => {
+        dashboardTransactions = transactions; // Store for chart use
         let todaySales = 0;
         let todayTransactionsCount = 0;
         let monthSales = 0;
@@ -827,6 +825,15 @@ function loadDashboard() {
         (document.getElementById('todaySales')).textContent = `Rp ${formatCurrency(todaySales)}`;
         (document.getElementById('todayTransactions')).textContent = todayTransactionsCount.toString();
         (document.getElementById('monthSales')).textContent = `Rp ${formatCurrency(monthSales)}`;
+
+        // Handle chart visibility and rendering
+        const salesChartCard = document.getElementById('salesChartCard');
+        if (transactions.length > 0) {
+            displaySalesReport(transactions, 'daily');
+            salesChartCard.style.display = 'block';
+        } else {
+            salesChartCard.style.display = 'none';
+        }
     });
     
     getAllFromDB('products').then(products => {
@@ -2229,20 +2236,16 @@ window.generateReport = async function() {
         document.getElementById('reportSummary').style.display = 'none';
         document.getElementById('reportDetails').style.display = 'none';
         document.getElementById('topSellingProductsCard').style.display = 'none';
-        document.getElementById('salesChartCard').style.display = 'none';
         return;
     }
 
     displayReportSummary(filteredTransactions, products);
     displayReportDetails(filteredTransactions);
     displayTopSellingProducts(filteredTransactions);
-    displaySalesReport(filteredTransactions, 'daily');
 
     document.getElementById('reportSummary').style.display = 'block';
     document.getElementById('reportDetails').style.display = 'block';
     document.getElementById('topSellingProductsCard').style.display = 'block';
-    document.getElementById('salesChartCard').style.display = 'block';
-
 }
 
 function displayReportSummary(transactions, products) {
@@ -2551,7 +2554,7 @@ function setupChartViewToggle() {
         dailyBtn.classList.add('text-gray-800');
         weeklyBtn.classList.add('text-gray-500');
         weeklyBtn.classList.remove('text-gray-800');
-        displaySalesReport(currentReportData, 'daily');
+        displaySalesReport(dashboardTransactions, 'daily');
     });
 
     weeklyBtn.addEventListener('click', () => {
@@ -2560,7 +2563,7 @@ function setupChartViewToggle() {
         weeklyBtn.classList.add('text-gray-800');
         dailyBtn.classList.add('text-gray-500');
         dailyBtn.classList.remove('text-gray-800');
-        displaySalesReport(currentReportData, 'weekly');
+        displaySalesReport(dashboardTransactions, 'weekly');
     });
 }
 
