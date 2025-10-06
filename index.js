@@ -31,8 +31,8 @@ let currentPinInput = "";
 let pinAttemptCount = 0;
 let lastDashboardLoadDate = null;
 let audioContext = null; // For Web Audio API
-let deviceId = null;
 let currentContactId = null; // For tracking which contact's ledger is open
+let dueItemsList = []; // For due date notifications
 
 // Bluetooth printing state
 let bluetoothDevice = null;
@@ -737,7 +737,7 @@ window.showPage = async function(pageName, options = { force: false, initialTab:
     } else if (pageName === 'kontak') {
         loadContactsPage(initialTab);
     } else if (pageName === 'pengaturan') {
-        loadSettings(); // This will also call loadLicenseInfo
+        loadSettings();
         loadFees();
     }
 
@@ -889,6 +889,7 @@ function loadDashboard() {
         lowStockEl.parentElement?.parentElement?.classList.toggle('animate-pulse', lowStockCount > 0);
     });
     
+    checkDueDateNotifications();
     updateDashboardSummaries();
 
     getSettingFromDB('storeName').then(value => {
@@ -904,6 +905,130 @@ function loadDashboard() {
         }
     });
 }
+
+// --- DUE DATE NOTIFICATIONS ---
+async function checkDueDateNotifications() {
+    const notificationCard = document.getElementById('dueDateNotificationCard');
+    const countEl = document.getElementById('dueDateCount');
+    if (!notificationCard || !countEl) return;
+
+    try {
+        const ledgers = await getAllFromDB('ledgers');
+        const contacts = await getAllFromDB('contacts');
+        const contactsMap = new Map(contacts.map(c => [c.id, c]));
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const threeDaysFromNow = new Date();
+        threeDaysFromNow.setDate(today.getDate() + 3);
+        threeDaysFromNow.setHours(23, 59, 59, 999);
+
+        // Re-calculate the balance for each contact
+        const balanceMap = new Map();
+        ledgers.forEach(entry => {
+            const currentBalance = balanceMap.get(entry.contactId) || 0;
+            const amount = entry.type === 'debit' ? entry.amount : -entry.amount;
+            balanceMap.set(entry.contactId, currentBalance + amount);
+        });
+
+        const dueContactIds = new Set();
+        ledgers.forEach(entry => {
+             if (entry.type === 'debit' && entry.dueDate) {
+                const dueDate = new Date(entry.dueDate);
+                if (dueDate <= threeDaysFromNow) {
+                    const balance = balanceMap.get(entry.contactId) || 0;
+                    if (balance > 0) { // Only show if there's an outstanding balance
+                        dueContactIds.add(entry.contactId);
+                    }
+                }
+            }
+        });
+
+        // Fetch the full ledger details for only the contacts that have due items
+        dueItemsList = ledgers
+            .filter(entry => dueContactIds.has(entry.contactId) && entry.type === 'debit' && entry.dueDate)
+            .map(entry => {
+                const contact = contactsMap.get(entry.contactId);
+                return { ...entry, contactName: contact ? contact.name : 'N/A', contactType: contact ? contact.type : 'N/A' };
+            })
+            .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+
+
+        if (dueItemsList.length > 0) {
+            countEl.textContent = dueItemsList.length;
+            notificationCard.classList.remove('hidden');
+            notificationCard.onclick = () => showDueDateModal();
+        } else {
+            notificationCard.classList.add('hidden');
+        }
+
+    } catch (error) {
+        console.error("Error checking for due dates:", error);
+        notificationCard.classList.add('hidden');
+    }
+}
+
+window.showDueDateModal = function() {
+    const modal = document.getElementById('dueDateModal');
+    const listEl = document.getElementById('dueDateList');
+    if (!modal || !listEl) return;
+
+    if (dueItemsList.length === 0) {
+        listEl.innerHTML = `<p class="text-gray-500 text-center py-4">Tidak ada item yang jatuh tempo.</p>`;
+    } else {
+        listEl.innerHTML = dueItemsList.map(item => {
+            const dueDate = new Date(item.dueDate);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            let dueDateText;
+            let textColor = 'text-gray-600';
+            if (dueDate < today) {
+                dueDateText = 'Terlambat';
+                textColor = 'text-red-500 font-bold';
+            } else if (dueDate.toDateString() === today.toDateString()) {
+                dueDateText = 'Hari Ini';
+                textColor = 'text-orange-500 font-bold';
+            } else {
+                dueDateText = dueDate.toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'});
+            }
+
+            const debtOrReceivable = item.contactType === 'customer' ? 'Piutang' : 'Hutang';
+
+            return `
+            <div class="border-b pb-3">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="font-semibold">${item.contactName}</p>
+                        <p class="text-sm text-gray-500">${debtOrReceivable}: ${item.description}</p>
+                    </div>
+                    <p class="font-bold text-lg text-gray-800">Rp ${formatCurrency(item.amount)}</p>
+                </div>
+                <div class="flex justify-between items-center mt-2">
+                    <p class="text-sm ${textColor}">Jatuh Tempo: ${dueDateText}</p>
+                    <button class="btn bg-blue-500 text-white px-3 py-1 text-xs" onclick="viewLedgerFromDueDateModal(${item.contactId})">
+                        Lihat Buku Besar
+                    </button>
+                </div>
+            </div>
+            `;
+        }).join('');
+    }
+
+    modal.classList.remove('hidden');
+}
+
+window.closeDueDateModal = function() {
+    const modal = document.getElementById('dueDateModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+window.viewLedgerFromDueDateModal = function(contactId) {
+    closeDueDateModal();
+    showLedgerModal(contactId);
+}
+
 
 // --- CATEGORY MANAGEMENT ---
 async function populateCategoryDropdowns(selectElementIds, selectedValue) {
@@ -2085,8 +2210,6 @@ async function loadSettings() {
         if (currentStoreLogoData) {
             (document.getElementById('storeLogoPreview')).innerHTML = `<img src="${currentStoreLogoData}" alt="Logo Preview" class="image-preview">`;
         }
-
-        loadLicenseInfo();
     } catch (error) {
         console.error("Failed to load settings:", error);
     }
@@ -2222,7 +2345,7 @@ async function clearAllStores() {
 window.clearAllData = function() {
     showConfirmationModal(
         'Hapus Semua Data',
-        'PERINGATAN: Ini akan menghapus LISENSI ANDA, semua produk, transaksi, dan pengaturan secara permanen. Tindakan ini tidak dapat dibatalkan. Aplikasi akan kembali seperti semula. Apakah Anda benar-benar yakin?',
+        'PERINGATAN: Ini akan menghapus semua produk, transaksi, dan pengaturan secara permanen. Tindakan ini tidak dapat dibatalkan. Apakah Anda benar-benar yakin?',
         async () => {
             await clearAllStores();
             showToast('Semua data berhasil dihapus. Aplikasi akan dimuat ulang.');
@@ -2859,441 +2982,41 @@ async function _generateReceiptHTML(data, isPreview) {
         html += `<div class="receipt-line flex-between total-line"><span>${escapeHtml(fee.name)}</span><span>Rp ${formatCurrency(fee.amount)}</span></div>`;
     });
 
-    // Final Totals Section
     html += `<div class="divider">${'-'.repeat(paperWidthChars)}</div>`;
     html += `<div class="receipt-line flex-between total-line bold"><span>TOTAL</span><span>Rp ${formatCurrency(data.total)}</span></div>`;
-    if (!isPreview) {
-        html += `<div class="receipt-line flex-between total-line bold"><span>TUNAI</span><span>Rp ${formatCurrency(data.cashPaid)}</span></div>`;
-        html += `<div class="receipt-line flex-between total-line bold"><span>KEMBALI</span><span>Rp ${formatCurrency(data.change)}</span></div>`;
-    }
+    html += `<div class="receipt-line flex-between total-line"><span>Tunai</span><span>Rp ${formatCurrency(data.cashPaid)}</span></div>`;
+    html += `<div class="receipt-line flex-between total-line"><span>Kembali</span><span>Rp ${formatCurrency(data.change)}</span></div>`;
 
     // Footer
     html += `<div class="divider">${'='.repeat(paperWidthChars)}</div>`;
-    if (footerText) html += `<div class="receipt-line text-center" style="margin-top: 8px;">${escapeHtml(footerText)}</div>`;
-    
-    html += `</div>`; // close wrapper
-    
+    if (footerText) html += `<div class="receipt-line text-center">${escapeHtml(footerText.replace(/\n/g, '<br>'))}</div>`;
+    html += `</div>`; // Close wrapper
+
     return html;
 }
 
-
-async function generateReceiptContent(transaction) {
+async function generateReceiptContent(data) {
     const receiptContentEl = document.getElementById('receiptContent');
-    receiptContentEl.innerHTML = await _generateReceiptHTML(transaction, false);
-}
-
-
-window.printReceipt = async function(isAutoPrint = false) {
-    if (isPrinterReady && bluetoothDevice && bluetoothCharacteristic) {
-        await printViaBluetooth();
-    } else {
-        if (!isAutoPrint) {
-            const printStyle = `
-                #receiptContent { 
-                    font-family: 'Courier New', monospace; 
-                    color: black; 
-                    font-size: 10pt;
-                    width: 300px;
-                }
-                #receiptLogoContainer img { display: block; margin: 0 auto; }
-            `;
-            document.getElementById('print-style-overrides').innerHTML = printStyle;
-            window.print();
-        } else {
-            console.warn("Auto-print skipped: Bluetooth printer not connected.");
-        }
+    if (receiptContentEl) {
+        receiptContentEl.innerHTML = await _generateReceiptHTML(data, false);
     }
 }
 
-
-// --- BARCODE/LABEL GENERATOR ---
-document.getElementById('generateBarcodeLabelBtn')?.addEventListener('click', () => {
-    const code = document.getElementById('barcode-code').value.trim();
-    const productName = document.getElementById('product-name').value.trim();
-    const productPrice = document.getElementById('product-price').value;
-
-    if (!code) {
-        showToast('Teks/Angka untuk Barcode wajib diisi.');
-        return;
-    }
-
-    const outputContainer = document.getElementById('barcodeLabelOutput');
-    const nameEl = document.getElementById('output-product-name');
-    const priceEl = document.getElementById('output-product-price');
-    const textEl = document.getElementById('output-barcode-text');
-    const downloadButtons = document.getElementById('download-buttons');
-
-    nameEl.textContent = productName || '';
-    priceEl.textContent = productPrice ? `Rp ${formatCurrency(parseFloat(productPrice))}` : '';
-    textEl.textContent = code;
-
-    try {
-        JsBarcode("#barcode", code, {
-            format: "CODE128",
-            lineColor: "#000",
-            width: 2,
-            height: 50,
-            displayValue: false // The value is displayed manually below
-        });
-        outputContainer.classList.remove('hidden');
-        downloadButtons.classList.remove('hidden');
-    } catch (e) {
-        showToast('Gagal membuat barcode. Coba kode yang berbeda.');
-        outputContainer.classList.add('hidden');
-        downloadButtons.classList.add('hidden');
-        console.error("Barcode generation error:", e);
-    }
-});
-
-document.getElementById('downloadPngBtn')?.addEventListener('click', () => {
-    const productName = document.getElementById('product-name').value.trim() || 'label';
-    const code = document.getElementById('barcode-code').value.trim();
-
-    // Create a canvas
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-
-    // Get SVG element and its XML
-    const svgElement = document.getElementById('barcode');
-    const svgXML = new XMLSerializer().serializeToString(svgElement);
-    const svgSize = svgElement.getBoundingClientRect();
-
-    // Define label dimensions, padding and spacing
-    const padding = 20;
-    const spacing = 4; // Consistent 4px spacing between elements
-
-    const elementsToDraw = [
-        { el: document.getElementById('output-product-name'), isSvg: false },
-        { el: document.getElementById('output-product-price'), isSvg: false },
-        { el: svgElement, isSvg: true },
-        { el: document.getElementById('output-barcode-text'), isSvg: false },
-    ];
-
-    let totalHeight = padding * 2;
-    let maxWidth = svgSize.width;
-
-    // Pre-calculate metrics for all elements
-    const elementMetrics = elementsToDraw.map(({ el, isSvg }) => {
-        if (!el.textContent && !isSvg) return null; // Skip empty text elements
-        if (isSvg) {
-            totalHeight += svgSize.height + spacing;
-            return { type: 'svg', width: svgSize.width, height: svgSize.height };
-        } else {
-            const style = window.getComputedStyle(el);
-            const font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-            ctx.font = font;
-            const textMetrics = ctx.measureText(el.textContent);
-            const height = parseInt(style.fontSize, 10);
-            
-            totalHeight += height + spacing;
-            if (textMetrics.width > maxWidth) {
-                maxWidth = textMetrics.width;
-            }
-            return {
-                type: 'text',
-                text: el.textContent,
-                font,
-                width: textMetrics.width,
-                height
-            };
-        }
-    }).filter(Boolean); // Remove null entries for empty text elements
-
-    // Final canvas dimensions
-    canvas.width = maxWidth + padding * 2;
-    canvas.height = totalHeight;
-
-    // Start drawing
-    ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    const svgBlob = new Blob([svgXML], { type: 'image/svg+xml;charset=utf-8' });
-    const url = URL.createObjectURL(svgBlob);
-    const img = new Image();
-
-    img.onload = () => {
-        let currentY = padding;
-
-        elementMetrics.forEach(metric => {
-            const x = (canvas.width - metric.width) / 2;
-
-            if (metric.type === 'svg') {
-                ctx.drawImage(img, x, currentY, metric.width, metric.height);
-                currentY += metric.height + spacing;
-            } else {
-                ctx.font = metric.font;
-                ctx.fillStyle = 'black';
-                ctx.textBaseline = 'top';
-                ctx.fillText(metric.text, x, currentY);
-                currentY += metric.height + spacing;
-            }
-        });
-
-        // Trigger download
-        const dataUrl = canvas.toDataURL('image/png');
-        const link = document.createElement('a');
-        link.download = `${productName}-${code}.png`;
-        link.href = dataUrl;
-        link.click();
-        URL.revokeObjectURL(url);
-    };
-
-    img.src = url;
-});
-
-document.getElementById('printLabelBtn')?.addEventListener('click', () => {
-    const labelContent = document.getElementById('labelContent').innerHTML;
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-        <html>
-            <head>
-                <title>Cetak Label</title>
-                <style>
-                    body { margin: 0; padding: 10px; font-family: sans-serif; text-align: center; }
-                    #labelContent { display: inline-block; text-align: center; }
-                    p { margin: 2px 0; }
-                    #output-product-name { font-weight: bold; font-size: 14px; }
-                    #output-product-price { font-weight: 500; font-size: 14px; }
-                    svg { margin: 4px 0; }
-                    #output-barcode-text { font-family: monospace; font-size: 10px; }
-                    @media print {
-                      @page {
-                        size: auto;
-                        margin: 5mm;
-                      }
-                      body { -webkit-print-color-adjust: exact; }
-                    }
-                </style>
-            </head>
-            <body>
-                <div id="labelContent">${labelContent}</div>
-                <script>
-                    window.onload = function() {
-                        window.print();
-                        window.close();
-                    }
-                </script>
-            </body>
-        </html>
-    `);
-    printWindow.document.close();
-});
-
-// --- BLUETOOTH PRINTING ---
-
-window.showPrintHelpModal = function() {
-    (document.getElementById('printHelpModal')).classList.remove('hidden');
-}
-
-window.closePrintHelpModal = function() {
-    (document.getElementById('printHelpModal')).classList.add('hidden');
-}
-
-async function connectToBluetoothPrinter() {
-    if (!navigator.bluetooth) {
-        showToast("Web Bluetooth API tidak didukung di browser ini.");
-        return;
-    }
-    
-    try {
-        showToast("Mencari printer Bluetooth...", 2000);
-        bluetoothDevice = await navigator.bluetooth.requestDevice({
-            filters: [{ services: ['000018f0-0000-1000-8000-00805f9b34fb'] }],
-            optionalServices: ['00002af1-0000-1000-8000-00805f9b34fb']
-        });
-        
-        const server = await bluetoothDevice.gatt.connect();
-        const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
-        bluetoothCharacteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
-        
-        updateBluetoothUI(true);
-        showToast(`Terhubung ke: ${bluetoothDevice.name}`);
-        bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
-
-    } catch(error) {
-        console.error("Bluetooth connection error: ", error);
-        showToast("Gagal terhubung ke printer.");
-        updateBluetoothUI(false);
-    }
-}
-
-function onDisconnected() {
-    showToast(`Koneksi ke ${bluetoothDevice.name} terputus.`);
-    updateBluetoothUI(false);
-    bluetoothDevice = null;
-    bluetoothCharacteristic = null;
-}
-
-function disconnectBluetoothPrinter() {
-    if (bluetoothDevice && bluetoothDevice.gatt.connected) {
-        bluetoothDevice.gatt.disconnect();
-    } else {
-       onDisconnected();
-    }
-}
-
-function updateBluetoothUI(isConnected) {
-    const statusEl = document.getElementById('bluetoothStatus');
-    const connectBtn = document.getElementById('connectBluetoothBtn');
-    const disconnectBtn = document.getElementById('disconnectBluetoothBtn');
-    const testPrintBtn = document.getElementById('testPrintBtn');
-
-    if (isConnected) {
-        statusEl.textContent = `Status: Terhubung ke ${bluetoothDevice.name}`;
-        statusEl.classList.remove('text-gray-500', 'bg-gray-100');
-        statusEl.classList.add('text-green-700', 'bg-green-100');
-        connectBtn.classList.add('hidden');
-        disconnectBtn.classList.remove('hidden');
-        testPrintBtn.disabled = false;
-    } else {
-        statusEl.textContent = `Status: Belum Terhubung`;
-        statusEl.classList.remove('text-green-700', 'bg-green-100');
-        statusEl.classList.add('text-gray-500', 'bg-gray-100');
-        connectBtn.classList.remove('hidden');
-        disconnectBtn.classList.add('hidden');
-        testPrintBtn.disabled = true;
-    }
-}
-
-async function printViaBluetooth() {
-    if (!bluetoothCharacteristic) {
-        showToast("Tidak terhubung ke printer Bluetooth.");
-        return;
-    }
-    showToast("Mengirim data ke printer...");
-
-    try {
-        const encoder = new EscPosEncoder.default();
-        const settings = await getAllFromDB('settings');
-        const settingsMap = new Map(settings.map(s => [s.key, s.value]));
-
-        const storeName = settingsMap.get('storeName') || '';
-        const storeAddress = settingsMap.get('storeAddress') || '';
-        const feedbackPhone = settingsMap.get('storeFeedbackPhone') || '';
-        const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
-        const paperSize = settingsMap.get('printerPaperSize') || '80mm';
-        const paperWidthChars = paperSize === '58mm' ? 32 : 42;
-
-        const transaction = currentReceiptTransaction;
-        if (!transaction) {
-            showToast("Tidak ada data transaksi untuk dicetak.");
-            return;
-        }
-
-        encoder.initialize();
-
-        if (storeName) {
-            encoder.align('center').size(2, 2).line(storeName).size(1, 1);
-        }
-        if (storeAddress) {
-            encoder.align('center').line(storeAddress);
-        }
-        if (feedbackPhone) {
-            encoder.align('center').line(`Telp: ${feedbackPhone}`);
-        }
-        encoder.line(receiptLine('=', paperWidthChars));
-        
-        encoder.align('left');
-        encoder.text('No:'.padEnd(5)).text(transaction.id.toString()).newline();
-        encoder.text('Tgl:'.padEnd(5)).text(new Date(transaction.date).toLocaleString('id-ID')).newline();
-        encoder.line(receiptLine('-', paperWidthChars));
-
-        transaction.items.forEach(item => {
-            encoder.line(item.name);
-            const priceLine = `${item.quantity} x ${formatCurrency(item.effectivePrice)}`;
-            const totalLine = `Rp ${formatCurrency(item.effectivePrice * item.quantity)}`;
-            const padding = paperWidthChars - priceLine.length - totalLine.length;
-            encoder.line(`${priceLine}${' '.repeat(Math.max(0, padding))}${totalLine}`);
-        });
-
-        encoder.line(receiptLine('-', paperWidthChars));
-        
-        const subtotal = transaction.subtotal - (transaction.totalDiscount || 0);
-        encoder.align('right').line(`Subtotal: Rp ${formatCurrency(subtotal)}`);
-        
-        (transaction.fees || []).forEach(fee => {
-            encoder.align('right').line(`${fee.name}: Rp ${formatCurrency(fee.amount)}`);
-        });
-
-        encoder.line(receiptLine('-', paperWidthChars));
-        encoder.size(2, 2).line(`TOTAL: Rp ${formatCurrency(transaction.total)}`).size(1, 1);
-        encoder.line(`TUNAI: Rp ${formatCurrency(transaction.cashPaid)}`);
-        encoder.line(`KEMBALI: Rp ${formatCurrency(transaction.change)}`);
-        
-        encoder.line(receiptLine('=', paperWidthChars));
-        encoder.align('center').line(footerText);
-
-        encoder.feed(3).cut();
-        
-        const command = encoder.encode();
-        await bluetoothCharacteristic.writeValue(command);
-        showToast("Berhasil dicetak!");
-        
-    } catch (error) {
-        console.error("Bluetooth printing failed: ", error);
-        showToast("Gagal mencetak. Coba hubungkan ulang.");
-        disconnectBluetoothPrinter();
-    }
-}
-
-async function testPrint() {
-     if (!bluetoothCharacteristic) {
-        showToast("Tidak terhubung ke printer Bluetooth.");
-        return;
-    }
-    showToast("Mencetak halaman tes...");
-    try {
-        const encoder = new EscPosEncoder.default();
-        const settings = await getAllFromDB('settings');
-        const settingsMap = new Map(settings.map(s => [s.key, s.value]));
-        const paperSize = settingsMap.get('printerPaperSize') || '80mm';
-
-        encoder
-            .initialize()
-            .align('center')
-            .size(2, 2)
-            .line('Tes Cetak')
-            .size(1, 1)
-            .line('Koneksi Berhasil!')
-            .line(`Ukuran Kertas: ${paperSize}`)
-            .line(new Date().toLocaleString('id-ID'))
-            .feed(3)
-            .cut();
-        
-        const command = encoder.encode();
-        await bluetoothCharacteristic.writeValue(command);
-        showToast("Tes cetak berhasil!");
-    } catch (error) {
-        console.error("Test print failed: ", error);
-        showToast("Gagal tes cetak. Coba hubungkan ulang.");
-        disconnectBluetoothPrinter();
-    }
-}
-window.testPrint = testPrint;
-
-
-// --- PREVIEW RECEIPT MODAL ---
 window.showPreviewReceiptModal = async function() {
     if (cart.items.length === 0) {
-        showToast('Keranjang kosong. Tidak ada yang bisa ditampilkan.');
+        showToast('Keranjang kosong, tidak ada yang bisa di-preview.');
         return;
     }
-
-    const previewContentEl = document.getElementById('previewReceiptContent');
-    previewContentEl.innerHTML = '<div class="spinner mx-auto"></div>';
-    (document.getElementById('previewReceiptModal')).classList.remove('hidden');
-
-    const subtotal = cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const totalDiscount = cart.items.reduce((sum, item) => {
-        const discountAmount = item.price * ((item.discountPercentage || 0) / 100);
-        return sum + (discountAmount * item.quantity);
-    }, 0);
     
+    const previewContentEl = document.getElementById('previewReceiptContent');
+    const previewModal = document.getElementById('previewReceiptModal');
+    
+    const subtotal = cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const totalDiscount = cart.items.reduce((sum, item) => sum + ((item.price - item.effectivePrice) * item.quantity), 0);
     const subtotalAfterDiscount = subtotal - totalDiscount;
 
     let calculatedFees = [];
     let totalFeeAmount = 0;
-
     cart.fees.forEach(fee => {
         const feeAmount = fee.type === 'percentage' 
             ? subtotalAfterDiscount * (fee.value / 100) 
@@ -3302,109 +3025,502 @@ window.showPreviewReceiptModal = async function() {
         totalFeeAmount += feeAmount;
     });
 
-    const total = subtotalAfterDiscount + totalFeeAmount;
-    
     const previewData = {
         items: cart.items,
         subtotal: subtotal,
         totalDiscount: totalDiscount,
         fees: calculatedFees,
-        total: total
+        total: subtotalAfterDiscount + totalFeeAmount,
+        cashPaid: 0,
+        change: 0,
+        date: new Date().toISOString()
     };
     
     previewContentEl.innerHTML = await _generateReceiptHTML(previewData, true);
-};
-
+    previewModal.classList.remove('hidden');
+}
 
 window.closePreviewReceiptModal = function() {
-    (document.getElementById('previewReceiptModal')).classList.add('hidden');
+    document.getElementById('previewReceiptModal').classList.add('hidden');
+}
+
+
+async function generatePrintCommands(data) {
+    if (!window.EscPosEncoder) {
+        showToast('Library cetak tidak termuat.');
+        return null;
+    }
+
+    const encoder = new EscPosEncoder.default();
+    
+    const settings = await getAllFromDB('settings');
+    const settingsMap = new Map(settings.map(s => [s.key, s.value]));
+    
+    const storeName = settingsMap.get('storeName') || 'Toko Anda';
+    const storeAddress = settingsMap.get('storeAddress') || '';
+    const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
+    const paperSize = settingsMap.get('printerPaperSize') || '80mm';
+    const paperWidthChars = paperSize === '58mm' ? 32 : 42;
+
+    const alignCenter = (text) => {
+        const padding = ' '.repeat(Math.max(0, Math.floor((paperWidthChars - text.length) / 2)));
+        return padding + text;
+    };
+    
+    const alignSides = (left, right) => {
+        const spaceCount = Math.max(1, paperWidthChars - left.length - right.length);
+        return left + ' '.repeat(spaceCount) + right;
+    };
+
+    encoder
+        .initialize()
+        .align('center')
+        .bold(true)
+        .size(1, 2)
+        .line(storeName)
+        .size(1, 1)
+        .bold(false)
+        .line(storeAddress)
+        .line(receiptLine('-', paperWidthChars))
+        .align('left');
+
+    data.items.forEach(item => {
+        encoder.line(item.name);
+        const priceLine = `${item.quantity} x ${formatCurrency(item.effectivePrice)}`;
+        const totalLine = `Rp ${formatCurrency(item.effectivePrice * item.quantity)}`;
+        encoder.line(alignSides(priceLine, totalLine));
+    });
+
+    encoder.line(receiptLine('-', paperWidthChars));
+
+    const subtotal = data.subtotal - (data.totalDiscount || 0);
+    encoder.line(alignSides('Subtotal', `Rp ${formatCurrency(subtotal)}`));
+
+    (data.fees || []).forEach(fee => {
+        encoder.line(alignSides(fee.name, `Rp ${formatCurrency(fee.amount)}`));
+    });
+
+    encoder
+        .bold(true)
+        .line(alignSides('TOTAL', `Rp ${formatCurrency(data.total)}`))
+        .bold(false)
+        .line(alignSides('Tunai', `Rp ${formatCurrency(data.cashPaid)}`))
+        .line(alignSides('Kembali', `Rp ${formatCurrency(data.change)}`))
+        .line(receiptLine('-', paperWidthChars))
+        .align('center')
+        .line(footerText)
+        .feed(3)
+        .cut();
+
+    return encoder.encode();
+}
+
+
+window.printReceipt = async function(isAutoPrint = false) {
+    const data = currentReceiptTransaction;
+    if (!data) {
+        showToast('Tidak ada data struk untuk dicetak.');
+        return;
+    }
+
+    // Bluetooth Printing Logic
+    if (bluetoothDevice && bluetoothCharacteristic) {
+        try {
+            showToast('Mengirim ke printer...', 2000);
+            const commands = await generatePrintCommands(data);
+            if (!commands) return;
+            
+            // Send data in chunks
+            const chunkSize = 512;
+            for (let i = 0; i < commands.length; i += chunkSize) {
+                const chunk = commands.slice(i, i + chunkSize);
+                await bluetoothCharacteristic.writeValueWithoutResponse(chunk);
+            }
+            if (!isAutoPrint) showToast('Struk berhasil dicetak!');
+        } catch (error) {
+            console.error('Bluetooth print error:', error);
+            showToast('Gagal mencetak. Coba hubungkan ulang printer.');
+            updateBluetoothStatusUI('error');
+        }
+        return;
+    }
+    
+    // Fallback to Browser Print API
+    if (!isAutoPrint) showToast('Printer Bluetooth tidak terhubung. Menggunakan print browser.');
+    const receiptContentEl = document.getElementById('receiptContent');
+    const styleEl = document.getElementById('print-style-overrides');
+    
+    const paperSize = await getSettingFromDB('printerPaperSize') || '80mm';
+    const printWidth = paperSize === '58mm' ? '58mm' : '80mm';
+
+    styleEl.innerHTML = `
+        @media print {
+            @page { size: ${printWidth} auto; margin: 0; }
+            body { margin: 0; padding: 0; }
+        }
+    `;
+    
+    window.print();
+}
+
+
+async function testPrint() {
+    if (!bluetoothDevice || !bluetoothCharacteristic) {
+        showToast('Printer tidak terhubung.');
+        return;
+    }
+    
+    try {
+        if (!window.EscPosEncoder) {
+            showToast('Library cetak tidak termuat.');
+            return;
+        }
+
+        const encoder = new EscPosEncoder.default();
+        const paperSize = await getSettingFromDB('printerPaperSize') || '80mm';
+        const paperWidthChars = paperSize === '58mm' ? 32 : 42;
+
+        const commands = encoder
+            .initialize()
+            .align('center')
+            .line('Tes Cetak Berhasil!')
+            .line(`Ukuran Kertas: ${paperWidthChars} karakter`)
+            .line(new Date().toLocaleString('id-ID'))
+            .feed(3)
+            .cut()
+            .encode();
+        
+        await bluetoothCharacteristic.writeValueWithoutResponse(commands);
+        showToast('Tes cetak terkirim!');
+    } catch (error) {
+        console.error('Test print error:', error);
+        showToast('Gagal mengirim tes cetak.');
+        updateBluetoothStatusUI('error');
+    }
+}
+window.testPrint = testPrint;
+
+
+function updateBluetoothStatusUI(status, deviceName = '') {
+    const statusEl = document.getElementById('bluetoothStatus');
+    const connectBtn = document.getElementById('connectBluetoothBtn');
+    const disconnectBtn = document.getElementById('disconnectBluetoothBtn');
+    const testPrintBtn = document.getElementById('testPrintBtn');
+
+    if (!statusEl || !connectBtn || !disconnectBtn || !testPrintBtn) return;
+    
+    isPrinterReady = false;
+
+    switch(status) {
+        case 'connected':
+            statusEl.innerHTML = `<i class="fas fa-check-circle text-green-500 mr-2"></i>Terhubung ke: <strong>${deviceName}</strong>`;
+            connectBtn.classList.add('hidden');
+            disconnectBtn.classList.remove('hidden');
+            testPrintBtn.disabled = false;
+            isPrinterReady = true;
+            break;
+        case 'disconnected':
+            statusEl.innerHTML = `Status: Belum Terhubung`;
+            connectBtn.classList.remove('hidden');
+            disconnectBtn.classList.add('hidden');
+            testPrintBtn.disabled = true;
+            break;
+        case 'connecting':
+            statusEl.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>Menghubungkan...`;
+            connectBtn.classList.add('hidden');
+            disconnectBtn.classList.add('hidden');
+            testPrintBtn.disabled = true;
+            break;
+        case 'error':
+             statusEl.innerHTML = `<i class="fas fa-exclamation-triangle text-red-500 mr-2"></i>Koneksi Gagal/Terputus`;
+             connectBtn.classList.remove('hidden');
+             disconnectBtn.classList.add('hidden');
+             testPrintBtn.disabled = true;
+             break;
+    }
+}
+
+async function connectToBluetoothPrinter() {
+    if (!navigator.bluetooth) {
+        showConfirmationModal(
+            'Bluetooth Tidak Didukung',
+            'Browser Anda tidak mendukung Web Bluetooth API. Gunakan Chrome di Android untuk fitur ini. <br><br> <a href="#" onclick="showPrintHelpModal(); closeConfirmationModal();" class="text-blue-600 underline">Lihat bantuan</a>',
+            () => {},
+            'Mengerti',
+            'bg-blue-500'
+        );
+        return;
+    }
+    
+    try {
+        updateBluetoothStatusUI('connecting');
+        
+        // Standard Bluetooth service UUIDs for printers
+        const printerServiceUUIDs = [
+            '000018f0-0000-1000-8000-00805f9b34fb', // Serial Port Profile (SPP)
+            'e7810a71-73ae-499d-8c15-faa9aef0c3f2'  // Common printer service
+        ];
+        
+        bluetoothDevice = await navigator.bluetooth.requestDevice({
+            filters: [{ services: printerServiceUUIDs }],
+            optionalServices: printerServiceUUIDs, // Request all known printer services
+            acceptAllDevices: true
+        });
+
+        if (!bluetoothDevice) {
+            updateBluetoothStatusUI('disconnected');
+            return;
+        }
+
+        bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+        
+        const server = await bluetoothDevice.gatt.connect();
+        
+        // Find the correct service and characteristic
+        let foundCharacteristic = null;
+        for (const uuid of printerServiceUUIDs) {
+            try {
+                const service = await server.getPrimaryService(uuid);
+                if (service) {
+                    const characteristics = await service.getCharacteristics();
+                    // Find a characteristic that supports 'write-without-response' or 'write'
+                    foundCharacteristic = characteristics.find(c => c.properties.writeWithoutResponse) || characteristics.find(c => c.properties.write);
+                    if (foundCharacteristic) break;
+                }
+            } catch (e) {
+                // Service not found, continue to the next one
+            }
+        }
+        
+        if (!foundCharacteristic) {
+            throw new Error('Tidak dapat menemukan karakteristik cetak yang sesuai.');
+        }
+
+        bluetoothCharacteristic = foundCharacteristic;
+        updateBluetoothStatusUI('connected', bluetoothDevice.name);
+        showToast(`Terhubung ke printer ${bluetoothDevice.name}`);
+
+    } catch(error) {
+        console.error('Bluetooth connection failed:', error);
+        showToast('Gagal terhubung. Pastikan printer menyala dan sudah di-pair.');
+        updateBluetoothStatusUI('disconnected');
+    }
+}
+window.connectToBluetoothPrinter = connectToBluetoothPrinter;
+
+function onDisconnected() {
+    if (bluetoothDevice) {
+        showToast(`Koneksi ke printer ${bluetoothDevice.name} terputus.`);
+        bluetoothDevice = null;
+        bluetoothCharacteristic = null;
+        updateBluetoothStatusUI('disconnected');
+    }
+}
+
+async function disconnectBluetoothPrinter() {
+    if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+        bluetoothDevice.gatt.disconnect();
+    } else {
+        onDisconnected(); // Manually trigger disconnect logic if already disconnected
+    }
+}
+window.disconnectBluetoothPrinter = disconnectBluetoothPrinter;
+
+window.showPrintHelpModal = function() {
+    const modal = document.getElementById('printHelpModal');
+    if (modal) modal.classList.remove('hidden');
+}
+
+window.closePrintHelpModal = function() {
+    const modal = document.getElementById('printHelpModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+// --- BARCODE/LABEL GENERATOR ---
+function setupBarcodeGenerator() {
+    const generateBtn = document.getElementById('generateBarcodeLabelBtn');
+    const downloadPngBtn = document.getElementById('downloadPngBtn');
+    const printLabelBtn = document.getElementById('printLabelBtn');
+
+    if (generateBtn) {
+        generateBtn.addEventListener('click', () => {
+            const name = document.getElementById('product-name').value;
+            const price = document.getElementById('product-price').value;
+            const code = document.getElementById('barcode-code').value;
+
+            if (!code) {
+                showToast('Teks/Angka untuk barcode wajib diisi.');
+                return;
+            }
+
+            document.getElementById('output-product-name').textContent = name;
+            document.getElementById('output-product-price').textContent = price ? `Rp ${formatCurrency(price)}` : '';
+            document.getElementById('output-barcode-text').textContent = code;
+
+            try {
+                JsBarcode("#barcode", code, {
+                    format: "CODE128",
+                    lineColor: "#000",
+                    width: 2,
+                    height: 50,
+                    displayValue: false,
+                    margin: 5
+                });
+                document.getElementById('barcodeLabelOutput').classList.remove('hidden');
+                document.getElementById('download-buttons').classList.remove('hidden');
+            } catch (e) {
+                showToast('Kode barcode tidak valid.');
+                console.error("Barcode generation error:", e);
+                 document.getElementById('barcodeLabelOutput').classList.add('hidden');
+                 document.getElementById('download-buttons').classList.add('hidden');
+            }
+        });
+    }
+
+    if (downloadPngBtn) {
+        downloadPngBtn.addEventListener('click', () => {
+            const labelContent = document.getElementById('labelContent');
+            // This is a simplified approach. A more robust solution would use a library like html2canvas.
+            // For now, we will just print what's visible.
+            showToast('Fitur unduh akan membuka jendela cetak. Pilih "Simpan sebagai PDF/Gambar".');
+            printLabel();
+        });
+    }
+
+    if (printLabelBtn) {
+        printLabelBtn.addEventListener('click', printLabel);
+    }
+}
+
+function printLabel() {
+    const labelContent = document.getElementById('labelContent').innerHTML;
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+        <html>
+        <head>
+            <title>Cetak Label</title>
+            <style>
+                @page { size: auto; margin: 5mm; }
+                body { font-family: sans-serif; text-align: center; }
+                #labelContent { 
+                    display: inline-block; 
+                    border: 1px solid #ccc;
+                    padding: 10px;
+                    border-radius: 8px;
+                }
+                #output-product-name { font-weight: bold; font-size: 16px; margin: 0; }
+                #output-product-price { font-weight: 500; font-size: 14px; margin: 2px 0; }
+                #barcode { display: block; margin: 5px auto; }
+                #output-barcode-text { font-family: monospace; font-size: 12px; margin: 0; }
+            </style>
+        </head>
+        <body>
+            <div id="labelContent">${labelContent}</div>
+            <script>
+                // Need to re-run JsBarcode in the new window
+                ${JsBarcode.toString()}
+                const code = document.getElementById('output-barcode-text').textContent;
+                JsBarcode("#barcode", code, {
+                    format: "CODE128",
+                    lineColor: "#000",
+                    width: 2,
+                    height: 50,
+                    displayValue: false,
+                    margin: 5
+                });
+                
+                // Print and close
+                window.onload = function() {
+                    window.print();
+                    window.close();
+                }
+            <\/script>
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
 }
 
 
 // --- KIOSK MODE ---
-window.handleKioskModeToggle = function(isChecked) {
-    if (isChecked) {
-        // Show modal to set PIN
-        showSetKioskPinModal();
+async function handleKioskModeToggle(isEnabled) {
+    if (isEnabled) {
+        const pin = await getSettingFromDB('kioskPin');
+        if (pin) {
+            await putSettingToDB({ key: 'kioskModeEnabled', value: true });
+            enterKioskMode();
+        } else {
+            // If no PIN is set, show the modal to create one first.
+            showSetKioskPinModal();
+        }
     } else {
-        // Deactivate kiosk mode (no PIN needed)
-        deactivateKioskMode();
+        // To disable, PIN is always required.
+        showEnterKioskPinModal();
     }
 }
+window.handleKioskModeToggle = handleKioskModeToggle;
 
 function showSetKioskPinModal() {
-    const newPinInput = document.getElementById('newKioskPin');
-    const confirmPinInput = document.getElementById('confirmKioskPin');
-    newPinInput.value = '';
-    confirmPinInput.value = '';
-    (document.getElementById('setKioskPinModal')).classList.remove('hidden');
-    newPinInput.focus();
+    document.getElementById('newKioskPin').value = '';
+    document.getElementById('confirmKioskPin').value = '';
+    document.getElementById('setKioskPinModal').classList.remove('hidden');
 }
 
-window.closeSetKioskPinModal = function() {
-    // If user cancels setting PIN, revert the toggle
-    document.getElementById('kioskModeToggle').checked = false;
-    (document.getElementById('setKioskPinModal')).classList.add('hidden');
+function closeSetKioskPinModal() {
+    document.getElementById('setKioskPinModal').classList.add('hidden');
+    // If user cancels setting a PIN, toggle back to off state
+    const kioskToggle = document.getElementById('kioskModeToggle');
+    if (kioskToggle) kioskToggle.checked = false;
 }
+window.closeSetKioskPinModal = closeSetKioskPinModal;
 
-window.saveKioskPinAndActivate = async function() {
+async function saveKioskPinAndActivate() {
     const newPin = document.getElementById('newKioskPin').value;
     const confirmPin = document.getElementById('confirmKioskPin').value;
 
-    if (newPin.length !== 4 || newPin !== confirmPin) {
-        showToast('PIN harus 4 digit dan cocok.');
+    if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
+        showToast('PIN harus berupa 4 digit angka.');
+        return;
+    }
+    if (newPin !== confirmPin) {
+        showToast('PIN tidak cocok.');
         return;
     }
 
-    // In a real app, hash the PIN. For this simple case, we store it directly.
     await putSettingToDB({ key: 'kioskPin', value: newPin });
-    activateKioskMode();
-    closeSetKioskPinModal();
-}
-
-async function activateKioskMode() {
-    isKioskModeActive = true;
     await putSettingToDB({ key: 'kioskModeEnabled', value: true });
-
-    document.getElementById('bottomNav').style.display = 'none';
-    document.getElementById('exitKioskBtn').classList.remove('hidden');
-
-    showPage('kasir');
-    showToast('Mode Kios diaktifkan.', 3000);
+    closeSetKioskPinModal();
+    enterKioskMode();
 }
+window.saveKioskPinAndActivate = saveKioskPinAndActivate;
 
-function deactivateKioskMode() {
-    isKioskModeActive = false;
-    putSettingToDB({ key: 'kioskModeEnabled', value: false });
-
-    document.getElementById('kioskModeToggle').checked = false;
-    document.getElementById('bottomNav').style.display = '';
-    document.getElementById('exitKioskBtn').classList.add('hidden');
-    
-    showPage('pengaturan');
-    showToast('Mode Kios dinonaktifkan.', 3000);
-}
-
-window.showEnterKioskPinModal = function() {
+function showEnterKioskPinModal() {
     currentPinInput = "";
-    pinAttemptCount = 0; // Reset counter when modal is shown
-    updatePinDisplay();
     document.getElementById('kioskPinError').textContent = '';
-    (document.getElementById('enterKioskPinModal')).classList.remove('hidden');
+    updatePinDisplay();
+    document.getElementById('enterKioskPinModal').classList.remove('hidden');
 }
+window.showEnterKioskPinModal = showEnterKioskPinModal;
 
-window.closeEnterKioskPinModal = function() {
-    (document.getElementById('enterKioskPinModal')).classList.add('hidden');
-    pinAttemptCount = 0; // Reset counter on cancel
+function closeEnterKioskPinModal() {
+    document.getElementById('enterKioskPinModal').classList.add('hidden');
+     // If user cancels entering PIN, but kiosk mode is still technically enabled,
+     // ensure the toggle reflects the actual state.
+    getSettingFromDB('kioskModeEnabled').then(isEnabled => {
+        const kioskToggle = document.getElementById('kioskModeToggle');
+        if (kioskToggle) kioskToggle.checked = !!isEnabled;
+    });
 }
+window.closeEnterKioskPinModal = closeEnterKioskPinModal;
 
-window.handlePinKeyPress = async function(key) {
+function handlePinKeyPress(key) {
     const errorEl = document.getElementById('kioskPinError');
-
+    errorEl.textContent = ''; // Clear error on new key press
+    
     if (key === 'backspace') {
         currentPinInput = currentPinInput.slice(0, -1);
     } else if (key === 'clear') {
-        currentPinInput = "";
+        currentPinInput = '';
     } else if (currentPinInput.length < 4) {
         currentPinInput += key;
     }
@@ -3412,55 +3528,11 @@ window.handlePinKeyPress = async function(key) {
     updatePinDisplay();
 
     if (currentPinInput.length === 4) {
-        const savedPin = await getSettingFromDB('kioskPin');
-        if (currentPinInput === savedPin) {
-            pinAttemptCount = 0; // Reset on success
-            closeEnterKioskPinModal();
-            deactivateKioskMode();
-        } else {
-            pinAttemptCount++; // Increment on failure
-            const remainingAttempts = 5 - pinAttemptCount;
-
-            if (remainingAttempts <= 0) {
-                await forceClearAllData();
-                return; // Stop further execution
-            }
-            
-            errorEl.textContent = `PIN Salah. Sisa percobaan: ${remainingAttempts}`;
-            const pinDisplay = document.getElementById('kioskPinDisplay');
-            pinDisplay.classList.add('animate-shake');
-            
-            setTimeout(() => {
-                pinDisplay.classList.remove('animate-shake');
-                currentPinInput = "";
-                updatePinDisplay();
-            }, 600);
-        }
-    } else {
-        // Clear error message if user is still typing
-        errorEl.textContent = '';
+        checkKioskPin();
     }
 }
+window.handlePinKeyPress = handlePinKeyPress;
 
-async function forceClearAllData() {
-    // Close modal immediately
-    const modal = document.getElementById('enterKioskPinModal');
-    if (modal) modal.classList.add('hidden');
-    
-    await clearAllStores();
-    
-    // Prevent further interaction by showing an overlay
-    const overlay = document.createElement('div');
-    overlay.className = 'fixed inset-0 bg-white z-[9999] flex flex-col items-center justify-center';
-    overlay.innerHTML = `
-        <div class="spinner"></div>
-        <p class="mt-4 text-gray-600">PIN salah 5 kali. Menghapus semua data...</p>
-    `;
-    document.body.appendChild(overlay);
-
-    showToast('Semua data aplikasi telah dihapus.', 5000);
-    setTimeout(() => location.reload(), 5000);
-}
 
 function updatePinDisplay() {
     const dots = document.querySelectorAll('#kioskPinDisplay div');
@@ -3475,490 +3547,455 @@ function updatePinDisplay() {
     });
 }
 
-// --- LICENSE MANAGEMENT ---
+async function checkKioskPin() {
+    const savedPin = await getSettingFromDB('kioskPin');
+    const errorEl = document.getElementById('kioskPinError');
+    const displayEl = document.getElementById('kioskPinDisplay');
 
-function generateUUID() {
-    // A simple UUID generator that works in all environments
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
-}
-
-function validateLicenseKey(deviceId, licenseKey) {
-    if (!deviceId || !licenseKey) return false;
-
-    // A simple, predictable but not obvious transformation.
-    // This simulates a keygen algorithm that would be used by the license provider.
-    // The key is derived from the deviceId to ensure it's device-specific.
-    const reversedId = deviceId.split('').reverse().join('');
-    // Use btoa for simple encoding as a stand-in for a more complex algorithm.
-    const encoded = btoa(reversedId); 
-
-    const expectedPart1 = encoded.substring(0, 4);
-    const expectedPart2 = encoded.substring(10, 14);
-    const expectedPart3 = encoded.substring(20, 24);
-    const expectedPart4 = encoded.substring(30, 34);
-
-    const expectedKey = `${expectedPart1}-${expectedPart2}-${expectedPart3}-${expectedPart4}`.toUpperCase();
-    
-    return licenseKey.toUpperCase().replace(/\s/g, '') === expectedKey;
-}
-
-async function checkAndRunLicense() {
-    // Check for or generate a unique Device ID for this installation
-    let deviceIdSetting = await getSettingFromDB('deviceId');
-    if (!deviceIdSetting) {
-        deviceId = generateUUID();
-        await putSettingToDB({ key: 'deviceId', value: deviceId });
+    if (currentPinInput === savedPin) {
+        pinAttemptCount = 0; // Reset attempts on success
+        closeEnterKioskPinModal();
+        // Check if we are exiting kiosk mode or just unlocking settings
+        if (isKioskModeActive) {
+            exitKioskMode();
+        } else {
+            // This case handles when user tries to disable the toggle from settings
+            await putSettingToDB({ key: 'kioskModeEnabled', value: false });
+            const kioskToggle = document.getElementById('kioskModeToggle');
+            if (kioskToggle) kioskToggle.checked = false;
+            showToast('Mode Kios dinonaktifkan.');
+        }
     } else {
-        deviceId = deviceIdSetting;
-    }
-
-    // Check if the app has been licensed
-    const isLicensed = await getSettingFromDB('isLicensed');
-
-    if (isLicensed) {
-        await proceedWithAppLoad();
-    } else {
-        showLicenseOverlay();
-    }
-}
-
-function showLicenseOverlay() {
-    const overlay = document.getElementById('licenseOverlay');
-    const deviceIdEl = document.getElementById('licenseDeviceId');
-    const loadingOverlay = document.getElementById('loadingOverlay');
-
-    if (deviceIdEl) deviceIdEl.textContent = deviceId;
-    if (overlay) overlay.classList.remove('hidden');
-    
-    // Hide the main loading spinner since the license screen is now the active view
-    if (loadingOverlay) loadingOverlay.style.display = 'none';
-}
-
-async function activateLicense() {
-    const keyInput = document.getElementById('licenseKeyInput');
-    const licenseKey = keyInput.value;
-
-    if (validateLicenseKey(deviceId, licenseKey)) {
-        await putSettingToDB({ key: 'isLicensed', value: true });
+        pinAttemptCount++;
+        errorEl.textContent = `PIN Salah (${pinAttemptCount}/5)`;
+        displayEl.classList.add('animate-shake');
         
-        const overlay = document.getElementById('licenseOverlay');
-        if (overlay) overlay.classList.add('hidden');
-        
-        showToast('Lisensi berhasil diaktivasi!', 2000);
-        await proceedWithAppLoad();
-    } else {
-        showToast('Kunci Lisensi tidak valid untuk perangkat ini.');
-        keyInput.parentElement.parentElement.classList.add('animate-shake');
+        // Reset input after showing error
         setTimeout(() => {
-            keyInput.parentElement.parentElement.classList.remove('animate-shake');
+            currentPinInput = '';
+            updatePinDisplay();
+            displayEl.classList.remove('animate-shake');
         }, 500);
+
+        if (pinAttemptCount >= 5) {
+            showToast('PIN salah 5 kali. Menghapus data...', 4000);
+            await clearAllStores();
+            setTimeout(() => location.reload(), 4000);
+        }
     }
 }
 
-function loadLicenseInfo() {
-    const statusEl = document.getElementById('licenseStatus');
-    const deviceIdEl = document.getElementById('settingsDeviceId');
+function enterKioskMode() {
+    isKioskModeActive = true;
+    document.getElementById('bottomNav').classList.add('hidden');
+    document.getElementById('exitKioskBtn').classList.remove('hidden');
+    // Ensure we are on the kasir page
+    showPage('kasir', { force: true });
+    showToast('Mode Kios diaktifkan.');
+}
 
-    if (statusEl) {
-        statusEl.textContent = 'Aktif';
-        statusEl.className = 'font-bold text-green-600';
-    }
-    if (deviceIdEl) {
-        deviceIdEl.textContent = deviceId;
+function exitKioskMode() {
+    isKioskModeActive = false;
+    document.getElementById('bottomNav').classList.remove('hidden');
+    document.getElementById('exitKioskBtn').classList.add('hidden');
+    putSettingToDB({ key: 'kioskModeEnabled', value: false });
+    const kioskToggle = document.getElementById('kioskModeToggle');
+    if (kioskToggle) kioskToggle.checked = false;
+    showToast('Mode Kios dinonaktifkan.');
+}
+
+// --- INITIALIZATION ---
+async function initApp() {
+    try {
+        await initDB();
+
+        // Check if Chart.js is available
+        if (typeof Chart !== 'undefined') {
+            isChartJsReady = true;
+        } else {
+            console.warn('Chart.js library not found or failed to load.');
+        }
+
+        // Check if Scanner library is available
+        if (typeof Html5Qrcode !== 'undefined') {
+            isScannerReady = true;
+            html5QrCode = new Html5Qrcode("qr-reader");
+        } else {
+            console.warn('Html5Qrcode library not found or failed to load.');
+        }
+
+        // Check if ESC/POS encoder is available
+        if (typeof EscPosEncoder !== 'undefined') {
+            isPrinterReady = true;
+        } else {
+            console.warn('EscPosEncoder library not found or failed to load.');
+        }
+
+        updateFeatureAvailability();
+
+        // Register event listeners
+        window.addEventListener('online', checkOnlineStatus);
+        window.addEventListener('offline', checkOnlineStatus);
+        document.getElementById('confirmButton').addEventListener('click', () => {
+            if (confirmCallback) confirmCallback();
+            closeConfirmationModal();
+        });
+        document.getElementById('cancelButton').addEventListener('click', closeConfirmationModal);
+        document.getElementById('searchProduct').addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            document.querySelectorAll('.product-item').forEach(item => {
+                const name = item.dataset.name || '';
+                const barcode = item.dataset.barcode || '';
+                item.style.display = (name.includes(searchTerm) || barcode.includes(searchTerm)) ? 'block' : 'none';
+            });
+        });
+
+        // Load initial data
+        lowStockThreshold = await getSettingFromDB('lowStockThreshold') || 5;
+        await populateCategoryDropdowns(['productCategory', 'editProductCategory', 'productCategoryFilter']);
+        await loadDashboard();
+        await applyDefaultFees(); // Initialize cart with default fees
+
+        // Check for kiosk mode on startup
+        const kioskEnabled = await getSettingFromDB('kioskModeEnabled');
+        if (kioskEnabled) {
+            enterKioskMode();
+        }
+
+        // Hide loading and show app
+        document.getElementById('loadingOverlay').classList.add('opacity-0');
+        setTimeout(() => {
+            document.getElementById('loadingOverlay').style.display = 'none';
+            document.getElementById('appContainer').classList.remove('hidden');
+        }, 300);
+
+        // Run initial sync
+        checkOnlineStatus();
+        
+        setupChartViewToggle();
+        setupBarcodeGenerator();
+    } catch (error) {
+        console.error("Initialization failed:", error);
     }
 }
 
-async function proceedWithAppLoad() {
-    document.getElementById('appContainer').classList.remove('hidden');
+// Contacts/Hutang Piutang logic
+async function loadContactsPage(initialTab = null) {
+    await loadContacts('customer');
+    await loadContacts('supplier');
+
+    // Switch to the specified tab if provided
+    if (initialTab) {
+        switchContactTab(initialTab);
+    }
+}
+
+async function loadContacts(type) {
+    const listContainer = document.getElementById(type === 'customer' ? 'customerList' : 'supplierList');
+    if (!listContainer) return;
     
-    await loadSettings();
-    await applyDefaultFees();
+    try {
+        const contacts = await getAllFromDB('contacts');
+        const ledgers = await getAllFromDB('ledgers');
 
-    const kioskEnabled = await getSettingFromDB('kioskModeEnabled');
-    if (kioskEnabled) {
-        isKioskModeActive = true;
-        document.getElementById('bottomNav').style.display = 'none';
-        document.getElementById('exitKioskBtn').classList.remove('hidden');
-        showPage('kasir');
-    } else {
-        loadDashboard();
-    }
+        const balanceMap = new Map();
+        ledgers.forEach(entry => {
+            const currentBalance = balanceMap.get(entry.contactId) || 0;
+            const amount = entry.type === 'debit' ? entry.amount : -entry.amount;
+            balanceMap.set(entry.contactId, currentBalance + amount);
+        });
 
-    const loadingOverlay = document.getElementById('loadingOverlay');
-    if (loadingOverlay) {
-        loadingOverlay.classList.add('opacity-0', 'pointer-events-none');
-        setTimeout(() => loadingOverlay.style.display = 'none', 300);
-    }
-}
+        const filteredContacts = contacts.filter(c => c.type === type);
+        
+        if (filteredContacts.length === 0) {
+            listContainer.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon"><i class="fas fa-user-plus"></i></div>
+                    <h3 class="empty-state-title">Belum Ada ${type === 'customer' ? 'Pelanggan' : 'Supplier'}</h3>
+                    <p class="empty-state-description">Tambahkan kontak untuk mulai mencatat transaksi hutang/piutang.</p>
+                </div>
+            `;
+            return;
+        }
 
-// --- CONTACTS & LEDGER (Hutang/Piutang) ---
-
-async function loadContactsPage(initialTab = 'customer') {
-    await renderContactList('customer');
-    await renderContactList('supplier');
-    switchContactTab(initialTab);
-}
-
-window.switchContactTab = function(tabName) {
-    const customerTab = document.getElementById('customerTab');
-    const supplierTab = document.getElementById('supplierTab');
-    const customerContainer = document.getElementById('customerListContainer');
-    const supplierContainer = document.getElementById('supplierListContainer');
-    
-    const contactTypeSelect = document.getElementById('contactType');
-
-    if (tabName === 'customer') {
-        customerTab.classList.add('active');
-        supplierTab.classList.remove('active');
-        customerContainer.classList.remove('hidden');
-        supplierContainer.classList.add('hidden');
-        if (contactTypeSelect) contactTypeSelect.value = 'customer';
-    } else {
-        supplierTab.classList.add('active');
-        customerTab.classList.remove('active');
-        supplierContainer.classList.remove('hidden');
-        customerContainer.classList.add('hidden');
-        if (contactTypeSelect) contactTypeSelect.value = 'supplier';
-    }
-}
-
-async function renderContactList(type) {
-    const listId = type === 'customer' ? 'customerList' : 'supplierList';
-    const listEl = document.getElementById(listId);
-    
-    const contacts = await getAllFromDB('contacts', 'type', type);
-    const ledgers = await getAllFromDB('ledgers');
-
-    const balanceMap = new Map();
-    ledgers.forEach(entry => {
-        const currentBalance = balanceMap.get(entry.contactId) || 0;
-        const amount = entry.type === 'debit' ? entry.amount : -entry.amount;
-        balanceMap.set(entry.contactId, currentBalance + amount);
-    });
-
-    if (contacts.length === 0) {
-        const typeText = type === 'customer' ? 'Pelanggan' : 'Supplier';
-        listEl.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon"><i class="fas fa-user-friends"></i></div>
-                <h3 class="empty-state-title">Belum Ada ${typeText}</h3>
-                <p class="empty-state-description">Tambahkan kontak untuk mulai melacak hutang/piutang.</p>
-                <button onclick="showContactModal()" class="empty-state-action">
-                    <i class="fas fa-plus mr-2"></i>Tambah ${typeText}
-                </button>
-            </div>
-        `;
-        return;
-    }
-
-    listEl.innerHTML = contacts.sort((a,b) => a.name.localeCompare(b.name)).map(contact => {
-        const balance = balanceMap.get(contact.id) || 0;
-        const balanceText = balance > 0 ? `Rp ${formatCurrency(balance)}` : 'Rp 0';
-        const balanceColor = balance > 0 ? (type === 'customer' ? 'text-red-500' : 'text-green-500') : 'text-gray-500';
-        const balanceLabel = type === 'customer' ? 'Piutang' : 'Hutang';
-
-        return `
-            <div class="card p-4 clickable" onclick="showLedgerModal(${contact.id})">
-                <div class="flex justify-between items-start">
-                    <div>
-                        <h3 class="font-semibold">${contact.name}</h3>
-                        <p class="text-sm text-gray-500">${contact.phone || 'No. HP tidak ada'}</p>
-                    </div>
-                    <div class="text-right">
-                        <p class="text-sm ${balanceColor} font-bold">${balanceText}</p>
-                        <p class="text-xs text-gray-500">${balanceLabel}</p>
+        listContainer.innerHTML = filteredContacts.map(contact => {
+            const balance = balanceMap.get(contact.id) || 0;
+            let balanceText;
+            if (balance > 0) {
+                balanceText = `<p class="text-sm font-semibold ${type === 'customer' ? 'text-teal-600' : 'text-red-600'}">${type === 'customer' ? 'Piutang' : 'Hutang'}: Rp ${formatCurrency(balance)}</p>`;
+            } else if (balance < 0) {
+                 balanceText = `<p class="text-sm font-semibold text-green-600">Deposit: Rp ${formatCurrency(Math.abs(balance))}</p>`;
+            } else {
+                balanceText = `<p class="text-sm text-gray-500">Lunas</p>`;
+            }
+            
+            return `
+                <div class="card p-4 clickable" onclick="showLedgerModal(${contact.id})">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <h3 class="font-semibold">${contact.name}</h3>
+                            <p class="text-sm text-gray-500">${contact.phone || 'No HP tidak ada'}</p>
+                        </div>
+                        <div class="text-right">
+                           ${balanceText}
+                           <p class="text-xs text-blue-500 mt-1">Lihat Buku Besar <i class="fas fa-chevron-right fa-xs"></i></p>
+                        </div>
                     </div>
                 </div>
-            </div>
-        `;
-    }).join('');
-}
+            `;
+        }).join('');
 
-window.showContactModal = function(contactId = null) {
-    const modal = document.getElementById('contactModal');
-    const title = document.getElementById('contactModalTitle');
-    const form = {
-        id: document.getElementById('contactId'),
-        name: document.getElementById('contactName'),
-        phone: document.getElementById('contactPhone'),
-        address: document.getElementById('contactAddress'),
-        notes: document.getElementById('contactNotes'),
-        type: document.getElementById('contactType')
-    };
-
-    if (contactId) {
-        getFromDB('contacts', contactId).then(contact => {
-            title.textContent = 'Edit Kontak';
-            form.id.value = contact.id;
-            form.name.value = contact.name;
-            form.phone.value = contact.phone;
-            form.address.value = contact.address || '';
-            form.notes.value = contact.notes || '';
-            form.type.value = contact.type;
-            modal.classList.remove('hidden');
-        });
-    } else {
-        title.textContent = 'Tambah Kontak';
-        form.id.value = '';
-        form.name.value = '';
-        form.phone.value = '';
-        form.address.value = '';
-        form.notes.value = '';
-        // Type is pre-filled by switchContactTab
-        modal.classList.remove('hidden');
+    } catch (error) {
+        console.error(`Error loading ${type}s:`, error);
+        listContainer.innerHTML = `<p class="text-red-500">Gagal memuat daftar kontak.</p>`;
     }
 }
 
-window.closeContactModal = function() {
+function switchContactTab(type) {
+    const customerTab = document.getElementById('customerTab');
+    const supplierTab = document.getElementById('supplierTab');
+    const customerList = document.getElementById('customerListContainer');
+    const supplierList = document.getElementById('supplierListContainer');
+
+    if (type === 'customer') {
+        customerTab.classList.add('active', 'border-blue-500', 'text-blue-600');
+        customerTab.classList.remove('border-transparent', 'text-gray-500');
+        supplierTab.classList.remove('active', 'border-blue-500', 'text-blue-600');
+        supplierTab.classList.add('border-transparent', 'text-gray-500');
+        customerList.classList.remove('hidden');
+        supplierList.classList.add('hidden');
+    } else {
+        supplierTab.classList.add('active', 'border-blue-500', 'text-blue-600');
+        supplierTab.classList.remove('border-transparent', 'text-gray-500');
+        customerTab.classList.remove('active', 'border-blue-500', 'text-blue-600');
+        customerTab.classList.add('border-transparent', 'text-gray-500');
+        supplierList.classList.remove('hidden');
+        customerList.classList.add('hidden');
+    }
+}
+window.switchContactTab = switchContactTab;
+
+function showContactModal(contact = null) {
+    const modal = document.getElementById('contactModal');
+    const title = document.getElementById('contactModalTitle');
+    
+    if (contact) {
+        title.textContent = 'Edit Kontak';
+        document.getElementById('contactId').value = contact.id;
+        document.getElementById('contactName').value = contact.name;
+        document.getElementById('contactPhone').value = contact.phone || '';
+        document.getElementById('contactAddress').value = contact.address || '';
+        document.getElementById('contactNotes').value = contact.notes || '';
+        document.getElementById('contactType').value = contact.type;
+    } else {
+        title.textContent = 'Tambah Kontak';
+        document.getElementById('contactId').value = '';
+        document.getElementById('contactName').value = '';
+        document.getElementById('contactPhone').value = '';
+        document.getElementById('contactAddress').value = '';
+        document.getElementById('contactNotes').value = '';
+        document.getElementById('contactType').value = 'customer';
+    }
+    modal.classList.remove('hidden');
+}
+window.showContactModal = showContactModal;
+
+function closeContactModal() {
     document.getElementById('contactModal').classList.add('hidden');
 }
+window.closeContactModal = closeContactModal;
 
-window.saveContact = async function() {
-    const id = document.getElementById('contactId').value ? parseInt(document.getElementById('contactId').value) : null;
+async function saveContact() {
+    const id = document.getElementById('contactId').value;
     const name = document.getElementById('contactName').value.trim();
     const phone = document.getElementById('contactPhone').value.trim();
     const address = document.getElementById('contactAddress').value.trim();
     const notes = document.getElementById('contactNotes').value.trim();
     const type = document.getElementById('contactType').value;
-
-    if (!name || !phone) {
-        showToast('Nama dan No. HP wajib diisi.');
+    
+    if (!name) {
+        showToast('Nama kontak tidak boleh kosong.');
         return;
     }
-
-    const contactData = { name, phone, address, notes, type, updatedAt: new Date().toISOString() };
-    let action = '';
-
-    if (id) {
-        contactData.id = id;
-        action = 'UPDATE_CONTACT';
-    } else {
-        contactData.createdAt = new Date().toISOString();
-        action = 'CREATE_CONTACT';
-    }
+    
+    const contactData = {
+        name, phone, address, notes, type,
+        updatedAt: new Date().toISOString()
+    };
     
     try {
-        const savedId = await putToDB('contacts', contactData);
-        await queueSyncAction(action, { ...contactData, id: savedId });
-        showToast(`Kontak berhasil ${id ? 'diperbarui' : 'ditambahkan'}.`);
+        if (id) {
+            contactData.id = parseInt(id);
+            const existingContact = await getFromDB('contacts', parseInt(id));
+            contactData.createdAt = existingContact.createdAt;
+            await putToDB('contacts', contactData);
+            await queueSyncAction('UPDATE_CONTACT', contactData);
+            showToast('Kontak berhasil diperbarui.');
+        } else {
+            contactData.createdAt = new Date().toISOString();
+            const newId = await putToDB('contacts', contactData);
+            await queueSyncAction('CREATE_CONTACT', {...contactData, id: newId});
+            showToast('Kontak berhasil disimpan.');
+        }
+        
         closeContactModal();
-        loadContactsPage(type);
+        await loadContactsPage(type);
     } catch (error) {
-        console.error('Failed to save contact:', error);
+        console.error('Error saving contact:', error);
         showToast('Gagal menyimpan kontak.');
     }
 }
+window.saveContact = saveContact;
 
-window.showLedgerModal = async function(contactId) {
+async function showLedgerModal(contactId) {
     currentContactId = contactId;
     const modal = document.getElementById('ledgerModal');
-    
-    const contact = await getFromDB('contacts', contactId);
-    const ledgers = await getAllFromDB('ledgers', 'contactId', contactId);
-
-    document.getElementById('ledgerContactName').textContent = contact.name;
-    const contactTypeEl = document.getElementById('ledgerContactType');
-    contactTypeEl.textContent = contact.type === 'customer' ? 'Pelanggan (Piutang)' : 'Supplier (Hutang)';
-    contactTypeEl.className = `text-sm font-semibold ${contact.type === 'customer' ? 'text-red-600' : 'text-green-600'}`;
-    
-    document.getElementById('ledgerContactDetails').innerHTML = `
-        <p><i class="fas fa-phone-alt w-4 mr-1"></i> ${contact.phone}</p>
-        ${contact.address ? `<p><i class="fas fa-map-marker-alt w-4 mr-1"></i> ${contact.address}</p>` : ''}
-        ${contact.notes ? `<p><i class="fas fa-sticky-note w-4 mr-1"></i> ${contact.notes}</p>` : ''}
-    `;
-
-    document.getElementById('addDebitButton').innerHTML = `
-        <i class="fas fa-minus-circle"></i> ${contact.type === 'customer' ? 'Tambah Piutang' : 'Tambah Utang'}`;
-
+    const nameEl = document.getElementById('ledgerContactName');
+    const typeEl = document.getElementById('ledgerContactType');
+    const detailsEl = document.getElementById('ledgerContactDetails');
     const historyEl = document.getElementById('ledgerHistory');
-    let balance = 0;
-    
-    if (ledgers.length === 0) {
-        historyEl.innerHTML = `<p class="text-gray-500 text-center py-4">Belum ada riwayat transaksi.</p>`;
-    } else {
-         historyEl.innerHTML = ledgers.sort((a, b) => new Date(a.date) - new Date(b.date)).map(entry => {
-            const isDebit = entry.type === 'debit';
-            const amount = isDebit ? entry.amount : -entry.amount;
-            balance += amount;
-            
-            let statusBadge = '';
-            if (entry.dueDate) {
-                const dueDate = new Date(entry.dueDate);
-                const today = new Date();
-                today.setHours(0, 0, 0, 0); // Compare dates only
-                
-                if (entry.status !== 'paid' && dueDate < today) {
-                    statusBadge = '<span class="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">Menunggak</span>';
-                }
-            }
+    const addDebitButton = document.getElementById('addDebitButton');
 
-            return `
-                <div class="border-b pb-2">
-                    <div class="flex justify-between items-center text-sm">
-                        <span>${new Date(entry.date).toLocaleDateString('id-ID')} - ${entry.description}</span>
-                        <span class="font-semibold ${isDebit ? 'text-red-500' : 'text-green-500'}">
-                            ${isDebit ? '+' : '-'} Rp ${formatCurrency(entry.amount)}
-                        </span>
-                    </div>
-                    <div class="flex justify-between items-center text-xs text-gray-500 mt-1">
-                        <span>Saldo: Rp ${formatCurrency(balance)}</span>
-                        <span>${statusBadge}</span>
-                    </div>
-                </div>
-            `;
-        }).join('');
+    try {
+        const contact = await getFromDB('contacts', contactId);
+        const ledgers = await getAllFromDB('ledgers', 'contactId', contactId);
+        
+        nameEl.textContent = contact.name;
+        typeEl.textContent = contact.type === 'customer' ? 'Pelanggan' : 'Supplier';
+        typeEl.className = `text-sm font-semibold ${contact.type === 'customer' ? 'text-teal-600' : 'text-red-500'}`;
+
+        addDebitButton.innerHTML = contact.type === 'customer' 
+            ? '<i class="fas fa-minus-circle"></i> Tambah Piutang' 
+            : '<i class="fas fa-minus-circle"></i> Tambah Utang';
+
+        let balance = 0;
+        ledgers.forEach(entry => {
+            balance += entry.type === 'debit' ? entry.amount : -entry.amount;
+        });
+
+        detailsEl.innerHTML = `
+            <div class="flex justify-between items-center">
+                <p><strong>Total ${contact.type === 'customer' ? 'Piutang' : 'Hutang'}:</strong></p>
+                <p class="font-bold text-lg ${balance > 0 ? (contact.type === 'customer' ? 'text-teal-700' : 'text-red-700') : 'text-gray-700'}">Rp ${formatCurrency(balance)}</p>
+            </div>
+            ${contact.phone ? `<p><strong>No. HP:</strong> ${contact.phone}</p>` : ''}
+            ${contact.notes ? `<p><strong>Catatan:</strong> ${contact.notes}</p>` : ''}
+            <div class="mt-2 pt-2 border-t flex justify-end">
+                <button onclick='showContactModal(${JSON.stringify(contact)})' class="text-blue-600 text-sm hover:underline">Edit Kontak</button>
+            </div>
+        `;
+
+        if (ledgers.length === 0) {
+            historyEl.innerHTML = '<p class="text-gray-500 text-center py-4">Belum ada riwayat transaksi.</p>';
+        } else {
+            historyEl.innerHTML = ledgers
+                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                .map(entry => {
+                    const isDebit = entry.type === 'debit';
+                    const amountClass = isDebit ? 'text-red-600' : 'text-green-600';
+                    const amountSign = isDebit ? '+' : '-';
+                    const date = new Date(entry.createdAt).toLocaleDateString('id-ID');
+
+                    return `
+                        <div class="border p-2 rounded-lg flex justify-between items-start">
+                            <div>
+                                <p class="font-semibold">${entry.description}</p>
+                                <p class="text-xs text-gray-500">${date}</p>
+                                ${entry.dueDate ? `<p class="text-xs text-yellow-700">Jatuh Tempo: ${new Date(entry.dueDate).toLocaleDateString('id-ID')}</p>` : ''}
+                            </div>
+                            <p class="font-bold ${amountClass}">${amountSign} Rp ${formatCurrency(entry.amount)}</p>
+                        </div>
+                    `;
+                }).join('');
+        }
+
+        modal.classList.remove('hidden');
+    } catch (error) {
+        console.error('Error showing ledger modal:', error);
+        showToast('Gagal memuat detail buku besar.');
     }
-
-    modal.classList.remove('hidden');
 }
+window.showLedgerModal = showLedgerModal;
 
 
-window.closeLedgerModal = function() {
+function closeLedgerModal() {
     document.getElementById('ledgerModal').classList.add('hidden');
     currentContactId = null;
-    loadContactsPage(); // Refresh list to update balances
-    loadDashboard(); // Refresh dashboard summaries
 }
+window.closeLedgerModal = closeLedgerModal;
 
-window.showAddLedgerEntryModal = function(entryId = null, type) {
+async function showAddLedgerEntryModal(entryId = null, type) {
+    // entryId is for future editing functionality, not used for now.
     const modal = document.getElementById('addLedgerEntryModal');
-    const title = document.getElementById('addLedgerEntryTitle');
+    const titleEl = document.getElementById('addLedgerEntryTitle');
     const dueDateContainer = document.getElementById('ledgerDueDateContainer');
 
     document.getElementById('ledgerAmount').value = '';
     document.getElementById('ledgerDescription').value = '';
     document.getElementById('ledgerDueDate').value = '';
-    
-    if (type === 'credit') {
-        title.textContent = 'Catat Pembayaran';
+
+    const contact = await getFromDB('contacts', currentContactId);
+
+    if (type === 'credit') { // Pembayaran
+        titleEl.textContent = 'Catat Pembayaran';
         dueDateContainer.classList.add('hidden');
-    } else { // debit
-        title.textContent = 'Tambah Utang/Piutang';
+    } else { // 'debit' - Hutang/Piutang
+        titleEl.textContent = `Tambah ${contact.type === 'customer' ? 'Piutang' : 'Utang'}`;
         dueDateContainer.classList.remove('hidden');
     }
     
-    modal.dataset.type = type;
+    // Pass type to the save function
+    const saveButton = modal.querySelector('button[onclick="saveLedgerEntry()"]');
+    saveButton.onclick = () => saveLedgerEntry(type);
+
     modal.classList.remove('hidden');
 }
+window.showAddLedgerEntryModal = showAddLedgerEntryModal;
 
-window.closeAddLedgerEntryModal = function() {
+function closeAddLedgerEntryModal() {
     document.getElementById('addLedgerEntryModal').classList.add('hidden');
 }
+window.closeAddLedgerEntryModal = closeAddLedgerEntryModal;
 
-
-window.saveLedgerEntry = async function() {
-    const modal = document.getElementById('addLedgerEntryModal');
-    const type = modal.dataset.type;
+async function saveLedgerEntry(type) {
     const amount = parseFloat(document.getElementById('ledgerAmount').value);
     const description = document.getElementById('ledgerDescription').value.trim();
     const dueDate = document.getElementById('ledgerDueDate').value;
 
     if (isNaN(amount) || amount <= 0 || !description) {
-        showToast('Jumlah dan Keterangan wajib diisi.');
+        showToast('Jumlah dan Keterangan harus diisi.');
         return;
     }
-
+    
     const newEntry = {
         contactId: currentContactId,
-        type,
-        amount,
-        description,
-        dueDate: type === 'debit' ? dueDate : null,
-        status: 'unpaid', // Default status
-        date: new Date().toISOString()
+        type: type,
+        amount: amount,
+        description: description,
+        createdAt: new Date().toISOString(),
+        dueDate: type === 'debit' && dueDate ? dueDate : null
     };
     
     try {
-        const savedId = await putToDB('ledgers', newEntry);
-        await queueSyncAction('CREATE_LEDGER', { ...newEntry, id: savedId });
-        showToast('Transaksi berhasil dicatat.');
+        const newId = await putToDB('ledgers', newEntry);
+        await queueSyncAction('CREATE_LEDGER_ENTRY', {...newEntry, id: newId});
+        
+        showToast('Entri berhasil disimpan.');
         closeAddLedgerEntryModal();
-        showLedgerModal(currentContactId); // Refresh the detail view
-    } catch (error) {
-        console.error('Failed to save ledger entry:', error);
-        showToast('Gagal menyimpan transaksi.');
+        await showLedgerModal(currentContactId); // Refresh ledger view
+        await loadContactsPage(); // Refresh contact list balances
+        await updateDashboardSummaries(); // Refresh dashboard cards
+        await checkDueDateNotifications(); // Refresh due date notifications
+    } catch(error) {
+        console.error('Error saving ledger entry:', error);
+        showToast('Gagal menyimpan entri.');
     }
 }
+window.saveLedgerEntry = saveLedgerEntry;
 
-
-// --- INITIALIZATION ---
-document.addEventListener('DOMContentLoaded', async () => {
-    try {
-        await initDB();
-        await checkAndRunLicense();
-
-        // Check if required libraries are loaded
-        if (typeof Html5Qrcode !== 'undefined') {
-            isScannerReady = true;
-            html5QrCode = new Html5Qrcode("qr-reader");
-        } else {
-            console.warn('Html5Qrcode library failed to load.');
-        }
-
-        if (typeof EscPosEncoder !== 'undefined' && EscPosEncoder.default) {
-             isPrinterReady = true;
-        } else {
-             console.warn('EscPosEncoder library failed to load.');
-        }
-
-        if (typeof Chart !== 'undefined') {
-             isChartJsReady = true;
-             setupChartViewToggle(); // Setup toggle only if Chart.js is ready
-        } else {
-             console.warn('Chart.js library failed to load.');
-        }
-
-        updateFeatureAvailability();
-
-    } catch (error) {
-        console.error("Initialization failed:", error);
-    }
-    
-    // --- EVENT LISTENERS ---
-    
-    // Search product in cashier
-    document.getElementById('searchProduct')?.addEventListener('input', (e) => {
-        const query = e.target.value.toLowerCase();
-        document.querySelectorAll('#productsGrid .product-item').forEach(item => {
-            const name = item.dataset.name || '';
-            const category = item.dataset.category || '';
-            const barcode = item.dataset.barcode || '';
-            item.style.display = (name.includes(query) || category.includes(query) || barcode.includes(query)) ? '' : 'none';
-        });
-    });
-
-    document.getElementById('confirmButton')?.addEventListener('click', () => {
-        if (confirmCallback) {
-            confirmCallback();
-        }
-        closeConfirmationModal();
-    });
-    document.getElementById('cancelButton')?.addEventListener('click', closeConfirmationModal);
-
-    window.addEventListener('online', checkOnlineStatus);
-    window.addEventListener('offline', checkOnlineStatus);
-    
-    // Initialize audio context on the first user interaction
+// Call initApp when the DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    // Initialize audio on first user interaction
     document.body.addEventListener('click', initAudioContext, { once: true });
-    document.body.addEventListener('touchend', initAudioContext, { once: true });
-
-    document.getElementById('activateLicenseBtn')?.addEventListener('click', activateLicense);
-
-    const copyableIds = ['licenseDeviceId', 'settingsDeviceId'];
-    copyableIds.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-            el.addEventListener('click', () => {
-                navigator.clipboard.writeText(el.textContent)
-                    .then(() => showToast('Device ID disalin!'))
-                    .catch(err => showToast('Gagal menyalin.'));
-            });
-        }
-    });
-
-    checkOnlineStatus();
-    setInterval(updateDashboardDate, 60000); // Update date every minute
+    initApp();
 });

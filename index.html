@@ -24,29 +24,6 @@
 </head>
 <body class="bg-gray-50">
 
-    <!-- License Activation Overlay -->
-    <div id="licenseOverlay" class="fixed inset-0 bg-gray-800 bg-opacity-75 z-[9998] flex flex-col items-center justify-center p-4 text-center hidden">
-        <div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
-            <i class="fas fa-lock text-4xl text-blue-500 mb-4"></i>
-            <h2 class="text-xl font-bold mb-2">Aktivasi Lisensi Diperlukan</h2>
-            <p class="text-gray-600 mb-4 text-sm">Aplikasi ini memerlukan lisensi untuk digunakan pada perangkat ini. Silakan hubungi penyedia untuk mendapatkan kunci lisensi Anda.</p>
-            <div class="bg-gray-100 p-3 rounded-lg mb-4">
-                <p class="text-xs text-gray-500">Device ID</p>
-                <p id="licenseDeviceId" class="font-mono text-lg font-semibold break-all cursor-pointer" title="Klik untuk salin"></p>
-            </div>
-            <div class="space-y-3">
-                <div>
-                    <label class="text-sm text-gray-600 block text-left mb-1">Kunci Lisensi</label>
-                    <input type="text" id="licenseKeyInput" class="input-field w-full uppercase" placeholder="XXXX-XXXX-XXXX-XXXX">
-                </div>
-                <button id="activateLicenseBtn" class="btn bg-blue-500 text-white w-full py-3 font-semibold">
-                    Aktivasi
-                </button>
-            </div>
-            <p class="text-xs text-gray-400 mt-4">Satu lisensi hanya berlaku untuk satu perangkat.</p>
-        </div>
-    </div>
-
     <!-- Loading Overlay -->
     <div id="loadingOverlay" class="fixed inset-0 bg-white z-[9999] flex flex-col items-center justify-center transition-opacity duration-300 ease-in-out">
         <div class="spinner"></div>
@@ -87,6 +64,20 @@
                     </div>
                     <div class="cashier-btn-arrow">
                         <i class="fas fa-chevron-right"></i>
+                    </div>
+                </div>
+
+                <!-- Due Date Notifications -->
+                <div id="dueDateNotificationCard" class="card p-4 mb-6 bg-yellow-50 border-yellow-300 hidden clickable">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <i class="fas fa-exclamation-circle text-yellow-500 text-3xl mr-4"></i>
+                            <div>
+                                <h3 class="font-bold text-yellow-800">Pengingat Jatuh Tempo</h3>
+                                <p class="text-sm text-yellow-700"><span id="dueDateCount">0</span> item akan/sudah jatuh tempo.</p>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right text-yellow-600"></i>
                     </div>
                 </div>
                 
@@ -605,21 +596,6 @@
                     </div>
                 </div>
 
-                <!-- License Info -->
-                <div id="licenseInfoCard" class="card p-4 mb-4">
-                    <h2 class="text-lg font-semibold mb-3">Informasi Lisensi</h2>
-                    <div class="space-y-2 text-sm">
-                        <div class="flex justify-between items-center">
-                            <span class="font-semibold text-gray-800">Status:</span>
-                            <span id="licenseStatus" class="font-bold text-green-600">Aktif</span>
-                        </div>
-                        <div class="border-t pt-2">
-                            <p class="text-xs text-gray-500">Device ID</p>
-                            <p id="settingsDeviceId" class="font-mono text-md break-all cursor-pointer" title="Klik untuk salin"></p>
-                        </div>
-                    </div>
-                </div>
-                
                 <!-- About -->
                 <div class="card p-4 mb-4">
                     <h2 class="text-lg font-semibold mb-3">Tentang</h2>
@@ -1153,6 +1129,21 @@
                     <button onclick="handlePinKeyPress('backspace')" class="btn bg-gray-300 py-4"><i class="fas fa-backspace"></i></button>
                 </div>
                 <button onclick="closeEnterKioskPinModal()" class="btn bg-gray-500 text-white w-full py-2 mt-4">Batal</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Due Date Details Modal -->
+    <div id="dueDateModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-[1500]">
+        <div class="flex items-center justify-center h-full p-4">
+            <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Detail Jatuh Tempo</h2>
+                    <button onclick="closeDueDateModal()" class="text-gray-500 text-2xl">&times;</button>
+                </div>
+                <div id="dueDateList" class="space-y-3">
+                    <!-- Due items will be listed here -->
+                </div>
             </div>
         </div>
     </div>
