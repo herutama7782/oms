@@ -1,5 +1,5 @@
 {
-  "name": "(OK) POS Mobile + Allow Camera, Bluetooth, Location, License (Cursor AI) + Hutang Piutang",
+  "name": "(OK) POS Mobile + Allow Camera, Bluetooth, Location, License (Cursor AI), Hutang Piutang, PWA, Android Studio",
   "description": "A mobile-first Point of Sale application with barcode scanning for small businesses.",
   "requestFramePermissions": [
     "camera",
