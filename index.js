@@ -846,6 +846,9 @@ function loadDashboard() {
     // Always update the displayed date string (e.g., "Kamis, 1 Agustus 2024")
     updateDashboardDate();
 
+    // Set the date for the auto-refresh check
+    lastDashboardLoadDate = new Date().toISOString().split('T')[0];
+
     console.log('Refreshing dashboard stats.');
 
     const today = new Date();
@@ -3352,7 +3355,7 @@ async function renderLedgerHistory(contactId) {
 
     historyEl.innerHTML = historyWithBalance.reverse().map(entry => {
         const isDebit = entry.type === 'debit';
-        const amountColor = isDebit ? 'text-red-500' : 'text-green-600';
+        const amountColor = isDebit ? 'text-red-500' : 'text-green-500';
         const amountSign = isDebit ? '+' : '-';
         const date = new Date(entry.createdAt).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'});
 
@@ -4154,6 +4157,16 @@ async function init() {
         window.addEventListener('offline', checkOnlineStatus);
         checkOnlineStatus(); // Initial check
         setInterval(() => window.syncWithServer(), 5 * 60 * 1000); // Sync every 5 minutes
+
+        // Periodically check for date change to refresh dashboard
+        setInterval(() => {
+            const todayString = new Date().toISOString().split('T')[0];
+            if (lastDashboardLoadDate && todayString !== lastDashboardLoadDate && currentPage === 'dashboard') {
+                console.log("Date has changed. Reloading dashboard...");
+                showToast("Memuat data untuk hari baru...", 2000);
+                loadDashboard();
+            }
+        }, 10 * 1000); // Check every 10 seconds
 
         // Hide loading overlay and show app
         loadingOverlay.classList.add('opacity-0');
