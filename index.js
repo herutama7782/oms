@@ -802,6 +802,18 @@ function formatCurrency(amount) {
     return Math.round(amount).toLocaleString('id-ID');
 }
 
+function formatReceiptDate(isoString) {
+    if (!isoString) return '';
+    const date = new Date(isoString);
+    const d = date.getDate();
+    const m = date.getMonth() + 1;
+    const y = date.getFullYear();
+    const h = String(date.getHours()).padStart(2, '0');
+    const min = String(date.getMinutes()).padStart(2, '0');
+    const s = String(date.getSeconds()).padStart(2, '0');
+    return `${d}/${m}/${y}, ${h}.${min}.${s}`;
+}
+
 
 // --- DASHBOARD ---
 function updateDashboardDate() {
@@ -2989,7 +3001,7 @@ async function _generateReceiptHTML(data, isPreview) {
     const storeName = settingsMap.get('storeName') || 'Toko Anda';
     const storeAddress = settingsMap.get('storeAddress') || '';
     const feedbackPhone = settingsMap.get('storeFeedbackPhone') || '';
-    const footerText = settingsMap.get('storeFooterText') || 'Terima kasih telah berbelanja!';
+    const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
     const logoData = settingsMap.get('storeLogo') || null;
     const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
     const paperSize = settingsMap.get('printerPaperSize') || '80mm';
@@ -3000,69 +3012,78 @@ async function _generateReceiptHTML(data, isPreview) {
         return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     };
 
+    // --- Items ---
     let itemsHtml = '';
     data.items.forEach(item => {
-        const totalItemPrice = item.effectivePrice * item.quantity;
-        const nameLine = `${item.quantity}x ${escapeHtml(item.name)}`;
-        const priceLine = `Rp ${formatCurrency(totalItemPrice)}`;
-        const padding = paperWidthChars - nameLine.length - priceLine.length;
-        itemsHtml += `<div>${nameLine}${' '.repeat(Math.max(0, padding))}${priceLine}</div>`;
+        itemsHtml += `<div>${escapeHtml(item.name)}</div>`;
+        const priceLineLeft = `${item.quantity} x ${formatCurrency(item.effectivePrice)}`;
+        const priceLineRight = `Rp ${formatCurrency(item.effectivePrice * item.quantity)}`;
+        const pricePadding = paperWidthChars - priceLineLeft.length - priceLineRight.length;
+        itemsHtml += `<div>${priceLineLeft}${' '.repeat(Math.max(0, pricePadding))}${priceLineRight}</div>`;
+
         if (item.discountPercentage > 0) {
-            const discountText = `(Disc ${item.discountPercentage}%) @${formatCurrency(item.effectivePrice)}`;
+            const discountText = `Disc ${item.discountPercentage}% @ Rp.${formatCurrency(item.price)}`;
             const discPadding = paperWidthChars - discountText.length;
             itemsHtml += `<div>${' '.repeat(Math.max(0, discPadding))}${discountText}</div>`;
         }
     });
 
-    let feesHtml = '';
+    // --- Summary ---
+    let summaryHtml = `<div class="receipt-divider">${receiptLine('-', paperWidthChars)}</div>`;
+    const subtotalAfterDiscount = data.subtotal - data.totalDiscount;
+    const subtotalText = "Subtotal";
+    const subtotalValue = `Rp ${formatCurrency(subtotalAfterDiscount)}`;
+    let padding = paperWidthChars - subtotalText.length - subtotalValue.length;
+    summaryHtml += `<div>${subtotalText}${' '.repeat(Math.max(0, padding))}${subtotalValue}</div>`;
+    
     if (data.fees && data.fees.length > 0) {
-        feesHtml += `<div class="receipt-divider">${receiptLine('-', paperWidthChars)}</div>`;
         data.fees.forEach(fee => {
             const feeName = escapeHtml(fee.name);
             const feeAmount = `Rp ${formatCurrency(fee.amount)}`;
-            const padding = paperWidthChars - feeName.length - feeAmount.length;
-            feesHtml += `<div>${feeName}${' '.repeat(Math.max(0, padding))}${feeAmount}</div>`;
+            padding = paperWidthChars - feeName.length - feeAmount.length;
+            summaryHtml += `<div>${feeName}${' '.repeat(Math.max(0, padding))}${feeAmount}</div>`;
         });
     }
-
-    const receiptDate = new Date(data.date).toLocaleString('id-ID', {
-        day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
-    });
     
-    const subtotalText = "Subtotal";
-    const subtotalValue = `Rp ${formatCurrency(data.subtotal - data.totalDiscount)}`;
-    const totalText = "Total";
-    const totalValue = `Rp ${formatCurrency(data.total)}`;
-    const cashText = "Tunai";
-    const cashValue = `Rp ${formatCurrency(data.cashPaid)}`;
-    const changeText = "Kembali";
-    const changeValue = `Rp ${formatCurrency(data.change)}`;
+    summaryHtml += `<div class="receipt-divider">${receiptLine('-', paperWidthChars)}</div>`;
 
+    const totalText = "TOTAL";
+    const totalValue = `Rp ${formatCurrency(data.total)}`;
+    padding = paperWidthChars - totalText.length - totalValue.length;
+    summaryHtml += `<div style="font-weight: bold;">${totalText}${' '.repeat(Math.max(0, padding))}${totalValue}</div>`;
+
+    const cashText = "TUNAI";
+    const cashValue = `Rp ${formatCurrency(data.cashPaid)}`;
+    padding = paperWidthChars - cashText.length - cashValue.length;
+    summaryHtml += `<div>${cashText}${' '.repeat(Math.max(0, padding))}${cashValue}</div>`;
+    
+    const changeText = "KEMBALI";
+    const changeValue = `Rp ${formatCurrency(data.change)}`;
+    padding = paperWidthChars - changeText.length - changeValue.length;
+    summaryHtml += `<div>${changeText}${' '.repeat(Math.max(0, padding))}${changeValue}</div>`;
+
+    // --- Footer ---
+    const footerLines = escapeHtml(footerText).split('\n').map(line => `<p style="margin: 0;">${line}</p>`).join('');
+    const feedbackHtml = feedbackPhone ? `<p style="margin: 0; font-size: 0.8rem;">Kritik/Saran: ${escapeHtml(feedbackPhone)}</p>` : '';
+    
     return `
         ${showLogo && logoData ? `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 0.5rem;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto;"></div>` : ''}
         <div style="text-align: center;">
             <h2 style="font-size: 1.1rem; font-weight: bold; margin: 0;">${escapeHtml(storeName)}</h2>
             <p style="margin: 0; font-size: 0.8rem;">${escapeHtml(storeAddress)}</p>
-            ${feedbackPhone ? `<p style="margin: 0; font-size: 0.8rem;">Telp: ${escapeHtml(feedbackPhone)}</p>` : ''}
         </div>
-        <div class="receipt-divider">${receiptLine('-', paperWidthChars)}</div>
+        <div class="receipt-divider">${receiptLine('=', paperWidthChars)}</div>
         <div style="font-size: 0.8rem;">
             <div>No: ${data.id || (isPreview ? 'PREVIEW' : 'N/A')}</div>
-            <div>Tgl: ${receiptDate}</div>
+            <div>Tgl: ${formatReceiptDate(data.date)}</div>
         </div>
         <div class="receipt-divider">${receiptLine('-', paperWidthChars)}</div>
         <div style="font-size: 0.9rem;">${itemsHtml}</div>
-        ${feesHtml}
-        <div class="receipt-divider">${receiptLine('=', paperWidthChars)}</div>
-        <div style="font-size: 0.9rem;">
-            <div>${subtotalText}${' '.repeat(paperWidthChars - subtotalText.length - subtotalValue.length)}${subtotalValue}</div>
-            <div style="font-weight: bold;">${totalText}${' '.repeat(paperWidthChars - totalText.length - totalValue.length)}${totalValue}</div>
-            <div>${cashText}${' '.repeat(paperWidthChars - cashText.length - cashValue.length)}${cashValue}</div>
-            <div>${changeText}${' '.repeat(paperWidthChars - changeText.length - changeValue.length)}${changeValue}</div>
-        </div>
-        <div class="receipt-divider" style="margin-top: 0.5rem;">${receiptLine('-', paperWidthChars)}</div>
+        ${summaryHtml}
+        <div class="receipt-divider" style="margin-top: 0.5rem;">${receiptLine('=', paperWidthChars)}</div>
         <div style="text-align: center; margin-top: 1rem; font-size: 0.8rem;">
-            <p>${escapeHtml(footerText)}</p>
+            ${footerLines}
+            ${feedbackHtml}
         </div>
     `;
 }
@@ -3756,7 +3777,6 @@ async function printReceipt(isAutoPrint = false) {
         return;
     }
 
-    // Check connection status using the UI state, which is the single source of truth
     if (document.getElementById('testPrintBtn').disabled) {
         showToast('Printer Bluetooth tidak terhubung.');
         return;
@@ -3777,7 +3797,6 @@ async function printReceipt(isAutoPrint = false) {
         const encoder = new EscPosEncoder.default();
         encoder.initialize().align('center');
 
-        // Logo (if available and enabled)
         const logoData = settingsMap.get('storeLogo') || null;
         const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
 
@@ -3792,55 +3811,78 @@ async function printReceipt(isAutoPrint = false) {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             const maxWidth = paperSize === '58mm' ? 384 : 576;
-            const scale = Math.min(maxWidth / image.width, 150 / image.height); // Max height 150px
+            const scale = Math.min(maxWidth / image.width, 150 / image.height);
             canvas.width = image.width * scale;
             canvas.height = image.height * scale;
             ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             encoder.image(imageData);
         }
-
+        
         encoder.bold(true).size(1,2).text(settingsMap.get('storeName') || 'Toko Anda').size(1,1).bold(false);
         encoder.text(settingsMap.get('storeAddress') || '');
-        if(settingsMap.get('storeFeedbackPhone')) encoder.text(`Telp: ${settingsMap.get('storeFeedbackPhone')}`);
-        encoder.text('-'.repeat(width));
+        encoder.text('='.repeat(width));
         
         encoder.align('left');
         encoder.text(`No: ${currentReceiptTransaction.id}`);
-        encoder.text(`Tgl: ${new Date(currentReceiptTransaction.date).toLocaleString('id-ID')}`);
+        encoder.text(`Tgl: ${formatReceiptDate(currentReceiptTransaction.date)}`);
         encoder.text('-'.repeat(width));
 
         currentReceiptTransaction.items.forEach(item => {
-            const totalPrice = formatCurrency(item.effectivePrice * item.quantity);
-            const itemLine = `${item.quantity}x ${item.name}`;
-            encoder.line(itemLine);
-             if (item.discountPercentage > 0) {
-                 const discText = `(Disc ${item.discountPercentage}%) @${formatCurrency(item.effectivePrice)}`;
-                 encoder.align('right').text(discText).align('left');
+            encoder.line(item.name);
+            const priceLineLeft = `${item.quantity} x ${formatCurrency(item.effectivePrice)}`;
+            const priceLineRight = `Rp ${formatCurrency(item.effectivePrice * item.quantity)}`;
+            const padding = width - priceLineLeft.length - priceLineRight.length;
+            encoder.line(`${priceLineLeft}${' '.repeat(Math.max(0, padding))}${priceLineRight}`);
+
+            if (item.discountPercentage > 0) {
+                const discountText = `Disc ${item.discountPercentage}% @ Rp.${formatCurrency(item.price)}`;
+                encoder.align('right').line(discountText).align('left');
             }
-             encoder.align('right').text(`Rp ${totalPrice}`).align('left');
         });
         
-        encoder.text('='.repeat(width));
+        encoder.text('-'.repeat(width));
         
-        const subtotalLine = `Subtotal: Rp ${formatCurrency(currentReceiptTransaction.subtotal - currentReceiptTransaction.totalDiscount)}`;
-        encoder.align('right').text(subtotalLine);
+        const subtotalAfterDiscount = currentReceiptTransaction.subtotal - currentReceiptTransaction.totalDiscount;
+        const subtotalText = "Subtotal";
+        const subtotalValue = `Rp ${formatCurrency(subtotalAfterDiscount)}`;
+        let padding = width - subtotalText.length - subtotalValue.length;
+        encoder.line(`${subtotalText}${' '.repeat(Math.max(0, padding))}${subtotalValue}`);
 
         (currentReceiptTransaction.fees || []).forEach(fee => {
-            const feeLine = `${fee.name}: Rp ${formatCurrency(fee.amount)}`;
-            encoder.text(feeLine);
+            const feeName = fee.name;
+            const feeAmount = `Rp ${formatCurrency(fee.amount)}`;
+            padding = width - feeName.length - feeAmount.length;
+            encoder.line(`${feeName}${' '.repeat(Math.max(0, padding))}${feeAmount}`);
         });
-        
-        const totalLine = `Total: Rp ${formatCurrency(currentReceiptTransaction.total)}`;
-        encoder.bold(true).text(totalLine).bold(false);
-
-        const cashLine = `Tunai: Rp ${formatCurrency(currentReceiptTransaction.cashPaid)}`;
-        encoder.text(cashLine);
-        const changeLine = `Kembali: Rp ${formatCurrency(currentReceiptTransaction.change)}`;
-        encoder.text(changeLine);
 
         encoder.text('-'.repeat(width));
-        encoder.align('center').text(settingsMap.get('storeFooterText') || 'Terima kasih!');
+        
+        const totalText = "TOTAL";
+        const totalValue = `Rp ${formatCurrency(currentReceiptTransaction.total)}`;
+        padding = width - totalText.length - totalValue.length;
+        encoder.bold(true).line(`${totalText}${' '.repeat(Math.max(0, padding))}${totalValue}`).bold(false);
+        
+        const cashText = "TUNAI";
+        const cashValue = `Rp ${formatCurrency(currentReceiptTransaction.cashPaid)}`;
+        padding = width - cashText.length - cashValue.length;
+        encoder.line(`${cashText}${' '.repeat(Math.max(0, padding))}${cashValue}`);
+        
+        const changeText = "KEMBALI";
+        const changeValue = `Rp ${formatCurrency(currentReceiptTransaction.change)}`;
+        padding = width - changeText.length - changeValue.length;
+        encoder.line(`${changeText}${' '.repeat(Math.max(0, padding))}${changeValue}`);
+
+        encoder.text('='.repeat(width));
+        encoder.align('center');
+
+        const footerLines = (settingsMap.get('storeFooterText') || 'Terima kasih!').split('\n');
+        footerLines.forEach(line => encoder.text(line));
+        
+        const feedbackPhone = settingsMap.get('storeFeedbackPhone');
+        if (feedbackPhone) {
+            encoder.text(`Kritik/Saran: ${feedbackPhone}`);
+        }
         
         encoder.feed(3).cut();
         
@@ -3850,7 +3892,6 @@ async function printReceipt(isAutoPrint = false) {
         showToast('Gagal mencetak struk.');
     }
 }
-window.printReceipt = printReceipt;
 
 window.showPrintHelpModal = function() {
     document.getElementById('printHelpModal').classList.remove('hidden');
