@@ -3584,7 +3584,49 @@ document.addEventListener('click', (event) => {
 
 
 // --- BLUETOOTH PRINTING ---
+// Helper to convert Uint8Array to Base64 for the native bridge
+function uint8ArrayToBase64(bytes) {
+    let binary = '';
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
+}
+
+/**
+ * Global function for the native Android bridge to call to update connection status.
+ * @param {boolean} isConnected - Whether the connection was successful.
+ * @param {string} [deviceName=''] - The name of the connected device.
+ */
+window.updateBluetoothConnectionState = function(isConnected, deviceName = '') {
+    if (isConnected) {
+        updateBluetoothStatus(`Terhubung ke ${deviceName}`, 'green');
+        document.getElementById('connectBluetoothBtn').classList.add('hidden');
+        document.getElementById('disconnectBluetoothBtn').classList.remove('hidden');
+        document.getElementById('testPrintBtn').disabled = false;
+    } else {
+        updateBluetoothStatus('Koneksi terputus', 'red');
+        if (bluetoothDevice) { // Clean up Web Bluetooth resources if they exist
+             bluetoothDevice.removeEventListener('gattserverdisconnected', onDisconnected);
+             bluetoothDevice = null;
+             bluetoothCharacteristic = null;
+        }
+        document.getElementById('connectBluetoothBtn').classList.remove('hidden');
+        document.getElementById('disconnectBluetoothBtn').classList.add('hidden');
+        document.getElementById('testPrintBtn').disabled = true;
+    }
+};
+
 window.connectToBluetoothPrinter = async function() {
+    // Prioritize Native Bridge
+    if (window.AndroidBridge && typeof window.AndroidBridge.connect === 'function') {
+        updateBluetoothStatus('Buka pemilih perangkat...', 'yellow');
+        window.AndroidBridge.connect();
+        return;
+    }
+
+    // Fallback to Web Bluetooth
     if (!navigator.bluetooth) {
         showToast('Web Bluetooth API tidak didukung di browser ini.');
         return;
@@ -3593,7 +3635,6 @@ window.connectToBluetoothPrinter = async function() {
         updateBluetoothStatus('Mencari printer...', 'yellow');
         bluetoothDevice = await navigator.bluetooth.requestDevice({
             filters: [{ services: ['000018f0-0000-1000-8000-00805f9b34fb'] }],
-            // acceptAllDevices: true,
             optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
         });
         updateBluetoothStatus(`Menghubungkan ke ${bluetoothDevice.name}...`, 'yellow');
@@ -3627,6 +3668,13 @@ function onDisconnected(event) {
 }
 
 window.disconnectBluetoothPrinter = function() {
+    // Prioritize Native Bridge
+    if (window.AndroidBridge && typeof window.AndroidBridge.disconnect === 'function') {
+        window.AndroidBridge.disconnect();
+        return;
+    }
+    
+    // Fallback to Web Bluetooth
     if (bluetoothDevice && bluetoothDevice.gatt.connected) {
         bluetoothDevice.gatt.disconnect();
     } else {
@@ -3646,7 +3694,20 @@ function updateBluetoothStatus(message, color = 'gray') {
     }
 }
 
-async function sendDataToPrinter(data) {
+async function sendDataToPrinter(data) { // data is a Uint8Array
+    // Prioritize Native Bridge
+    if (window.AndroidBridge && typeof window.AndroidBridge.print === 'function') {
+        try {
+            const base64Data = uint8ArrayToBase64(data);
+            window.AndroidBridge.print(base64Data);
+        } catch (error) {
+             console.error('Error sending data via native bridge:', error);
+             showToast('Gagal mengirim data ke printer (native).');
+        }
+        return;
+    }
+
+    // Fallback to Web Bluetooth
     if (!bluetoothCharacteristic) {
         showToast('Printer tidak terhubung.');
         return;
@@ -3694,10 +3755,13 @@ async function printReceipt(isAutoPrint = false) {
         showToast('Fitur cetak tidak tersedia (library gagal dimuat).');
         return;
     }
-    if (!bluetoothCharacteristic) {
+
+    // Check connection status using the UI state, which is the single source of truth
+    if (document.getElementById('testPrintBtn').disabled) {
         showToast('Printer Bluetooth tidak terhubung.');
         return;
     }
+
     if (!currentReceiptTransaction) {
         showToast('Tidak ada data struk untuk dicetak.');
         return;
