@@ -3062,26 +3062,26 @@ async function _generateReceiptHTML(data, isPreview) {
     const footerLines = escapeHtml(footerText).split('\n').map(line => `<p style="margin: 0;">${line}</p>`).join('');
     const feedbackHtml = feedbackPhone ? `<p style="margin: 0; font-size: 0.8rem;">Kritik/Saran: ${escapeHtml(feedbackPhone)}</p>` : '';
     
-    return `
-        ${showLogo && logoData ? `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 0.5rem;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto;"></div>` : ''}
-        <div style="text-align: center;">
-            <h2 style="font-size: 1.1rem; font-weight: bold; margin: 0;">${escapeHtml(storeName)}</h2>
-            <p style="margin: 0; font-size: 0.8rem;">${escapeHtml(storeAddress)}</p>
-        </div>
-        <div class="receipt-divider">${receiptLine('=', paperWidthChars)}</div>
-        <div style="font-size: 0.8rem;">
-            <div>No: ${data.id || (isPreview ? 'PREVIEW' : 'N/A')}</div>
-            <div>Tgl: ${formatReceiptDate(data.date)}</div>
-        </div>
-        <div class="receipt-divider">${receiptLine('-', paperWidthChars)}</div>
-        <div style="font-size: 0.9rem;">${itemsHtml}</div>
-        ${summaryHtml}
-        <div class="receipt-divider" style="margin-top: 0.5rem;">${receiptLine('=', paperWidthChars)}</div>
-        <div style="text-align: center; margin-top: 1rem; font-size: 0.8rem;">
-            ${footerLines}
-            ${feedbackHtml}
-        </div>
-    `;
+    return (
+        `${showLogo && logoData ? `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 2px;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto;"></div>` : ''}` +
+        `<div style="text-align: center;">` +
+            `<h2 style="font-size: 1.1rem; font-weight: bold; margin: 0;">${escapeHtml(storeName)}</h2>` +
+            `<p style="margin: 0; font-size: 0.8rem;">${escapeHtml(storeAddress)}</p>` +
+        `</div>` +
+        `<div class="receipt-divider">${receiptLine('=', paperWidthChars)}</div>` +
+        `<div style="font-size: 0.8rem;">` +
+            `<div>No: ${data.id || (isPreview ? 'PREVIEW' : 'N/A')}</div>` +
+            `<div>Tgl: ${formatReceiptDate(data.date)}</div>` +
+        `</div>` +
+        `<div class="receipt-divider">${receiptLine('-', paperWidthChars)}</div>` +
+        `<div style="font-size: 0.9rem;">${itemsHtml}</div>` +
+        `${summaryHtml}` +
+        `<div class="receipt-divider" style="margin-top: 2px;">${receiptLine('=', paperWidthChars)}</div>` +
+        `<div style="text-align: center; margin-top: 4px; font-size: 0.8rem;">` +
+            `${footerLines}` +
+            `${feedbackHtml}` +
+        `</div>`
+    );
 }
 
 async function generateReceiptContent(transactionData, targetElementId = 'receiptContent') {
@@ -3888,7 +3888,7 @@ async function printReceipt(isAutoPrint = false) {
         const footerLines = (settingsMap.get('storeFooterText') || 'Terima kasih!').split('\n');
         footerLines.forEach(line => encoder.text(line));
         
-        const feedbackPhone = settingsMap.get('storeFeedbackPhone');
+        const feedbackPhone = settingsMap.get('storeFooterText');
         if (feedbackPhone) {
             encoder.text(`Kritik/Saran: ${feedbackPhone}`);
         }
