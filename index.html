@@ -926,6 +926,24 @@
         </div>
     </div>
 
+    <!-- Edit Due Date Modal (New) -->
+    <div id="editDueDateModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-[1700]">
+        <div class="flex items-center justify-center h-full p-4">
+            <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+                <h2 class="text-xl font-bold mb-4">Ubah Tanggal Jatuh Tempo</h2>
+                <input type="hidden" id="editDueDateEntryId">
+                <div>
+                    <label class="text-sm text-gray-600">Tanggal Jatuh Tempo Baru</label>
+                    <input type="date" id="newDueDate" class="input-field w-full">
+                </div>
+                 <div class="flex gap-3 mt-6">
+                    <button onclick="closeEditDueDateModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">Batal</button>
+                    <button onclick="saveDueDate()" class="btn bg-blue-500 text-white flex-1 py-2">Simpan</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 
     <!-- Confirmation Modal -->
     <div id="confirmationModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
@@ -1148,6 +1166,11 @@
         </div>
     </div>
     
+    <!-- Ledger Actions Popover -->
+    <div id="ledgerActionsPopover" class="hidden absolute bg-white rounded-lg shadow-xl border z-[1650] text-sm">
+        <!-- Actions will be injected here by JS -->
+    </div>
+
     <!-- Toast Notification -->
     <div id="toast" class="toast"></div>
 
