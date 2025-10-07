@@ -34,6 +34,7 @@ let audioContext = null; // For Web Audio API
 let currentContactId = null; // For tracking which contact's ledger is open
 let dueItemsList = []; // For due date notifications
 let activePopover = null; // For the ledger actions popover
+let cameraStream = null; // For camera capture stream
 
 // Bluetooth printing state
 let bluetoothDevice = null;
@@ -1027,7 +1028,8 @@ window.closeDueDateModal = function() {
 
 window.viewLedgerFromDueDateModal = function(contactId) {
     closeDueDateModal();
-    showLedgerModal(contactId);
+    showPage('kontak');
+    setTimeout(() => showLedgerModal(contactId), 350); // Wait for page transition
 }
 
 
@@ -1570,6 +1572,116 @@ window.deleteProduct = function(id) {
         'Ya, Hapus',
         'bg-red-500'
     );
+}
+
+// --- CAMERA FUNCTIONS ---
+window.openCameraModal = async function() {
+    const modal = document.getElementById('cameraModal');
+    const video = document.getElementById('cameraFeed');
+    const photoPreview = document.getElementById('photoPreview');
+    const errorEl = document.getElementById('cameraError');
+    const captureBtn = document.getElementById('captureBtn');
+    const retakeBtn = document.getElementById('retakeBtn');
+    const usePhotoBtn = document.getElementById('usePhotoBtn');
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        errorEl.textContent = 'Kamera tidak didukung oleh browser ini.';
+        errorEl.style.display = 'block';
+        video.style.display = 'none';
+        captureBtn.style.display = 'none';
+        modal.classList.remove('hidden');
+        return;
+    }
+    
+    // Reset UI
+    errorEl.style.display = 'none';
+    video.style.display = 'block';
+    photoPreview.style.display = 'none';
+    captureBtn.style.display = 'flex';
+    retakeBtn.style.display = 'none';
+    usePhotoBtn.style.display = 'none';
+
+    modal.classList.remove('hidden');
+
+    try {
+        const constraints = { video: { facingMode: "environment" } };
+        cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = cameraStream;
+        await video.play();
+    } catch (err) {
+        console.error("Error accessing camera:", err);
+        errorEl.textContent = 'Gagal mengakses kamera. Pastikan izin telah diberikan.';
+        errorEl.style.display = 'block';
+        video.style.display = 'none';
+        captureBtn.style.display = 'none';
+    }
+}
+
+window.closeCameraModal = function() {
+    if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        cameraStream = null;
+    }
+    const video = document.getElementById('cameraFeed');
+    if (video) video.srcObject = null;
+    document.getElementById('cameraModal').classList.add('hidden');
+}
+
+window.capturePhoto = function() {
+    const video = document.getElementById('cameraFeed');
+    const canvas = document.getElementById('cameraCanvas');
+    const photoPreview = document.getElementById('photoPreview');
+    const captureBtn = document.getElementById('captureBtn');
+    const retakeBtn = document.getElementById('retakeBtn');
+    const usePhotoBtn = document.getElementById('usePhotoBtn');
+    const context = canvas.getContext('2d');
+
+    // Set canvas dimensions to match video
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // Show the captured photo
+    photoPreview.src = canvas.toDataURL('image/jpeg');
+    photoPreview.style.display = 'block';
+    video.style.display = 'none';
+
+    // Toggle controls
+    captureBtn.style.display = 'none';
+    retakeBtn.style.display = 'block';
+    usePhotoBtn.style.display = 'block';
+}
+
+window.retakePhoto = function() {
+    const video = document.getElementById('cameraFeed');
+    const photoPreview = document.getElementById('photoPreview');
+    const captureBtn = document.getElementById('captureBtn');
+    const retakeBtn = document.getElementById('retakeBtn');
+    const usePhotoBtn = document.getElementById('usePhotoBtn');
+
+    // Hide preview, show video
+    photoPreview.style.display = 'none';
+    video.style.display = 'block';
+
+    // Toggle controls
+    captureBtn.style.display = 'flex';
+    retakeBtn.style.display = 'none';
+    usePhotoBtn.style.display = 'none';
+}
+
+window.useCapturedPhoto = function() {
+    const canvas = document.getElementById('cameraCanvas');
+    const activeModal = document.getElementById('addProductModal').classList.contains('hidden') ? 'edit' : 'add';
+
+    if (activeModal === 'add') {
+        currentImageData = canvas.toDataURL('image/jpeg');
+        document.getElementById('imagePreview').innerHTML = `<img src="${currentImageData}" alt="Preview" class="image-preview">`;
+    } else {
+        currentEditImageData = canvas.toDataURL('image/jpeg');
+        document.getElementById('editImagePreview').innerHTML = `<img src="${currentEditImageData}" alt="Preview" class="image-preview">`;
+    }
+    
+    closeCameraModal();
 }
 
 // --- BARCODE SCANNING ---
@@ -3082,47 +3194,51 @@ async function loadContacts(type) {
         `;
     }).join('');
 }
-
 function loadContactsPage(initialTab = 'customer') {
     switchContactTab(initialTab);
 }
 
-async function showContactModal(id = null) {
+window.showContactModal = async function(contactId = null) {
     const modal = document.getElementById('contactModal');
-    const titleEl = document.getElementById('contactModalTitle');
-    
-    document.getElementById('contactId').value = '';
-    document.getElementById('contactName').value = '';
-    document.getElementById('contactPhone').value = '';
-    document.getElementById('contactAddress').value = '';
-    document.getElementById('contactNotes').value = '';
-    document.getElementById('contactType').value = 'customer';
+    const title = document.getElementById('contactModalTitle');
+    const idInput = document.getElementById('contactId');
+    const nameInput = document.getElementById('contactName');
+    const phoneInput = document.getElementById('contactPhone');
+    const addressInput = document.getElementById('contactAddress');
+    const notesInput = document.getElementById('contactNotes');
+    const typeInput = document.getElementById('contactType');
 
-    if (id) {
-        titleEl.textContent = 'Edit Kontak';
-        const contact = await getFromDB('contacts', id);
+    // Reset form
+    idInput.value = '';
+    nameInput.value = '';
+    phoneInput.value = '';
+    addressInput.value = '';
+    notesInput.value = '';
+    typeInput.value = currentContactTab;
+
+    if (contactId) {
+        title.textContent = 'Edit Kontak';
+        const contact = await getFromDB('contacts', contactId);
         if (contact) {
-            document.getElementById('contactId').value = contact.id;
-            document.getElementById('contactName').value = contact.name;
-            document.getElementById('contactPhone').value = contact.phone;
-            document.getElementById('contactAddress').value = contact.address;
-            document.getElementById('contactNotes').value = contact.notes;
-            document.getElementById('contactType').value = contact.type;
+            idInput.value = contact.id;
+            nameInput.value = contact.name;
+            phoneInput.value = contact.phone || '';
+            addressInput.value = contact.address || '';
+            notesInput.value = contact.notes || '';
+            typeInput.value = contact.type;
         }
     } else {
-        titleEl.textContent = 'Tambah Kontak';
-        document.getElementById('contactType').value = currentContactTab;
+        title.textContent = 'Tambah Kontak';
     }
+
     modal.classList.remove('hidden');
 }
-window.showContactModal = showContactModal;
 
-function closeContactModal() {
+window.closeContactModal = function() {
     document.getElementById('contactModal').classList.add('hidden');
 }
-window.closeContactModal = closeContactModal;
 
-async function saveContact() {
+window.saveContact = async function() {
     const id = document.getElementById('contactId').value ? parseInt(document.getElementById('contactId').value) : null;
     const name = document.getElementById('contactName').value.trim();
     const phone = document.getElementById('contactPhone').value.trim();
@@ -3131,384 +3247,896 @@ async function saveContact() {
     const type = document.getElementById('contactType').value;
 
     if (!name) {
-        showToast('Nama kontak wajib diisi.');
+        showToast('Nama kontak tidak boleh kosong.');
         return;
     }
 
-    const contactData = { name, phone, address, notes, type };
+    const contactData = {
+        name,
+        phone,
+        address,
+        notes,
+        type,
+        updatedAt: new Date().toISOString()
+    };
+    
+    let action = '';
     if (id) {
         contactData.id = id;
+        action = 'UPDATE_CONTACT';
+    } else {
+        contactData.createdAt = new Date().toISOString();
+        action = 'CREATE_CONTACT';
     }
-
+    
     try {
-        await putToDB('contacts', contactData);
+        const savedId = await putToDB('contacts', contactData);
+        const syncPayload = id ? contactData : { ...contactData, id: savedId };
+        await queueSyncAction(action, syncPayload);
         showToast(`Kontak berhasil ${id ? 'diperbarui' : 'disimpan'}.`);
         closeContactModal();
-        loadContacts(type);
-        updateDashboardSummaries();
+        loadContacts(type); // Refresh the list for the current tab
     } catch (error) {
-        console.error("Failed to save contact:", error);
-        showToast("Gagal menyimpan kontak.");
+        console.error('Failed to save contact:', error);
+        showToast('Gagal menyimpan kontak.');
     }
 }
-window.saveContact = saveContact;
 
-async function deleteContact(id) {
-    const ledgers = await getAllFromDB('ledgers', 'contactId', id);
+window.deleteContact = async function(contactId) {
+    const ledgers = await getAllFromDB('ledgers', 'contactId', contactId);
     if (ledgers.length > 0) {
         showToast('Kontak tidak dapat dihapus karena memiliki riwayat transaksi.');
         return;
     }
-    showConfirmationModal(
-        'Hapus Kontak',
-        'Anda yakin ingin menghapus kontak ini?',
-        async () => {
-             try {
-                const tx = db.transaction('contacts', 'readwrite');
-                tx.objectStore('contacts').delete(id);
-                await new Promise(resolve => tx.oncomplete = resolve);
+
+    showConfirmationModal('Hapus Kontak', 'Yakin ingin menghapus kontak ini?', async () => {
+        try {
+            const contactToDelete = await getFromDB('contacts', contactId);
+            const tx = db.transaction('contacts', 'readwrite');
+            tx.objectStore('contacts').delete(contactId);
+            tx.oncomplete = async () => {
+                await queueSyncAction('DELETE_CONTACT', contactToDelete);
                 showToast('Kontak berhasil dihapus.');
-                loadContacts(currentContactTab);
-                updateDashboardSummaries();
-            } catch (error) {
-                 console.error('Failed to delete contact:', error);
-                 showToast('Gagal menghapus kontak.');
-            }
-        },
-        'Ya, Hapus',
-        'bg-red-500'
-    );
-}
-window.deleteContact = deleteContact;
-
-async function showLedgerModal(id) {
-    const modal = document.getElementById('ledgerModal');
-    const contact = await getFromDB('contacts', id);
-    if (!contact) return;
-
-    currentContactId = id;
-
-    document.getElementById('ledgerContactName').textContent = contact.name;
-    const contactTypeEl = document.getElementById('ledgerContactType');
-    const addDebitButton = document.getElementById('addDebitButton');
-
-    if (contact.type === 'customer') {
-        contactTypeEl.textContent = 'Pelanggan (Piutang)';
-        contactTypeEl.className = 'text-sm font-semibold text-teal-600';
-        addDebitButton.innerHTML = '<i class="fas fa-minus-circle"></i> Tambah Piutang';
-    } else {
-        contactTypeEl.textContent = 'Supplier (Hutang)';
-        contactTypeEl.className = 'text-sm font-semibold text-red-600';
-        addDebitButton.innerHTML = '<i class="fas fa-minus-circle"></i> Tambah Hutang';
-    }
-
-    document.getElementById('ledgerContactDetails').innerHTML = `
-        <p><i class="fas fa-phone w-4"></i> ${contact.phone || '-'}</p>
-        <p><i class="fas fa-map-marker-alt w-4"></i> ${contact.address || '-'}</p>
-    `;
-
-    const ledgerHistoryEl = document.getElementById('ledgerHistory');
-    const allEntries = await getAllFromDB('ledgers', 'contactId', id);
-
-    let balance = 0;
-    allEntries.forEach(entry => {
-        balance += (entry.type === 'debit' ? entry.amount : -entry.amount);
-    });
-    
-    const balanceColor = balance > 0 ? (contact.type === 'customer' ? 'text-teal-600' : 'text-red-600') : 'text-gray-700';
-    const balanceText = balance > 0 ? (contact.type === 'customer' ? 'Sisa Piutang' : 'Sisa Hutang') : 'Lunas';
-    
-    const balanceEl = document.createElement('div');
-    balanceEl.className = 'p-3 mb-4 rounded-lg bg-gray-100 flex justify-between items-center';
-    balanceEl.innerHTML = `
-        <span class="font-semibold">${balanceText}</span>
-        <span class="text-2xl font-bold ${balanceColor}">Rp ${formatCurrency(balance)}</span>
-    `;
-    
-    const existingBalanceEl = ledgerHistoryEl.parentElement.querySelector('.bg-gray-100');
-    if (existingBalanceEl) existingBalanceEl.remove();
-    ledgerHistoryEl.before(balanceEl);
-
-    const sortedEntries = allEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
-    const paidOffEntryIds = new Set();
-    const debits = sortedEntries.filter(e => e.type === 'debit');
-    const credits = sortedEntries.filter(e => e.type === 'credit');
-    let totalCredit = credits.reduce((sum, c) => sum + c.amount, 0);
-
-    for (const debit of debits) {
-        if (totalCredit >= debit.amount) {
-            paidOffEntryIds.add(debit.id);
-            totalCredit -= debit.amount;
-        } else {
-            break;
+                loadContacts(contactToDelete.type);
+            };
+        } catch (error) {
+            console.error('Failed to delete contact:', error);
+            showToast('Gagal menghapus kontak.');
         }
+    }, 'Ya, Hapus', 'bg-red-500');
+}
+
+window.showLedgerModal = async function(contactId) {
+    currentContactId = contactId;
+    const modal = document.getElementById('ledgerModal');
+    const nameEl = document.getElementById('ledgerContactName');
+    const typeEl = document.getElementById('ledgerContactType');
+    const detailsEl = document.getElementById('ledgerContactDetails');
+    const historyEl = document.getElementById('ledgerHistory');
+    const addDebitBtn = document.getElementById('addDebitButton');
+
+    const contact = await getFromDB('contacts', contactId);
+    if (!contact) {
+        showToast('Kontak tidak ditemukan.');
+        return;
     }
 
-    if (allEntries.length === 0) {
-        ledgerHistoryEl.innerHTML = `<p class="text-gray-500 text-center py-4">Belum ada riwayat transaksi.</p>`;
-    } else {
-        ledgerHistoryEl.innerHTML = allEntries.sort((a, b) => new Date(b.date) - new Date(a.date)).map(entry => {
-            const isDebit = entry.type === 'debit';
-            const isPaid = paidOffEntryIds.has(entry.id);
-            const amountColor = isDebit ? 'text-red-600' : 'text-green-600';
-            const sign = isDebit ? '-' : '+';
-            const date = new Date(entry.date);
-            const formattedDate = date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
-            
-            let dueDateHtml = '';
-            if (isDebit && entry.dueDate) {
-                const dueDate = new Date(entry.dueDate);
-                const today = new Date();
-                today.setHours(0,0,0,0);
-                
-                let dueDateColor = 'text-gray-500';
-                if (!isPaid && dueDate < today) {
-                    dueDateColor = 'text-red-500 font-semibold';
-                }
-                dueDateHtml = `<p class="text-xs ${dueDateColor} mt-1"><i class="fas fa-calendar-alt mr-1"></i> Jatuh Tempo: ${new Date(entry.dueDate).toLocaleDateString('id-ID')}</p>`;
-            }
+    nameEl.textContent = contact.name;
+    const isCustomer = contact.type === 'customer';
+    typeEl.textContent = isCustomer ? 'Pelanggan' : 'Supplier';
+    typeEl.className = `text-sm font-semibold ${isCustomer ? 'text-teal-600' : 'text-red-600'}`;
+    addDebitBtn.innerHTML = `<i class="fas fa-minus-circle"></i> Tambah ${isCustomer ? 'Piutang' : 'Hutang'}`;
+    
+    let contactDetailsHtml = '';
+    if (contact.phone) contactDetailsHtml += `<p><i class="fas fa-phone fa-fw mr-2"></i>${contact.phone}</p>`;
+    if (contact.address) contactDetailsHtml += `<p><i class="fas fa-map-marker-alt fa-fw mr-2"></i>${contact.address}</p>`;
+    if (contact.notes) contactDetailsHtml += `<p><i class="fas fa-sticky-note fa-fw mr-2"></i>${contact.notes}</p>`;
+    detailsEl.innerHTML = contactDetailsHtml || '<p>Tidak ada detail tambahan.</p>';
 
-            const paidBadge = isDebit && isPaid ? '<span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full ml-2">Lunas</span>' : '';
-
-            return `
-                <div class="border-b pb-2 mb-2 relative pr-8">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <p class="font-semibold">${entry.description}${paidBadge}</p>
-                            <p class="text-sm text-gray-500">${formattedDate}</p>
-                        </div>
-                        <p class="font-bold text-lg ${amountColor}">${sign}Rp ${formatCurrency(entry.amount)}</p>
-                    </div>
-                    ${dueDateHtml}
-                    <button class="absolute top-2 right-0 text-gray-500 hover:text-gray-800 p-1 rounded-full w-8 h-8 flex items-center justify-center" onclick="showLedgerActions(event, ${entry.id}, ${id}, '${entry.type}', ${isPaid})">
-                        <i class="fas fa-ellipsis-v"></i>
-                    </button>
-                </div>
-            `;
-        }).join('');
-    }
-
+    await renderLedgerHistory(contactId);
     modal.classList.remove('hidden');
 }
-window.showLedgerModal = showLedgerModal;
 
-function closeLedgerModal() {
+async function renderLedgerHistory(contactId) {
+    const historyEl = document.getElementById('ledgerHistory');
+    const ledgers = await getAllFromDB('ledgers', 'contactId', contactId);
+    ledgers.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    let balance = 0;
+    const historyWithBalance = ledgers.map(entry => {
+        const amount = entry.type === 'debit' ? entry.amount : -entry.amount;
+        const entryWithBalance = { ...entry, balance: balance + amount };
+        balance += amount;
+        return entryWithBalance;
+    }).reverse(); // now chronological
+
+    historyEl.innerHTML = historyWithBalance.reverse().map(entry => {
+        const isDebit = entry.type === 'debit';
+        const amountColor = isDebit ? 'text-red-500' : 'text-green-600';
+        const amountSign = isDebit ? '+' : '-';
+        const date = new Date(entry.createdAt).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'});
+
+        let dueDateHtml = '';
+        if (entry.dueDate) {
+            const dueDate = new Date(entry.dueDate);
+            const today = new Date(); today.setHours(0,0,0,0);
+            let color = 'text-gray-500';
+            if(dueDate < today) color = 'text-red-500';
+            else if (dueDate.getTime() === today.getTime()) color = 'text-orange-500';
+            dueDateHtml = `<p class="text-xs ${color}"><i class="fas fa-calendar-alt mr-1"></i>Jatuh tempo: ${dueDate.toLocaleDateString('id-ID')}</p>`;
+        }
+
+        return `
+            <div class="border-b pb-2">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="font-semibold">${entry.description}</p>
+                        <p class="text-xs text-gray-500">${date}</p>
+                        ${dueDateHtml}
+                    </div>
+                    <div class="text-right">
+                        <p class="font-bold ${amountColor}">${amountSign} Rp ${formatCurrency(entry.amount)}</p>
+                        <p class="text-xs text-gray-600">Saldo: Rp ${formatCurrency(entry.balance)}</p>
+                    </div>
+                     <button onclick="showLedgerActions(event, ${entry.id})" class="ml-2 text-gray-500 clickable"><i class="fas fa-ellipsis-v"></i></button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    if (ledgers.length === 0) {
+        historyEl.innerHTML = `<p class="text-center text-gray-500 py-4">Belum ada riwayat transaksi.</p>`;
+    }
+}
+
+window.closeLedgerModal = function() {
     document.getElementById('ledgerModal').classList.add('hidden');
     currentContactId = null;
 }
-window.closeLedgerModal = closeLedgerModal;
 
-function showAddLedgerEntryModal(ignoredContactId, type) {
-    if (!currentContactId) return;
+window.showAddLedgerEntryModal = async function(entryId = null, entryType = 'credit') {
     const modal = document.getElementById('addLedgerEntryModal');
     const titleEl = document.getElementById('addLedgerEntryTitle');
+    const amountInput = document.getElementById('ledgerAmount');
+    const descInput = document.getElementById('ledgerDescription');
     const dueDateContainer = document.getElementById('ledgerDueDateContainer');
+    const dueDateInput = document.getElementById('ledgerDueDate');
 
-    document.getElementById('ledgerAmount').value = '';
-    document.getElementById('ledgerDescription').value = '';
-    document.getElementById('ledgerDueDate').value = '';
-    modal.dataset.type = type;
-
-    if (type === 'debit') {
-        const contactType = document.getElementById('ledgerContactType').textContent.includes('Pelanggan') ? 'customer' : 'supplier';
-        titleEl.textContent = contactType === 'customer' ? 'Tambah Piutang Baru' : 'Tambah Utang Baru';
-        dueDateContainer.classList.remove('hidden');
-    } else {
-        titleEl.textContent = 'Catat Pembayaran';
-        dueDateContainer.classList.add('hidden');
+    // Reset form
+    amountInput.value = '';
+    descInput.value = '';
+    dueDateInput.value = '';
+    modal.dataset.entryId = entryId || '';
+    modal.dataset.entryType = entryType;
+    
+    if(entryId) { // Editing existing entry
+        const entry = await getFromDB('ledgers', entryId);
+        titleEl.textContent = 'Edit Transaksi';
+        amountInput.value = entry.amount;
+        descInput.value = entry.description;
+        dueDateInput.value = entry.dueDate || '';
+        modal.dataset.entryType = entry.type; // override
+    } else { // Adding new entry
+        const isDebit = entryType === 'debit';
+        const contact = await getFromDB('contacts', currentContactId);
+        const isCustomer = contact.type === 'customer';
+        if(isDebit) {
+            titleEl.textContent = `Tambah ${isCustomer ? 'Piutang' : 'Hutang'}`;
+            descInput.placeholder = 'e.g., Penjualan kredit, Pinjaman';
+        } else {
+            titleEl.textContent = 'Catat Pembayaran';
+            descInput.placeholder = 'e.g., Pelunasan, Cicilan';
+        }
     }
+    
+    // Show due date only for debit entries
+    dueDateContainer.style.display = modal.dataset.entryType === 'debit' ? 'block' : 'none';
+
     modal.classList.remove('hidden');
 }
-window.showAddLedgerEntryModal = showAddLedgerEntryModal;
 
-function closeAddLedgerEntryModal() {
+window.closeAddLedgerEntryModal = function() {
     document.getElementById('addLedgerEntryModal').classList.add('hidden');
 }
-window.closeAddLedgerEntryModal = closeAddLedgerEntryModal;
 
-async function saveLedgerEntry() {
+window.saveLedgerEntry = async function() {
     const modal = document.getElementById('addLedgerEntryModal');
-    const type = modal.dataset.type;
+    const entryId = modal.dataset.entryId ? parseInt(modal.dataset.entryId) : null;
+    const type = modal.dataset.entryType;
     const amount = parseFloat(document.getElementById('ledgerAmount').value);
     const description = document.getElementById('ledgerDescription').value.trim();
     const dueDate = document.getElementById('ledgerDueDate').value || null;
 
     if (isNaN(amount) || amount <= 0 || !description) {
-        showToast('Jumlah dan keterangan wajib diisi.');
+        showToast('Jumlah dan Keterangan harus diisi.');
         return;
     }
 
-    const newEntry = {
+    const entryData = {
         contactId: currentContactId,
         type,
         amount,
         description,
-        date: new Date().toISOString(),
-        dueDate: type === 'debit' ? dueDate : null
+        dueDate: type === 'debit' ? dueDate : null, // only save due date for debits
+        updatedAt: new Date().toISOString()
     };
-
+    
+    let action = '';
+    if (entryId) {
+        entryData.id = entryId;
+        const originalEntry = await getFromDB('ledgers', entryId);
+        entryData.createdAt = originalEntry.createdAt; // preserve creation date
+        action = 'UPDATE_LEDGER_ENTRY';
+    } else {
+        entryData.createdAt = new Date().toISOString();
+        action = 'CREATE_LEDGER_ENTRY';
+    }
+    
     try {
-        await putToDB('ledgers', newEntry);
-        showToast('Catatan berhasil disimpan.');
+        const savedId = await putToDB('ledgers', entryData);
+        const syncPayload = entryId ? entryData : { ...entryData, id: savedId };
+        await queueSyncAction(action, syncPayload);
+        showToast(`Transaksi berhasil ${entryId ? 'diperbarui' : 'dicatat'}.`);
         closeAddLedgerEntryModal();
-        await showLedgerModal(currentContactId);
-        updateDashboardSummaries();
-        checkDueDateNotifications();
+        await renderLedgerHistory(currentContactId);
+        await updateDashboardSummaries();
+        await checkDueDateNotifications(); // Refresh notifications
     } catch (error) {
-        console.error("Failed to save ledger entry:", error);
-        showToast("Gagal menyimpan catatan.");
+        console.error('Failed to save ledger entry:', error);
+        showToast('Gagal menyimpan transaksi.');
     }
 }
-window.saveLedgerEntry = saveLedgerEntry;
 
-function showLedgerActions(event, entryId, contactId, entryType, isPaid) {
+window.showLedgerActions = async function(event, entryId) {
     event.stopPropagation();
     const popover = document.getElementById('ledgerActionsPopover');
-    if (activePopover) hideLedgerActions();
-
-    let actionsHtml = '';
-    const isDebit = entryType === 'debit';
-
-    if (isDebit && !isPaid) {
-        actionsHtml += `<a onclick="markAsPaid(${entryId}, ${contactId})" class="flex items-center gap-2"><i class="fas fa-check-circle w-5 text-green-500"></i> Tandai Lunas</a>`;
-    }
-    if (isDebit) {
-        actionsHtml += `<a onclick="showEditDueDateModal(${entryId})" class="flex items-center gap-2"><i class="fas fa-calendar-alt w-5 text-blue-500"></i> Ubah Jatuh Tempo</a>`;
-    }
-    actionsHtml += `<a onclick="deleteLedgerEntry(${entryId}, ${contactId})" class="text-red-600 flex items-center gap-2"><i class="fas fa-trash-alt w-5"></i> Hapus Transaksi</a>`;
     
+    const entry = await getFromDB('ledgers', entryId);
+    if (!entry) return;
+
+    let actionsHtml = `<a onclick="event.stopPropagation(); showAddLedgerEntryModal(${entryId})"><i class="fas fa-edit fa-fw mr-2"></i>Edit</a>`;
+    if (entry.type === 'debit') {
+        actionsHtml += `<a onclick="event.stopPropagation(); showEditDueDateModal(${entryId})"><i class="fas fa-calendar-alt fa-fw mr-2"></i>Ubah Jatuh Tempo</a>`;
+    }
+    actionsHtml += `<a onclick="event.stopPropagation(); deleteLedgerEntry(${entryId})" class="text-red-600"><i class="fas fa-trash fa-fw mr-2"></i>Hapus</a>`;
+
     popover.innerHTML = actionsHtml;
-    popover.classList.remove('hidden');
-    
-    const buttonRect = event.currentTarget.getBoundingClientRect();
-    const popoverRect = popover.getBoundingClientRect();
-    
-    popover.style.top = `${buttonRect.bottom + window.scrollY + 4}px`;
-    let leftPosition = buttonRect.right - popoverRect.width;
-    if (leftPosition < 10) leftPosition = 10;
-    popover.style.left = `${leftPosition}px`;
-    
+
+    // Position and show popover
+    const button = event.currentTarget;
+    const rect = button.getBoundingClientRect();
+    popover.style.display = 'block';
+    popover.style.top = `${rect.bottom + window.scrollY}px`;
+    popover.style.left = `${rect.right + window.scrollX - popover.offsetWidth}px`;
     activePopover = popover;
-    document.addEventListener('click', hideLedgerActions, { once: true });
-}
-window.showLedgerActions = showLedgerActions;
-
-function hideLedgerActions() {
-    if (activePopover) {
-        activePopover.classList.add('hidden');
-        activePopover.innerHTML = '';
-        activePopover = null;
-    }
-    document.removeEventListener('click', hideLedgerActions);
 }
 
-async function markAsPaid(entryId, contactId) {
-    hideLedgerActions();
-    try {
-        const entry = await getFromDB('ledgers', entryId);
-        if (!entry) throw new Error("Entry not found");
-        const newCreditEntry = {
-            contactId: contactId,
-            type: 'credit',
-            amount: entry.amount,
-            description: `Pelunasan: ${entry.description}`,
-            date: new Date().toISOString(),
-        };
-        await putToDB('ledgers', newCreditEntry);
-        showToast('Transaksi berhasil ditandai lunas.');
-        await showLedgerModal(contactId);
-        updateDashboardSummaries();
-    } catch (error) {
-        console.error("Failed to mark as paid:", error);
-        showToast("Gagal menandai lunas.");
-    }
+window.deleteLedgerEntry = function(entryId) {
+    closeActivePopover();
+    showConfirmationModal('Hapus Transaksi', 'Yakin ingin menghapus catatan transaksi ini?', async () => {
+        try {
+            const entryToDelete = await getFromDB('ledgers', entryId);
+            const tx = db.transaction('ledgers', 'readwrite');
+            tx.objectStore('ledgers').delete(entryId);
+            tx.oncomplete = async () => {
+                await queueSyncAction('DELETE_LEDGER_ENTRY', entryToDelete);
+                showToast('Transaksi berhasil dihapus.');
+                await renderLedgerHistory(currentContactId);
+                await updateDashboardSummaries();
+                await checkDueDateNotifications();
+            };
+        } catch (error) {
+            console.error('Failed to delete ledger entry:', error);
+            showToast('Gagal menghapus transaksi.');
+        }
+    }, 'Ya, Hapus', 'bg-red-500');
 }
-window.markAsPaid = markAsPaid;
 
-async function showEditDueDateModal(entryId) {
-    hideLedgerActions();
+window.showEditDueDateModal = async function(entryId) {
+    closeActivePopover();
     const modal = document.getElementById('editDueDateModal');
     const entry = await getFromDB('ledgers', entryId);
     if (entry) {
-        document.getElementById('editDueDateEntryId').value = entryId;
-        document.getElementById('newDueDate').value = entry.dueDate || '';
+        modal.querySelector('#editDueDateEntryId').value = entryId;
+        modal.querySelector('#newDueDate').value = entry.dueDate || '';
         modal.classList.remove('hidden');
     }
 }
-window.showEditDueDateModal = showEditDueDateModal;
 
-function closeEditDueDateModal() {
+window.closeEditDueDateModal = function() {
     document.getElementById('editDueDateModal').classList.add('hidden');
 }
-window.closeEditDueDateModal = closeEditDueDateModal;
 
-async function saveDueDate() {
-    const entryId = parseInt(document.getElementById('editDueDateEntryId').value);
-    const newDueDate = document.getElementById('newDueDate').value;
+window.saveDueDate = async function() {
+    const modal = document.getElementById('editDueDateModal');
+    const entryId = parseInt(modal.querySelector('#editDueDateEntryId').value);
+    const newDueDate = modal.querySelector('#newDueDate').value;
 
-    try {
-        const entry = await getFromDB('ledgers', entryId);
-        if (entry) {
-            entry.dueDate = newDueDate || null;
-            await putToDB('ledgers', entry);
-            showToast('Tanggal jatuh tempo berhasil diubah.');
-            closeEditDueDateModal();
-            await showLedgerModal(entry.contactId);
-            checkDueDateNotifications();
-        }
-    } catch (error) {
-        console.error("Failed to save due date:", error);
-        showToast("Gagal menyimpan jatuh tempo.");
+    const entry = await getFromDB('ledgers', entryId);
+    if (entry) {
+        entry.dueDate = newDueDate || null;
+        entry.updatedAt = new Date().toISOString();
+        await putToDB('ledgers', entry);
+        await queueSyncAction('UPDATE_LEDGER_ENTRY', entry);
+        showToast('Tanggal jatuh tempo diperbarui.');
+        closeEditDueDateModal();
+        await renderLedgerHistory(entry.contactId);
+        await checkDueDateNotifications();
     }
 }
-window.saveDueDate = saveDueDate;
 
-async function deleteLedgerEntry(entryId, contactId) {
-    hideLedgerActions();
-    showConfirmationModal('Hapus Transaksi', 'Anda yakin ingin menghapus catatan transaksi ini secara permanen?',
-        async () => {
-            try {
-                const tx = db.transaction('ledgers', 'readwrite');
-                tx.objectStore('ledgers').delete(entryId);
-                await new Promise(resolve => tx.oncomplete = resolve);
-                showToast('Transaksi berhasil dihapus.');
-                await showLedgerModal(contactId);
-                updateDashboardSummaries();
-                checkDueDateNotifications();
-            } catch (error) {
-                 console.error('Failed to delete ledger entry:', error);
-                 showToast('Gagal menghapus transaksi.');
-            }
-        },
-        'Ya, Hapus', 'bg-red-500'
-    );
+function closeActivePopover() {
+    if (activePopover) {
+        activePopover.style.display = 'none';
+        activePopover = null;
+    }
 }
-window.deleteLedgerEntry = deleteLedgerEntry;
+
+// Event listener to close popover when clicking outside
+document.addEventListener('click', (event) => {
+    if (activePopover && !activePopover.contains(event.target) && !event.target.closest('[onclick^="showLedgerActions"]')) {
+        closeActivePopover();
+    }
+});
+
+
+// --- BLUETOOTH PRINTING ---
+window.connectToBluetoothPrinter = async function() {
+    if (!navigator.bluetooth) {
+        showToast('Web Bluetooth API tidak didukung di browser ini.');
+        return;
+    }
+    try {
+        updateBluetoothStatus('Mencari printer...', 'yellow');
+        bluetoothDevice = await navigator.bluetooth.requestDevice({
+            filters: [{ services: ['000018f0-0000-1000-8000-00805f9b34fb'] }],
+            // acceptAllDevices: true,
+            optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
+        });
+        updateBluetoothStatus(`Menghubungkan ke ${bluetoothDevice.name}...`, 'yellow');
+        const server = await bluetoothDevice.gatt.connect();
+        const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+        bluetoothCharacteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+        updateBluetoothStatus(`Terhubung ke ${bluetoothDevice.name}`, 'green');
+        
+        bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+        // Update UI
+        document.getElementById('connectBluetoothBtn').classList.add('hidden');
+        document.getElementById('disconnectBluetoothBtn').classList.remove('hidden');
+        document.getElementById('testPrintBtn').disabled = false;
+        
+    } catch(error) {
+        console.error('Bluetooth connection failed:', error);
+        showToast('Gagal terhubung. Pastikan printer menyala.');
+        updateBluetoothStatus('Gagal terhubung', 'red');
+    }
+}
+
+function onDisconnected(event) {
+    updateBluetoothStatus('Koneksi terputus', 'red');
+    bluetoothDevice = null;
+    bluetoothCharacteristic = null;
+     // Update UI
+    document.getElementById('connectBluetoothBtn').classList.remove('hidden');
+    document.getElementById('disconnectBluetoothBtn').classList.add('hidden');
+    document.getElementById('testPrintBtn').disabled = true;
+}
+
+window.disconnectBluetoothPrinter = function() {
+    if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+        bluetoothDevice.gatt.disconnect();
+    } else {
+        onDisconnected(); // Manually update UI if already disconnected
+    }
+}
+
+function updateBluetoothStatus(message, color = 'gray') {
+    const statusEl = document.getElementById('bluetoothStatus');
+    statusEl.textContent = `Status: ${message}`;
+    statusEl.className = 'text-sm text-center p-2 rounded-lg'; // Reset classes
+    switch(color) {
+        case 'green': statusEl.classList.add('bg-green-100', 'text-green-800'); break;
+        case 'red': statusEl.classList.add('bg-red-100', 'text-red-800'); break;
+        case 'yellow': statusEl.classList.add('bg-yellow-100', 'text-yellow-800'); break;
+        default: statusEl.classList.add('bg-gray-100', 'text-gray-500'); break;
+    }
+}
+
+async function sendDataToPrinter(data) {
+    if (!bluetoothCharacteristic) {
+        showToast('Printer tidak terhubung.');
+        return;
+    }
+    try {
+        // Send data in chunks of 512 bytes
+        const chunkSize = 512;
+        for (let i = 0; i < data.length; i += chunkSize) {
+            const chunk = data.slice(i, i + chunkSize);
+            await bluetoothCharacteristic.writeValueWithoutResponse(chunk);
+        }
+    } catch (error) {
+        console.error('Error sending data to printer:', error);
+        showToast('Gagal mengirim data ke printer.');
+    }
+}
+
+window.testPrint = async function() {
+    try {
+        const paperSize = document.getElementById('printerPaperSize').value;
+        const width = paperSize === '58mm' ? 32 : 42;
+
+        const encoder = new EscPosEncoder.default();
+        const encodedData = encoder
+            .initialize()
+            .align('center')
+            .text('Test Cetak Berhasil!')
+            .text('-'.repeat(width))
+            .text('POS Mobile App')
+            .newline()
+            .feed(3)
+            .cut()
+            .encode();
+        
+        await sendDataToPrinter(encodedData);
+        showToast('Test cetak dikirim.');
+    } catch(error) {
+        console.error("Test print error:", error);
+        showToast('Gagal melakukan test cetak.');
+    }
+}
+
+async function printReceipt(isAutoPrint = false) {
+    if (!isPrinterReady) {
+        showToast('Fitur cetak tidak tersedia (library gagal dimuat).');
+        return;
+    }
+    if (!bluetoothCharacteristic) {
+        showToast('Printer Bluetooth tidak terhubung.');
+        return;
+    }
+    if (!currentReceiptTransaction) {
+        showToast('Tidak ada data struk untuk dicetak.');
+        return;
+    }
+    if (!isAutoPrint) showToast('Mencetak struk...');
+
+    try {
+        const settings = await getAllFromDB('settings');
+        const settingsMap = new Map(settings.map(s => [s.key, s.value]));
+        const paperSize = settingsMap.get('printerPaperSize') || '80mm';
+        const width = paperSize === '58mm' ? 32 : 42;
+
+        const encoder = new EscPosEncoder.default();
+        encoder.initialize().align('center');
+
+        // Logo (if available and enabled)
+        const logoData = settingsMap.get('storeLogo') || null;
+        const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
+
+        if (showLogo && logoData) {
+            const image = await new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = reject;
+                img.src = logoData;
+            });
+
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const maxWidth = paperSize === '58mm' ? 384 : 576;
+            const scale = Math.min(maxWidth / image.width, 150 / image.height); // Max height 150px
+            canvas.width = image.width * scale;
+            canvas.height = image.height * scale;
+            ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            encoder.image(imageData);
+        }
+
+        encoder.bold(true).size(1,2).text(settingsMap.get('storeName') || 'Toko Anda').size(1,1).bold(false);
+        encoder.text(settingsMap.get('storeAddress') || '');
+        if(settingsMap.get('storeFeedbackPhone')) encoder.text(`Telp: ${settingsMap.get('storeFeedbackPhone')}`);
+        encoder.text('-'.repeat(width));
+        
+        encoder.align('left');
+        encoder.text(`No: ${currentReceiptTransaction.id}`);
+        encoder.text(`Tgl: ${new Date(currentReceiptTransaction.date).toLocaleString('id-ID')}`);
+        encoder.text('-'.repeat(width));
+
+        currentReceiptTransaction.items.forEach(item => {
+            const totalPrice = formatCurrency(item.effectivePrice * item.quantity);
+            const itemLine = `${item.quantity}x ${item.name}`;
+            encoder.line(itemLine);
+             if (item.discountPercentage > 0) {
+                 const discText = `(Disc ${item.discountPercentage}%) @${formatCurrency(item.effectivePrice)}`;
+                 encoder.align('right').text(discText).align('left');
+            }
+             encoder.align('right').text(`Rp ${totalPrice}`).align('left');
+        });
+        
+        encoder.text('='.repeat(width));
+        
+        const subtotalLine = `Subtotal: Rp ${formatCurrency(currentReceiptTransaction.subtotal - currentReceiptTransaction.totalDiscount)}`;
+        encoder.align('right').text(subtotalLine);
+
+        (currentReceiptTransaction.fees || []).forEach(fee => {
+            const feeLine = `${fee.name}: Rp ${formatCurrency(fee.amount)}`;
+            encoder.text(feeLine);
+        });
+        
+        const totalLine = `Total: Rp ${formatCurrency(currentReceiptTransaction.total)}`;
+        encoder.bold(true).text(totalLine).bold(false);
+
+        const cashLine = `Tunai: Rp ${formatCurrency(currentReceiptTransaction.cashPaid)}`;
+        encoder.text(cashLine);
+        const changeLine = `Kembali: Rp ${formatCurrency(currentReceiptTransaction.change)}`;
+        encoder.text(changeLine);
+
+        encoder.text('-'.repeat(width));
+        encoder.align('center').text(settingsMap.get('storeFooterText') || 'Terima kasih!');
+        
+        encoder.feed(3).cut();
+        
+        await sendDataToPrinter(encoder.encode());
+    } catch (error) {
+        console.error('Printing failed:', error);
+        showToast('Gagal mencetak struk.');
+    }
+}
+window.printReceipt = printReceipt;
+
+window.showPrintHelpModal = function() {
+    document.getElementById('printHelpModal').classList.remove('hidden');
+}
+window.closePrintHelpModal = function() {
+    document.getElementById('printHelpModal').classList.add('hidden');
+}
+
+
+// --- KIOSK MODE ---
+window.handleKioskModeToggle = async function(isChecked) {
+    const kioskToggle = document.getElementById('kioskModeToggle');
+    if (isChecked) {
+        const existingPin = await getSettingFromDB('kioskPin');
+        if (existingPin) {
+            isKioskModeActive = true;
+            await putSettingToDB({ key: 'kioskModeEnabled', value: true });
+            enterKioskMode();
+        } else {
+            showSetKioskPinModal();
+        }
+    } else { // Turning off
+        const existingPin = await getSettingFromDB('kioskPin');
+        if (!existingPin) { // Should not happen but as a safeguard
+             exitKioskMode();
+             return;
+        }
+        showEnterKioskPinModal(true); // `isDisabling` is true
+    }
+};
+
+function enterKioskMode() {
+    isKioskModeActive = true;
+    showToast('Mode Kios Diaktifkan.', 2000);
+    showPage('kasir', { force: true });
+    document.getElementById('bottomNav').classList.add('hidden');
+    document.getElementById('exitKioskBtn').classList.remove('hidden');
+}
+
+async function exitKioskMode() {
+    isKioskModeActive = false;
+    await putSettingToDB({ key: 'kioskModeEnabled', value: false });
+    showToast('Mode Kios Dinonaktifkan.', 2000);
+    document.getElementById('bottomNav').classList.remove('hidden');
+    document.getElementById('exitKioskBtn').classList.add('hidden');
+    // If on settings page, uncheck the toggle
+    const kioskToggle = document.getElementById('kioskModeToggle');
+    if (kioskToggle) kioskToggle.checked = false;
+}
+
+window.showSetKioskPinModal = function() {
+    document.getElementById('newKioskPin').value = '';
+    document.getElementById('confirmKioskPin').value = '';
+    document.getElementById('setKioskPinModal').classList.remove('hidden');
+}
+
+window.closeSetKioskPinModal = function() {
+    document.getElementById('setKioskPinModal').classList.add('hidden');
+    // Revert toggle if cancelled
+    const kioskToggle = document.getElementById('kioskModeToggle');
+    if (kioskToggle) kioskToggle.checked = false;
+}
+
+window.saveKioskPinAndActivate = async function() {
+    const newPin = document.getElementById('newKioskPin').value;
+    const confirmPin = document.getElementById('confirmKioskPin').value;
+
+    if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
+        showToast('PIN harus terdiri dari 4 angka.');
+        return;
+    }
+    if (newPin !== confirmPin) {
+        showToast('PIN tidak cocok.');
+        return;
+    }
+
+    // A simple hash (NOT for high security, just to avoid storing plain text)
+    const hashedPin = [...newPin].map(c => (parseInt(c) + 5) % 10).join('');
+    await putSettingToDB({ key: 'kioskPin', value: hashedPin });
+    
+    closeSetKioskPinModal();
+    isKioskModeActive = true;
+    await putSettingToDB({ key: 'kioskModeEnabled', value: true });
+    enterKioskMode();
+}
+
+window.showEnterKioskPinModal = function(isDisabling = false) {
+    currentPinInput = "";
+    pinAttemptCount = 0;
+    updatePinDisplay();
+    document.getElementById('kioskPinError').textContent = '';
+    const modal = document.getElementById('enterKioskPinModal');
+    modal.dataset.isDisabling = isDisabling;
+    modal.classList.remove('hidden');
+}
+
+window.closeEnterKioskPinModal = function() {
+    const modal = document.getElementById('enterKioskPinModal');
+    // If user is trying to disable kiosk mode and cancels, re-check the toggle
+    if(modal.dataset.isDisabling === 'true' && currentPage === 'pengaturan') {
+        const kioskToggle = document.getElementById('kioskModeToggle');
+        if(kioskToggle) kioskToggle.checked = true;
+    }
+    modal.classList.add('hidden');
+}
+
+function updatePinDisplay() {
+    const dots = document.querySelectorAll('#kioskPinDisplay div');
+    dots.forEach((dot, index) => {
+        dot.classList.toggle('bg-blue-500', index < currentPinInput.length);
+        dot.classList.toggle('bg-gray-300', index >= currentPinInput.length);
+    });
+}
+
+window.handlePinKeyPress = function(key) {
+    if (key === 'backspace') {
+        currentPinInput = currentPinInput.slice(0, -1);
+    } else if (key === 'clear') {
+        currentPinInput = '';
+    } else if (currentPinInput.length < 4) {
+        currentPinInput += key;
+    }
+    updatePinDisplay();
+
+    if (currentPinInput.length === 4) {
+        checkPin();
+    }
+};
+
+async function checkPin() {
+    const storedHashedPin = await getSettingFromDB('kioskPin');
+    const inputHashedPin = [...currentPinInput].map(c => (parseInt(c) + 5) % 10).join('');
+
+    if (inputHashedPin === storedHashedPin) {
+        const modal = document.getElementById('enterKioskPinModal');
+        const isDisabling = modal.dataset.isDisabling === 'true';
+        closeEnterKioskPinModal();
+        if(isDisabling) {
+             exitKioskMode();
+        } else {
+             showPage('dashboard');
+             document.getElementById('bottomNav').classList.remove('hidden');
+             document.getElementById('exitKioskBtn').classList.add('hidden');
+             // Note: Kiosk mode is technically still active until toggled off.
+             // This flow allows temporary exit. Re-entering kasir will show exit button again.
+        }
+    } else {
+        pinAttemptCount++;
+        const errorEl = document.getElementById('kioskPinError');
+        errorEl.textContent = 'PIN Salah!';
+        const pinDisplay = document.getElementById('kioskPinDisplay');
+        pinDisplay.classList.add('animate-shake');
+        
+        setTimeout(() => {
+            currentPinInput = "";
+            updatePinDisplay();
+            errorEl.textContent = '';
+            pinDisplay.classList.remove('animate-shake');
+        }, 800);
+
+        if (pinAttemptCount >= 5) {
+            showToast('PIN salah 5 kali. Menghapus data demi keamanan.', 5000);
+            await clearAllStores();
+            setTimeout(() => location.reload(), 2000);
+        }
+    }
+}
+
+// --- BARCODE/LABEL GENERATOR ---
+function setupBarcodeGenerator() {
+    const generateBtn = document.getElementById('generateBarcodeLabelBtn');
+    if(!generateBtn) return;
+
+    generateBtn.addEventListener('click', () => {
+        const code = document.getElementById('barcode-code').value.trim();
+        const productName = document.getElementById('product-name').value.trim();
+        const productPrice = document.getElementById('product-price').value.trim();
+        
+        if (!code) {
+            showToast('Teks/Angka untuk barcode wajib diisi.');
+            return;
+        }
+
+        try {
+            JsBarcode("#barcode", code, {
+                format: "CODE128",
+                displayValue: false, // We display it manually
+                margin: 5,
+                height: 40,
+            });
+
+            document.getElementById('output-product-name').textContent = productName;
+            document.getElementById('output-product-price').textContent = productPrice ? `Rp ${formatCurrency(productPrice)}` : '';
+            document.getElementById('output-barcode-text').textContent = code;
+
+            document.getElementById('barcodeLabelOutput').classList.remove('hidden');
+            document.getElementById('download-buttons').classList.remove('hidden');
+
+        } catch (e) {
+            console.error("JsBarcode error:", e);
+            showToast('Gagal membuat barcode. Coba teks/angka yang berbeda.');
+        }
+    });
+
+    document.getElementById('downloadPngBtn').addEventListener('click', () => {
+        const labelContent = document.getElementById('labelContent');
+        const canvas = document.createElement('canvas');
+        const scale = 3; // Increase resolution for better quality
+        canvas.width = labelContent.offsetWidth * scale;
+        canvas.height = labelContent.offsetHeight * scale;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(scale, scale);
+
+        const html2canvas = (element, options) => {
+            return new Promise(resolve => {
+                const { onrendered } = options;
+                delete options.onrendered;
+                const clonedNode = element.cloneNode(true);
+                // Basic styling to make it look right when rendered off-screen
+                clonedNode.style.position = 'absolute';
+                clonedNode.style.top = '-9999px';
+                clonedNode.style.left = '-9999px';
+                clonedNode.style.color = '#000';
+                clonedNode.style.background = '#fff';
+                clonedNode.style.width = element.offsetWidth + 'px';
+                document.body.appendChild(clonedNode);
+                
+                // Simplified SVG to canvas conversion
+                const svgElement = clonedNode.querySelector('svg');
+                if (svgElement) {
+                    const svgData = new XMLSerializer().serializeToString(svgElement);
+                    const img = new Image();
+                    img.onload = () => {
+                        const svgCanvas = document.createElement('canvas');
+                        svgCanvas.width = svgElement.width.baseVal.value;
+                        svgCanvas.height = svgElement.height.baseVal.value;
+                        svgCanvas.getContext('2d').drawImage(img, 0, 0);
+                        svgElement.parentNode.replaceChild(svgCanvas, svgElement);
+                        
+                        // Now render the whole thing
+                        setTimeout(() => { // delay to ensure image is drawn
+                            const finalCanvas = document.createElement('canvas');
+                            finalCanvas.width = clonedNode.offsetWidth;
+                            finalCanvas.height = clonedNode.offsetHeight;
+                            // Need a proper html2canvas implementation here.
+                            // This is a placeholder as full library is not available.
+                            // For a real app, import html2canvas.
+                            console.warn("html2canvas not implemented, using simplified render");
+                            onrendered(finalCanvas);
+                            document.body.removeChild(clonedNode);
+                            resolve();
+
+                        }, 100);
+                    };
+                    img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
+                }
+            });
+        };
+        
+        // This is a simplified placeholder as html2canvas is not imported.
+        // It won't render perfectly. For a real app, include the library.
+        const svgElement = labelContent.querySelector('svg');
+        const svgData = new XMLSerializer().serializeToString(svgElement);
+        const img = new Image();
+        img.onload = () => {
+             // Create a temporary canvas to draw the whole label
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = labelContent.offsetWidth;
+            tempCanvas.height = labelContent.offsetHeight;
+            tempCtx.fillStyle = 'white';
+            tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+            tempCtx.fillStyle = 'black';
+            tempCtx.font = 'bold 16px sans-serif';
+            tempCtx.textAlign = 'center';
+            tempCtx.fillText(document.getElementById('output-product-name').textContent, tempCanvas.width / 2, 20);
+            tempCtx.font = '16px sans-serif';
+            tempCtx.fillText(document.getElementById('output-product-price').textContent, tempCanvas.width / 2, 40);
+            
+            // Draw the barcode image
+            const barcodeY = 45;
+            tempCtx.drawImage(img, (tempCanvas.width - img.width) / 2, barcodeY);
+            
+            tempCtx.font = '12px monospace';
+            tempCtx.fillText(document.getElementById('output-barcode-text').textContent, tempCanvas.width / 2, barcodeY + img.height + 15);
+            
+            const link = document.createElement('a');
+            link.download = `label-${document.getElementById('barcode-code').value}.png`;
+            link.href = tempCanvas.toDataURL("image/png");
+            link.click();
+        };
+        img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+    });
+
+     document.getElementById('printLabelBtn').addEventListener('click', () => {
+        const labelContent = document.getElementById('labelContent').innerHTML;
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(`
+            <html>
+                <head><title>Cetak Label</title>
+                <style>
+                    body { font-family: sans-serif; margin: 10px; text-align: center; }
+                    svg { max-width: 100%; }
+                </style>
+                </head>
+                <body>${labelContent}</body>
+            </html>
+        `);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+    });
+}
+
 
 // --- INITIALIZATION ---
-document.addEventListener('DOMContentLoaded', async () => {
+async function init() {
     const loadingOverlay = document.getElementById('loadingOverlay');
     const appContainer = document.getElementById('appContainer');
 
     try {
         await initDB();
-        await loadSettings();
-        await applyDefaultFees();
-
-        if (document.getElementById('dashboard')) loadDashboard();
         
+        // Load settings needed for initial UI
+        const kioskModeEnabled = await getSettingFromDB('kioskModeEnabled');
+        isKioskModeActive = kioskModeEnabled || false;
+
+        // Load all data in parallel
+        await Promise.all([
+            loadSettings(),
+            loadDashboard(),
+            loadProductsGrid(),
+            loadFees(),
+            applyDefaultFees()
+        ]);
+        
+        if (isKioskModeActive) {
+            enterKioskMode();
+        } else {
+            showPage('dashboard');
+        }
+
+        // Setup event listeners after initial data load
         document.getElementById('searchProduct')?.addEventListener('input', (e) => {
             const searchTerm = e.target.value.toLowerCase();
             const products = document.querySelectorAll('#productsGrid .product-item');
             products.forEach(p => {
-                const name = p.dataset.name || '';
-                const barcode = p.dataset.barcode || '';
-                const isMatch = name.includes(searchTerm) || barcode.includes(searchTerm);
-                p.style.display = isMatch ? 'block' : 'none';
+                const name = p.dataset.name;
+                const barcode = p.dataset.barcode;
+                p.style.display = (name.includes(searchTerm) || barcode.includes(searchTerm)) ? 'block' : 'none';
             });
         });
 
-        document.getElementById('cancelButton')?.addEventListener('click', closeConfirmationModal);
         document.getElementById('confirmButton')?.addEventListener('click', () => {
             if (confirmCallback) {
                 confirmCallback();
@@ -3516,34 +4144,60 @@ document.addEventListener('DOMContentLoaded', async () => {
             closeConfirmationModal();
         });
 
-        if (Html5Qrcode) {
-            html5QrCode = new Html5Qrcode("qr-reader");
-            isScannerReady = true;
-        } else { console.warn("html5-qrcode library not loaded."); }
-
-        if (window.EscPosEncoder) { isPrinterReady = true; } else { console.warn("EscPosEncoder library not loaded."); }
-        if (window.Chart) { isChartJsReady = true; setupChartViewToggle(); } else { console.warn("Chart.js library not loaded."); }
+        document.getElementById('cancelButton')?.addEventListener('click', closeConfirmationModal);
         
-        updateFeatureAvailability();
-        updateSyncStatusUI(); // Set initial status
+        setupChartViewToggle();
+        setupBarcodeGenerator();
+
+        // Check online status and start sync loop
         window.addEventListener('online', checkOnlineStatus);
         window.addEventListener('offline', checkOnlineStatus);
-        checkOnlineStatus();
-        setInterval(() => syncWithServer(false), 5 * 60 * 1000); // Sync every 5 minutes
-
-        // One-time audio context initialization on first user interaction
-        document.body.addEventListener('click', initAudioContext, { once: true });
-        document.body.addEventListener('touchstart', initAudioContext, { once: true });
+        checkOnlineStatus(); // Initial check
+        setInterval(() => window.syncWithServer(), 5 * 60 * 1000); // Sync every 5 minutes
 
         // Hide loading overlay and show app
         loadingOverlay.classList.add('opacity-0');
-        appContainer.classList.remove('hidden');
         setTimeout(() => {
             loadingOverlay.style.display = 'none';
-        }, 300); // Match CSS transition duration
-        
+            appContainer.classList.remove('hidden');
+        }, 300); // Match CSS transition
+
     } catch (error) {
         console.error("Initialization failed:", error);
-        loadingOverlay.innerHTML = `<p class="text-red-500">Gagal memuat aplikasi. Coba segarkan halaman.</p>`;
+        loadingOverlay.innerHTML = `<p class="text-red-500">Gagal memuat aplikasi. Coba muat ulang halaman.</p>`;
     }
+}
+
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Attempt to initialize scanner and printer libraries, but don't block main app init
+    if (typeof Html5Qrcode !== 'undefined') {
+        html5QrCode = new Html5Qrcode("qr-reader");
+        isScannerReady = true;
+    } else {
+        console.warn("Html5Qrcode library not found or failed to load.");
+        isScannerReady = false;
+    }
+    
+    if (typeof EscPosEncoder !== 'undefined') {
+        isPrinterReady = true;
+    } else {
+        console.warn("EscPosEncoder library not found or failed to load.");
+        isPrinterReady = false;
+    }
+    
+    if (typeof Chart !== 'undefined') {
+        isChartJsReady = true;
+    } else {
+        console.warn("Chart.js library not found or failed to load.");
+        isChartJsReady = false;
+    }
+
+    // Call this after checking library availability to correctly disable features
+    updateFeatureAvailability();
+
+    // Initialize audio context after the first user interaction
+    document.body.addEventListener('click', initAudioContext, { once: true });
+    
+    init();
 });
