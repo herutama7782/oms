@@ -420,6 +420,24 @@ body {
 /* Receipt Modal Styles */
 .receipt-modal-content {
     font-family: 'Courier New', Courier, monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.receipt-line-justify {
+    display: flex;
+    justify-content: space-between;
+}
+
+.receipt-line-justify span:first-child {
+    text-align: left;
+    word-break: break-word; 
+    padding-right: 8px;
+}
+
+.receipt-line-justify span:last-child {
+    text-align: right;
+    white-space: nowrap;
 }
 
 .receipt-divider {
