@@ -3015,16 +3015,27 @@ async function _generateReceiptHTML(data, isPreview) {
     // --- Items ---
     let itemsHtml = '';
     data.items.forEach(item => {
-        itemsHtml += `<div>${escapeHtml(item.name)}</div>`;
-        const priceLineLeft = `${item.quantity} x ${formatCurrency(item.effectivePrice)}`;
-        const priceLineRight = `Rp ${formatCurrency(item.effectivePrice * item.quantity)}`;
-        const pricePadding = paperWidthChars - priceLineLeft.length - priceLineRight.length;
-        itemsHtml += `<div>${priceLineLeft}${' '.repeat(Math.max(0, pricePadding))}${priceLineRight}</div>`;
+        // Line 1: Name and price details
+        const namePart = escapeHtml(item.name);
+        const pricePart = `x${item.quantity} ${formatCurrency(item.effectivePrice)} Rp.${formatCurrency(item.effectivePrice * item.quantity)}`;
+        
+        // Check for wrapping
+        const maxNameLength = paperWidthChars - pricePart.length - 1; // -1 for space
+        if (namePart.length > maxNameLength && maxNameLength > 5) { // Check if there's reasonable space
+            // Simple wrap: print name on one line, price on the next, right-aligned
+            itemsHtml += `<div>${namePart}</div>`;
+            const pricePadding = paperWidthChars - pricePart.length;
+            itemsHtml += `<div>${' '.repeat(pricePadding)}${pricePart}</div>`;
+        } else {
+            // Fits on one line (or name is too long for any wrapping)
+            const padding = paperWidthChars - namePart.length - pricePart.length;
+            itemsHtml += `<div>${namePart}${' '.repeat(Math.max(0, padding))}${pricePart}</div>`;
+        }
 
+        // Line 2 (optional): Discount Info, left-aligned
         if (item.discountPercentage > 0) {
             const discountText = `Disc ${item.discountPercentage}% @ Rp.${formatCurrency(item.price)}`;
-            const discPadding = paperWidthChars - discountText.length;
-            itemsHtml += `<div>${' '.repeat(Math.max(0, discPadding))}${discountText}</div>`;
+            itemsHtml += `<div>${discountText}</div>`;
         }
     });
 
@@ -3032,14 +3043,17 @@ async function _generateReceiptHTML(data, isPreview) {
     let summaryHtml = `<div class="receipt-divider">${receiptLine('-', paperWidthChars)}</div>`;
     const subtotalAfterDiscount = data.subtotal - data.totalDiscount;
     const subtotalText = "Subtotal";
-    const subtotalValue = `Rp ${formatCurrency(subtotalAfterDiscount)}`;
+    const subtotalValue = `Rp.${formatCurrency(subtotalAfterDiscount)}`;
     let padding = paperWidthChars - subtotalText.length - subtotalValue.length;
     summaryHtml += `<div>${subtotalText}${' '.repeat(Math.max(0, padding))}${subtotalValue}</div>`;
     
     if (data.fees && data.fees.length > 0) {
         data.fees.forEach(fee => {
-            const feeName = escapeHtml(fee.name);
-            const feeAmount = `Rp ${formatCurrency(fee.amount)}`;
+            let feeName = escapeHtml(fee.name);
+             if (fee.type === 'percentage') {
+                feeName += ` ${fee.value}%`;
+            }
+            const feeAmount = `Rp. ${formatCurrency(fee.amount)}`;
             padding = paperWidthChars - feeName.length - feeAmount.length;
             summaryHtml += `<div>${feeName}${' '.repeat(Math.max(0, padding))}${feeAmount}</div>`;
         });
@@ -3048,17 +3062,17 @@ async function _generateReceiptHTML(data, isPreview) {
     summaryHtml += `<div class="receipt-divider">${receiptLine('-', paperWidthChars)}</div>`;
 
     const totalText = "TOTAL";
-    const totalValue = `Rp ${formatCurrency(data.total)}`;
+    const totalValue = `Rp.${formatCurrency(data.total)}`;
     padding = paperWidthChars - totalText.length - totalValue.length;
     summaryHtml += `<div style="font-weight: bold;">${totalText}${' '.repeat(Math.max(0, padding))}${totalValue}</div>`;
 
     const cashText = "TUNAI";
-    const cashValue = `Rp ${formatCurrency(data.cashPaid)}`;
+    const cashValue = `Rp.${formatCurrency(data.cashPaid)}`;
     padding = paperWidthChars - cashText.length - cashValue.length;
     summaryHtml += `<div>${cashText}${' '.repeat(Math.max(0, padding))}${cashValue}</div>`;
     
     const changeText = "KEMBALI";
-    const changeValue = `Rp ${formatCurrency(data.change)}`;
+    const changeValue = `Rp. ${formatCurrency(data.change)}`;
     padding = paperWidthChars - changeText.length - changeValue.length;
     summaryHtml += `<div>${changeText}${' '.repeat(Math.max(0, padding))}${changeValue}</div>`;
 
@@ -3829,15 +3843,26 @@ async function printReceipt(isAutoPrint = false) {
         encoder.text('-'.repeat(width));
 
         currentReceiptTransaction.items.forEach(item => {
-            encoder.line(item.name);
-            const priceLineLeft = `${item.quantity} x ${formatCurrency(item.effectivePrice)}`;
-            const priceLineRight = `Rp ${formatCurrency(item.effectivePrice * item.quantity)}`;
-            const padding = width - priceLineLeft.length - priceLineRight.length;
-            encoder.line(`${priceLineLeft}${' '.repeat(Math.max(0, padding))}${priceLineRight}`);
+            // Line 1: Name and price details
+            const namePart = item.name;
+            const pricePart = `x${item.quantity} ${formatCurrency(item.effectivePrice)} Rp.${formatCurrency(item.effectivePrice * item.quantity)}`;
 
+            const maxNameLength = width - pricePart.length - 1;
+            if (namePart.length > maxNameLength && maxNameLength > 5) {
+                // Simple wrap
+                encoder.line(namePart);
+                const pricePadding = width - pricePart.length;
+                encoder.line(`${' '.repeat(pricePadding)}${pricePart}`);
+            } else {
+                // Fits on one line
+                const padding = width - namePart.length - pricePart.length;
+                encoder.line(`${namePart}${' '.repeat(Math.max(0, padding))}${pricePart}`);
+            }
+
+            // Line 2 (optional): Discount Info
             if (item.discountPercentage > 0) {
                 const discountText = `Disc ${item.discountPercentage}% @ Rp.${formatCurrency(item.price)}`;
-                encoder.align('right').line(discountText).align('left');
+                encoder.line(discountText);
             }
         });
         
@@ -3845,13 +3870,16 @@ async function printReceipt(isAutoPrint = false) {
         
         const subtotalAfterDiscount = currentReceiptTransaction.subtotal - currentReceiptTransaction.totalDiscount;
         const subtotalText = "Subtotal";
-        const subtotalValue = `Rp ${formatCurrency(subtotalAfterDiscount)}`;
+        const subtotalValue = `Rp.${formatCurrency(subtotalAfterDiscount)}`;
         let padding = width - subtotalText.length - subtotalValue.length;
         encoder.line(`${subtotalText}${' '.repeat(Math.max(0, padding))}${subtotalValue}`);
 
         (currentReceiptTransaction.fees || []).forEach(fee => {
-            const feeName = fee.name;
-            const feeAmount = `Rp ${formatCurrency(fee.amount)}`;
+            let feeName = fee.name;
+             if (fee.type === 'percentage') {
+                feeName += ` ${fee.value}%`;
+            }
+            const feeAmount = `Rp. ${formatCurrency(fee.amount)}`;
             padding = width - feeName.length - feeAmount.length;
             encoder.line(`${feeName}${' '.repeat(Math.max(0, padding))}${feeAmount}`);
         });
@@ -3859,17 +3887,17 @@ async function printReceipt(isAutoPrint = false) {
         encoder.text('-'.repeat(width));
         
         const totalText = "TOTAL";
-        const totalValue = `Rp ${formatCurrency(currentReceiptTransaction.total)}`;
+        const totalValue = `Rp.${formatCurrency(currentReceiptTransaction.total)}`;
         padding = width - totalText.length - totalValue.length;
         encoder.bold(true).line(`${totalText}${' '.repeat(Math.max(0, padding))}${totalValue}`).bold(false);
         
         const cashText = "TUNAI";
-        const cashValue = `Rp ${formatCurrency(currentReceiptTransaction.cashPaid)}`;
+        const cashValue = `Rp.${formatCurrency(currentReceiptTransaction.cashPaid)}`;
         padding = width - cashText.length - cashValue.length;
         encoder.line(`${cashText}${' '.repeat(Math.max(0, padding))}${cashValue}`);
         
         const changeText = "KEMBALI";
-        const changeValue = `Rp ${formatCurrency(currentReceiptTransaction.change)}`;
+        const changeValue = `Rp. ${formatCurrency(currentReceiptTransaction.change)}`;
         padding = width - changeText.length - changeValue.length;
         encoder.line(`${changeText}${' '.repeat(Math.max(0, padding))}${changeValue}`);
 
