@@ -3601,16 +3601,6 @@ document.addEventListener('click', (event) => {
 
 
 // --- BLUETOOTH PRINTING ---
-// Helper to convert Uint8Array to Base64 for the native bridge
-function uint8ArrayToBase64(bytes) {
-    let binary = '';
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-        binary += String.fromCharCode(bytes[i]);
-    }
-    return window.btoa(binary);
-}
-
 /**
  * Global function for the native Android bridge to call to update connection status.
  * @param {boolean} isConnected - Whether the connection was successful.
@@ -3715,8 +3705,12 @@ async function sendDataToPrinter(data) { // data is a Uint8Array
     // Prioritize Native Bridge
     if (window.AndroidBridge && typeof window.AndroidBridge.print === 'function') {
         try {
-            const base64Data = uint8ArrayToBase64(data);
-            window.AndroidBridge.print(base64Data);
+            // Convert Uint8Array to a plain array of numbers, then to a JSON string.
+            // This is a robust way to pass byte data through a native bridge
+            // that accepts a string, avoiding base64 and encoding issues.
+            const byteArray = Array.from(data);
+            const jsonString = JSON.stringify(byteArray);
+            window.AndroidBridge.print(jsonString);
         } catch (error) {
              console.error('Error sending data via native bridge:', error);
              showToast('Gagal mengirim data ke printer (native).');
