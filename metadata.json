@@ -1,9 +1,10 @@
 {
-  "name": "(OK) POS Mobile + Allow Camera, Bluetooth, Location, License (Cursor AI), Hutang Piutang, PWA, Android Studio",
+  "name": "POS Mobile Connect CDNjsdelivr Print",
   "description": "A mobile-first Point of Sale application with barcode scanning for small businesses.",
   "requestFramePermissions": [
     "camera",
-    "bluetooth"
+    "bluetooth",
+    "geolocation"
   ],
   "enabledApis": [
     "bluetooth"
