@@ -3745,10 +3745,9 @@ window.testPrint = async function() {
         const encodedData = encoder
             .initialize()
             .align('center')
-            .text('Test Cetak Berhasil!')
-            .text('-'.repeat(width))
-            .text('POS Mobile App')
-            .newline()
+            .line('Test Cetak Berhasil!')
+            .line('-'.repeat(width))
+            .line('POS Mobile App')
             .feed(3)
             .cut()
             .encode();
@@ -3809,39 +3808,35 @@ async function printReceipt(isAutoPrint = false) {
             encoder.image(imageData);
         }
         
-        encoder.bold(true).size(1,2).text(settingsMap.get('storeName') || 'Toko Anda').size(1,1).bold(false);
-        encoder.text(settingsMap.get('storeAddress') || '');
-        encoder.text('='.repeat(width));
+        encoder.bold(true).size(1,2).line(settingsMap.get('storeName') || 'Toko Anda').size(1,1).bold(false);
+        encoder.line(settingsMap.get('storeAddress') || '');
+        encoder.line('='.repeat(width));
         
         encoder.align('left');
-        encoder.text(`No: ${currentReceiptTransaction.id}`);
-        encoder.text(`Tgl: ${formatReceiptDate(currentReceiptTransaction.date)}`);
-        encoder.text('-'.repeat(width));
+        encoder.line(`No: ${currentReceiptTransaction.id}`);
+        encoder.line(`Tgl: ${formatReceiptDate(currentReceiptTransaction.date)}`);
+        encoder.line('-'.repeat(width));
 
         currentReceiptTransaction.items.forEach(item => {
-            // Line 1: Name, qty, and total price
             const leftPart = `${item.name} x${item.quantity}`;
             const rightPart = `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`;
             
             if (leftPart.length + rightPart.length + 1 > width) {
-                // Put price on the next line if name+qty is too long
                 encoder.line(leftPart);
                 const padding = width - rightPart.length;
                 encoder.line(`${' '.repeat(Math.max(0, padding))}${rightPart}`);
             } else {
-                // Fits on one line
                 const padding = width - leftPart.length - rightPart.length;
                 encoder.line(`${leftPart}${' '.repeat(Math.max(0, padding))}${rightPart}`);
             }
 
-            // Line 2 (optional): Show original price and discount
             if (item.discountPercentage > 0) {
                 const priceDetailText = `  @ Rp.${formatCurrency(item.price)} Disc ${item.discountPercentage}%`;
                 encoder.line(priceDetailText);
             }
         });
         
-        encoder.text('-'.repeat(width));
+        encoder.line('-'.repeat(width));
         
         const subtotalAfterDiscount = currentReceiptTransaction.subtotal - currentReceiptTransaction.totalDiscount;
         const subtotalText = "Subtotal";
@@ -3859,7 +3854,7 @@ async function printReceipt(isAutoPrint = false) {
             encoder.line(`${feeName}${' '.repeat(Math.max(0, padding))}${feeAmount}`);
         });
 
-        encoder.text('-'.repeat(width));
+        encoder.line('-'.repeat(width));
         
         const totalText = "TOTAL";
         const totalValue = `Rp.${formatCurrency(currentReceiptTransaction.total)}`;
@@ -3876,15 +3871,16 @@ async function printReceipt(isAutoPrint = false) {
         padding = width - changeText.length - changeValue.length;
         encoder.line(`${changeText}${' '.repeat(Math.max(0, padding))}${changeValue}`);
 
-        encoder.text('='.repeat(width));
+        encoder.line('='.repeat(width));
         encoder.align('center');
 
-        const footerLines = (settingsMap.get('storeFooterText') || 'Terima kasih!').split('\n');
-        footerLines.forEach(line => encoder.text(line));
+        const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
+        const footerLines = footerText.split('\n');
+        footerLines.forEach(line => encoder.line(line.trim() ? line : ' '));
         
-        const feedbackPhone = settingsMap.get('storeFooterText');
+        const feedbackPhone = settingsMap.get('storeFeedbackPhone');
         if (feedbackPhone) {
-            encoder.text(`Kritik/Saran: ${feedbackPhone}`);
+            encoder.line(`Kritik/Saran: ${feedbackPhone}`);
         }
         
         encoder.feed(3).cut();
