@@ -3615,11 +3615,17 @@ window.connectToBluetoothPrinter = async function() {
     const statusEl = document.getElementById('bluetoothStatus');
     statusEl.textContent = 'Status: Mencari perangkat...';
     try {
+        // We use acceptAllDevices to allow the user to select any Bluetooth device,
+        // but we also list optionalServices. This is crucial to get permission
+        // to access the printer's services after connecting, solving the
+        // "No Services found" error for many non-standard printers.
         bluetoothDevice = await navigator.bluetooth.requestDevice({
             acceptAllDevices: true,
-            // We request the SPP service, but many printers don't advertise it,
-            // so we'll discover services manually after connecting.
-            optionalServices: ['00001101-0000-1000-8000-00805f9b34fb']
+            optionalServices: [
+                '00001101-0000-1000-8000-00805f9b34fb', // Standard Serial Port Service
+                '49535343-fe7d-4ae5-8fa9-9fafd205e455', // Common BLE module service
+                '000018f0-0000-1000-8000-00805f9b34fb'  // Another common thermal printer service
+            ]
         });
 
         statusEl.textContent = `Status: Menghubungkan ke ${bluetoothDevice.name}...`;
@@ -3627,8 +3633,12 @@ window.connectToBluetoothPrinter = async function() {
         
         statusEl.textContent = `Status: Mencari layanan cetak...`;
 
-        // Get all services
         const services = await server.getPrimaryServices();
+        if (services.length === 0) {
+            server.disconnect();
+            throw new Error('No Services found in device.');
+        }
+
         let foundCharacteristic = null;
 
         // Loop through services to find a writable characteristic
@@ -3660,12 +3670,16 @@ window.connectToBluetoothPrinter = async function() {
     } catch (error) {
         console.error('Bluetooth connection failed:', error);
         let errorMessage = 'Gagal terhubung.';
-        if (error.message === 'No writable characteristic found.') {
-            errorMessage = 'Tidak dapat menemukan layanan cetak pada perangkat ini.';
-        } else if (error.name === 'NotFoundError') {
-            errorMessage = 'Pemilihan dibatalkan.';
+        if (error.name === 'NotFoundError' || error.message.includes('User cancelled')) {
+            errorMessage = 'Pemilihan perangkat dibatalkan.';
+        } else if (error.message.includes('No Services found')) {
+            errorMessage = 'Tidak ada layanan ditemukan. Pastikan printer sudah dipasangkan (paired) di pengaturan Bluetooth HP Anda.';
+        } else if (error.message.includes('No writable characteristic')) {
+            errorMessage = 'Tidak dapat menemukan layanan cetak pada perangkat ini. Coba pasangkan ulang printer.';
         } else if (error.name === 'NotSupportedError') {
-             errorMessage = 'Bluetooth tidak didukung.';
+             errorMessage = 'Web Bluetooth tidak didukung di browser ini.';
+        } else if (error.message.includes('GATT Server is disconnected')) {
+            errorMessage = 'Koneksi ke printer terputus saat proses penyiapan.';
         }
         showToast(`Koneksi Bluetooth gagal: ${errorMessage}`);
         updateBluetoothUI(false);
