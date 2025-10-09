@@ -1,11 +1,10 @@
-const CACHE_NAME = 'pos-mobile-cache-v2';
+const CACHE_NAME = 'pos-mobile-cache-v1';
 const APP_SHELL_URLS = [
   '/',
   '/index.html',
   '/index.css',
   '/index.js',
-  '/manifest.json',
-  '/printhub.min.js'
+  '/manifest.json'
 ];
 
 self.addEventListener('install', event => {
