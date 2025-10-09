@@ -3698,8 +3698,6 @@ async function printReceipt() {
             await print.writeText(`Kritik/Saran: ${feedbackPhone}`, { align: 'center' });
         }
 
-        await print.writeLineBreak();
-        await print.printQRCode(`TRANS_ID:${transactionData.id}`, { align: 'center', size: 'medium' });
         await print.writeLineBreak({ count: 3 });
     };
 
