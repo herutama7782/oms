@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -944,9 +945,9 @@ async function checkDueDateNotifications() {
         // Re-calculate the balance for each contact
         const balanceMap = new Map();
         ledgers.forEach(entry => {
-            const currentBalance = balanceMap.get(entry.contactId) || 0;
-            const amount = entry.type === 'debit' ? entry.amount : -entry.amount;
-            balanceMap.set(entry.contactId, currentBalance + amount);
+             const currentBalance = balanceMap.get(entry.contactId) || 0;
+             const amount = entry.type === 'debit' ? entry.amount : -entry.amount;
+             balanceMap.set(entry.contactId, currentBalance + amount);
         });
 
         const dueContactIds = new Set();
@@ -3616,27 +3617,52 @@ window.connectToBluetoothPrinter = async function() {
     try {
         bluetoothDevice = await navigator.bluetooth.requestDevice({
             acceptAllDevices: true,
-            optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb'] // Generic Access Profile
+            // We request the SPP service, but many printers don't advertise it,
+            // so we'll discover services manually after connecting.
+            optionalServices: ['00001101-0000-1000-8000-00805f9b34fb']
         });
 
         statusEl.textContent = `Status: Menghubungkan ke ${bluetoothDevice.name}...`;
         const server = await bluetoothDevice.gatt.connect();
         
-        // This is a common service for thermal printers. Might need adjustment for some models.
-        const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
-        
-        // This is a common characteristic for writing data.
-        bluetoothCharacteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
-        
-        updateBluetoothUI(true);
-        showToast(`Terhubung ke printer: ${bluetoothDevice.name}`);
-        
-        bluetoothDevice.addEventListener('gattserverdisconnected', onBluetoothDisconnected);
+        statusEl.textContent = `Status: Mencari layanan cetak...`;
+
+        // Get all services
+        const services = await server.getPrimaryServices();
+        let foundCharacteristic = null;
+
+        // Loop through services to find a writable characteristic
+        for (const service of services) {
+            const characteristics = await service.getCharacteristics();
+            for (const characteristic of characteristics) {
+                // Check if the characteristic is writable
+                if (characteristic.properties.write || characteristic.properties.writeWithoutResponse) {
+                    foundCharacteristic = characteristic;
+                    break; // Found a writable characteristic, stop searching in this service
+                }
+            }
+            if (foundCharacteristic) {
+                break; // Found a characteristic, stop searching in other services
+            }
+        }
+
+        if (foundCharacteristic) {
+            bluetoothCharacteristic = foundCharacteristic;
+            updateBluetoothUI(true);
+            showToast(`Terhubung ke printer: ${bluetoothDevice.name}`);
+            bluetoothDevice.addEventListener('gattserverdisconnected', onBluetoothDisconnected);
+        } else {
+            // If no writable characteristic is found, disconnect and show an error.
+            server.disconnect();
+            throw new Error('No writable characteristic found.');
+        }
 
     } catch (error) {
         console.error('Bluetooth connection failed:', error);
         let errorMessage = 'Gagal terhubung.';
-        if (error.name === 'NotFoundError') {
+        if (error.message === 'No writable characteristic found.') {
+            errorMessage = 'Tidak dapat menemukan layanan cetak pada perangkat ini.';
+        } else if (error.name === 'NotFoundError') {
             errorMessage = 'Pemilihan dibatalkan.';
         } else if (error.name === 'NotSupportedError') {
              errorMessage = 'Bluetooth tidak didukung.';
