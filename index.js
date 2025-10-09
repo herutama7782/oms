@@ -1,49 +1,8 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-
-// --- SCRIPT LOADER ---
-/**
- * Dynamically loads a script from a given URL.
- * @param {string} url The URL of the script to load.
- * @returns {Promise<void>} A promise that resolves on load and rejects on error.
- */
-function loadScript(url) {
-    return new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = url;
-        script.onload = () => resolve();
-        script.onerror = () => reject(new Error(`Failed to load script: ${url}`));
-        document.head.appendChild(script);
-    });
-}
-
-/**
- * Loads the PrintHub library from a primary CDN with a fallback.
- * @returns {Promise<boolean>} A promise that resolves to true if the library is loaded successfully, false otherwise.
- */
-async function loadPrinterLibrary() {
-    const jsdelivrUrl = 'https://cdn.jsdelivr.net/npm/printhub@1.2.1/dist/index.global.js';
-    const unpkgUrl = 'https://unpkg.com/printhub@1.2.1/dist/index.global.js';
-
-    try {
-        await loadScript(jsdelivrUrl);
-        console.log('PrintHub loaded from jsDelivr.');
-        return true;
-    } catch (error) {
-        console.warn('Failed to load PrintHub from jsDelivr, trying fallback...', error);
-        try {
-            await loadScript(unpkgUrl);
-            console.log('PrintHub loaded from unpkg fallback.');
-            return true;
-        } catch (fallbackError) {
-            console.error('Failed to load PrintHub from all sources.', fallbackError);
-            return false;
-        }
-    }
-}
-
 
 // --- GLOBAL STATE & CONFIG ---
 let db;
@@ -122,7 +81,7 @@ function playTone(frequency, duration, volume, waveType) {
         oscillator.frequency.value = frequency;
         gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
 
-        // Memulai dan Menghentikan oscillator pada waktu yang dijadwalkan
+        // Memulai dan Menghentikan oscillator pada waktu yang dijadwalkeun
         const startTime = audioContext.currentTime;
         oscillator.start(startTime);
         oscillator.stop(startTime + duration);
@@ -675,16 +634,15 @@ function updateFeatureAvailability() {
     }
 
     // Printer
-    const printReceiptBtn = document.getElementById('printReceiptBtn');
+    const connectBtn = document.getElementById('connectBluetoothBtn');
     const autoPrintContainer = document.getElementById('autoPrintContainer');
     const testPrintBtn = document.getElementById('testPrintBtn');
 
     if (!isPrinterReady) {
-        if (printReceiptBtn) {
-            printReceiptBtn.disabled = true;
-            printReceiptBtn.classList.remove('bg-gray-600');
-            printReceiptBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
-            printReceiptBtn.title = 'Fitur cetak gagal dimuat.';
+        if (connectBtn) {
+            connectBtn.disabled = true;
+            connectBtn.title = 'Fitur cetak gagal dimuat.';
+            connectBtn.classList.replace('bg-blue-500', 'bg-blue-300');
         }
         if (testPrintBtn) {
             testPrintBtn.disabled = true;
@@ -3642,8 +3600,8 @@ window.connectToBluetoothPrinter = async function() {
     try {
         updateBluetoothStatus('Menunggu koneksi...', 'yellow');
         
-        // The global from the CDN is `printhub` (lowercase), and the constructor is the `default` export.
-        const PrintHub = printhub.default;
+        // The global from the local script is `printhub`, which is the constructor itself.
+        const PrintHub = printhub;
         const printer = new PrintHub({
             paperSize: paperSize,
             printerType: 'bluetooth'
@@ -3907,260 +3865,201 @@ function updatePinDisplay() {
     });
 }
 
-window.handlePinKeyPress = function(key) {
+window.handlePinKeyPress = async function(key) {
+    const errorEl = document.getElementById('kioskPinError');
+    errorEl.textContent = ''; // Clear previous error on new key press
+
     if (key === 'backspace') {
         currentPinInput = currentPinInput.slice(0, -1);
     } else if (key === 'clear') {
-        currentPinInput = '';
+        currentPinInput = "";
     } else if (currentPinInput.length < 4) {
         currentPinInput += key;
     }
+
     updatePinDisplay();
 
     if (currentPinInput.length === 4) {
-        checkPin();
-    }
-};
+        const storedHashedPin = await getSettingFromDB('kioskPin');
+        const inputHashedPin = [...currentPinInput].map(c => (parseInt(c) + 5) % 10).join('');
 
-async function checkPin() {
-    const storedHashedPin = await getSettingFromDB('kioskPin');
-    const inputHashedPin = [...currentPinInput].map(c => (parseInt(c) + 5) % 10).join('');
-
-    if (inputHashedPin === storedHashedPin) {
-        const modal = document.getElementById('enterKioskPinModal');
-        const isDisabling = modal.dataset.isDisabling === 'true';
-        closeEnterKioskPinModal();
-        if(isDisabling) {
-             exitKioskMode();
-        } else {
-             showPage('dashboard');
-             document.getElementById('bottomNav').classList.remove('hidden');
-             document.getElementById('exitKioskBtn').classList.add('hidden');
-             // Note: Kiosk mode is technically still active until toggled off.
-             // This flow allows temporary exit. Re-entering kasir will show exit button again.
-        }
-    } else {
-        pinAttemptCount++;
-        const errorEl = document.getElementById('kioskPinError');
-        errorEl.textContent = 'PIN Salah!';
-        const pinDisplay = document.getElementById('kioskPinDisplay');
-        pinDisplay.classList.add('animate-shake');
-        
-        setTimeout(() => {
-            currentPinInput = "";
-            updatePinDisplay();
-            errorEl.textContent = '';
-            pinDisplay.classList.remove('animate-shake');
-        }, 800);
-
-        if (pinAttemptCount >= 5) {
-            showToast('PIN salah 5 kali. Menghapus data demi keamanan.', 5000);
-            await clearAllStores();
-            setTimeout(() => location.reload(), 2000);
-        }
-    }
-}
-
-// --- BARCODE/LABEL GENERATOR ---
-function setupBarcodeGenerator() {
-    const generateBtn = document.getElementById('generateBarcodeLabelBtn');
-    if (!generateBtn) return;
-
-    generateBtn.addEventListener('click', () => {
-        const code = document.getElementById('barcode-code').value.trim();
-        const productName = document.getElementById('product-name').value.trim();
-        const productPrice = document.getElementById('product-price').value.trim();
-
-        if (!code) {
-            showToast('Teks/Angka untuk barcode wajib diisi.');
-            return;
-        }
-
-        try {
-            JsBarcode("#barcode", code, {
-                format: "CODE128",
-                displayValue: false, // We display it manually
-                margin: 5,
-                height: 40,
-            });
-
-            document.getElementById('output-product-name').textContent = productName;
-            document.getElementById('output-product-price').textContent = productPrice ? `Rp ${formatCurrency(productPrice)}` : '';
-            document.getElementById('output-barcode-text').textContent = code;
-
-            document.getElementById('barcodeLabelOutput').classList.remove('hidden');
-            document.getElementById('download-buttons').classList.remove('hidden');
-
-        } catch (e) {
-            console.error("JsBarcode error:", e);
-            showToast('Gagal membuat barcode. Coba teks/angka yang berbeda.');
-        }
-    });
-
-    document.getElementById('downloadPngBtn').addEventListener('click', () => {
-        const labelContent = document.getElementById('labelContent');
-        const svgElement = labelContent.querySelector('svg');
-        if (!svgElement) {
-            showToast('Generate barcode terlebih dahulu.');
-            return;
-        }
-        const code = document.getElementById('barcode-code').value.trim() || 'barcode';
-
-        // To capture the whole label, we reconstruct it on a canvas.
-        const productName = document.getElementById('output-product-name').textContent;
-        const productPrice = document.getElementById('output-product-price').textContent;
-        const barcodeText = document.getElementById('output-barcode-text').textContent;
-        
-        const pNameStyle = window.getComputedStyle(document.getElementById('output-product-name'));
-        const pPriceStyle = window.getComputedStyle(document.getElementById('output-product-price'));
-        const pTextStyle = window.getComputedStyle(document.getElementById('output-barcode-text'));
-
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        
-        const padding = 20;
-        const spacing = 10;
-        const svgRect = svgElement.getBoundingClientRect();
-
-        let totalHeight = padding * 2 + svgRect.height + spacing;
-        if(productName) totalHeight += 25;
-        if(productPrice) totalHeight += 25;
-        if(barcodeText) totalHeight += 20;
-
-        canvas.width = svgRect.width + padding * 2;
-        canvas.height = totalHeight;
-        
-        ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = 'black';
-        ctx.textAlign = 'center';
-        
-        let currentY = padding + 15; // Start drawing text lower
-        
-        if (productName) {
-            ctx.font = `${pNameStyle.fontWeight} ${pNameStyle.fontSize} ${pNameStyle.fontFamily.split(',')[0]}`;
-            ctx.fillText(productName, canvas.width / 2, currentY);
-            currentY += 25;
-        }
-        
-        if (productPrice) {
-            ctx.font = `${pPriceStyle.fontWeight} ${pPriceStyle.fontSize} ${pPriceStyle.fontFamily.split(',')[0]}`;
-            ctx.fillText(productPrice, canvas.width / 2, currentY);
-            currentY += 25;
-        }
-        currentY += (spacing / 2);
-
-        const serializer = new XMLSerializer();
-        let svgString = serializer.serializeToString(svgElement);
-        const img = new Image();
-        const svgBlob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
-        const url = URL.createObjectURL(svgBlob);
-
-        img.onload = () => {
-            ctx.drawImage(img, padding, currentY);
-            URL.revokeObjectURL(url);
-            currentY += svgRect.height + spacing;
+        if (inputHashedPin === storedHashedPin) {
+            const modal = document.getElementById('enterKioskPinModal');
+            const isDisabling = modal.dataset.isDisabling === 'true';
+            closeEnterKioskPinModal();
             
-            if (barcodeText) {
-                ctx.font = `${pTextStyle.fontWeight} ${pTextStyle.fontSize} ${pTextStyle.fontFamily.split(',')[0]}`;
-                ctx.fillText(barcodeText, canvas.width / 2, currentY);
+            if (isDisabling) {
+                // Successfully disabled, so remove the PIN as well for security
+                await putSettingToDB({ key: 'kioskModeEnabled', value: false });
+                await putToDB('settings', {key: 'kioskPin', value: null});
+                showToast('Mode Kios Dinonaktifkan & PIN dihapus.');
+                if (currentPage === 'pengaturan') {
+                    const kioskToggle = document.getElementById('kioskModeToggle');
+                    if (kioskToggle) kioskToggle.checked = false;
+                }
+            } else {
+                 exitKioskMode();
             }
-            
-            const pngUrl = canvas.toDataURL('image/png');
-            const link = document.createElement('a');
-            link.download = `label-${code}.png`;
-            link.href = pngUrl;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        };
-        img.src = url;
-    });
+           
+        } else {
+            const display = document.getElementById('kioskPinDisplay');
+            display.classList.add('animate-shake');
+            errorEl.textContent = 'PIN Salah';
+            pinAttemptCount++;
 
-    document.getElementById('printLabelBtn').addEventListener('click', () => {
-        const labelContent = document.getElementById('labelContent').innerHTML;
-        const printWindow = window.open('', '_blank');
-        if (!printWindow) {
-            showToast('Gagal membuka jendela cetak. Izinkan pop-up untuk situs ini.');
-            return;
+            if (pinAttemptCount >= 5) {
+                showToast('Terlalu banyak percobaan PIN salah. Menghapus data...', 4000);
+                await clearAllStores();
+                setTimeout(() => location.reload(), 2000);
+                return;
+            }
+
+            setTimeout(() => {
+                currentPinInput = "";
+                updatePinDisplay();
+                display.classList.remove('animate-shake');
+            }, 500);
         }
-        printWindow.document.write(`
-            <html>
-                <head>
-                    <title>Cetak Label</title>
-                    <style>
-                        @media print {
-                            @page { margin: 0; size: auto; }
-                            body { margin: 10px; }
-                        }
-                        body { text-align: center; font-family: sans-serif; }
-                        svg { max-width: 100%; height: auto; }
-                    </style>
-                </head>
-                <body>${labelContent}</body>
-            </html>
-        `);
-        printWindow.document.close();
-        printWindow.focus();
-        setTimeout(() => {
-            printWindow.print();
-            printWindow.close();
-        }, 500);
-    });
+    }
 }
 
-// --- APP INITIALIZATION ---
-window.addEventListener('DOMContentLoaded', async () => {
-    const loadingOverlay = document.getElementById('loadingOverlay');
-    const appContainer = document.getElementById('appContainer');
+// --- BARCODE LABEL GENERATOR ---
+function generateBarcodeLabel() {
+    const productName = document.getElementById('product-name').value;
+    const productPrice = document.getElementById('product-price').value;
+    const barcodeCode = document.getElementById('barcode-code').value.trim();
 
-    // Load external libraries concurrently
-    const printerLibraryPromise = loadPrinterLibrary();
+    if (!barcodeCode) {
+        showToast('Teks/Angka untuk barcode wajib diisi.');
+        return;
+    }
+
+    document.getElementById('output-product-name').textContent = productName;
+    document.getElementById('output-product-price').textContent = productPrice ? `Rp ${formatCurrency(productPrice)}` : '';
+    document.getElementById('output-barcode-text').textContent = barcodeCode;
 
     try {
+        JsBarcode("#barcode", barcodeCode, {
+            format: "CODE128",
+            lineColor: "#000",
+            width: 2,
+            height: 40,
+            displayValue: false
+        });
+        document.getElementById('barcodeLabelOutput').classList.remove('hidden');
+        document.getElementById('download-buttons').classList.remove('hidden');
+    } catch (e) {
+        showToast('Gagal membuat barcode. Pastikan teks valid.');
+        console.error("JsBarcode error:", e);
+    }
+}
+
+async function downloadPng() {
+    try {
+        const { default: html2canvas } = await import('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/+esm');
+        const labelContent = document.getElementById('labelContent');
+        const canvas = await html2canvas(labelContent, {
+            scale: 3, // Higher scale for better quality
+            backgroundColor: '#ffffff'
+        });
+        const link = document.createElement('a');
+        link.download = `label-${document.getElementById('barcode-code').value}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    } catch (error) {
+        console.error("html2canvas failed to load or run", error);
+        showToast("Gagal mengunduh. Library eksternal tidak dapat dimuat.");
+    }
+}
+
+function printLabel() {
+    const labelContent = document.getElementById('labelContent').innerHTML;
+    const styleOverrides = `
+        #labelContent { 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            width: 100%; 
+            font-family: sans-serif; 
+            color: black;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        #output-product-name { font-size: 16pt; font-weight: bold; margin-bottom: 5px; }
+        #output-product-price { font-size: 14pt; font-weight: 600; margin-bottom: 5px; }
+        #barcode { margin: 5px 0; }
+        #output-barcode-text { font-size: 10pt; font-family: monospace; }
+        @page { size: auto; margin: 5mm; }
+    `;
+    
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+        <html>
+            <head>
+                <title>Cetak Label</title>
+                <style>${styleOverrides}</style>
+            </head>
+            <body>
+                <div id="labelContent">${labelContent}</div>
+                <script>
+                    window.onload = function() { 
+                        window.print(); 
+                        setTimeout(function() { window.close(); }, 100);
+                    };
+                </script>
+            </body>
+        </html>
+    `);
+    printWindow.document.close();
+}
+
+
+// --- APP INITIALIZATION ---
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
         await initDB();
-
-        // Load settings first as they might be needed by other components
-        await loadSettings();
-        await applyDefaultFees(); // Apply default fees to the initial empty cart
-
-        // Initialize libraries that might fail
-        try {
-            if (typeof Html5Qrcode !== 'undefined') {
-                html5QrCode = new Html5Qrcode("qr-reader");
-                isScannerReady = true;
-            } else {
-                console.error('html5-qrcode library not loaded.');
-            }
-        } catch (e) {
-            console.error('Failed to initialize scanner:', e);
-        }
-
-        try {
-            if (typeof Chart !== 'undefined') {
-                isChartJsReady = true;
-            } else {
-                console.error('Chart.js library not loaded.');
-            }
-        } catch (e) {
-            console.error('Failed to initialize Chart.js:', e);
-        }
-
-        // Wait for the printer library to load and update its status
-        isPrinterReady = await printerLibraryPromise;
+        
+        // --- Library Readiness Checks ---
+        isPrinterReady = typeof printhub !== 'undefined';
+        isScannerReady = typeof Html5Qrcode !== 'undefined';
+        isChartJsReady = typeof Chart !== 'undefined';
+        
+        if (!isPrinterReady) console.warn("PrintHub library failed to load.");
+        if (!isScannerReady) console.warn("Html5Qrcode library failed to load.");
+        if (!isChartJsReady) console.warn("Chart.js library failed to load.");
+        
         updateFeatureAvailability();
 
-        // Setup UI event listeners
-        document.getElementById('searchProduct')?.addEventListener('input', (e) => {
-            const searchTerm = e.target.value.toLowerCase();
-            document.querySelectorAll('#productsGrid .product-item').forEach(item => {
-                const name = item.dataset.name || '';
-                const barcode = item.dataset.barcode || '';
-                const category = item.dataset.category || '';
-                item.style.display = (name.includes(searchTerm) || barcode.includes(searchTerm) || category.includes(searchTerm)) ? 'block' : 'none';
-            });
-        });
+        // --- Load Initial Data & Settings ---
+        await loadSettings();
+        await applyDefaultFees();
+        await loadDashboard();
 
+        // Check if kiosk mode was active and re-engage it
+        const wasKioskModeActive = await getSettingFromDB('kioskModeEnabled');
+        if (wasKioskModeActive) {
+            isKioskModeActive = true;
+            enterKioskMode();
+        }
+
+        if (isScannerReady) {
+            html5QrCode = new Html5Qrcode("qr-reader");
+        }
+        
+        // --- Setup Event Listeners ---
+        const searchInput = document.getElementById('searchProduct');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                const query = e.target.value.toLowerCase();
+                document.querySelectorAll('#productsGrid .product-item').forEach(item => {
+                    const name = item.dataset.name || '';
+                    const barcode = item.dataset.barcode || '';
+                    item.style.display = (name.includes(query) || barcode.includes(query)) ? '' : 'none';
+                });
+            });
+        }
+        
         document.getElementById('confirmButton').addEventListener('click', () => {
             if (confirmCallback) {
                 confirmCallback();
@@ -4171,43 +4070,48 @@ window.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('cancelButton').addEventListener('click', closeConfirmationModal);
         
         setupChartViewToggle();
-        setupBarcodeGenerator();
-
-        // Set initial page
-        loadDashboard();
-
-        // Setup online/offline listeners
-        window.addEventListener('online', checkOnlineStatus);
-        window.addEventListener('offline', checkOnlineStatus);
-        checkOnlineStatus(); // Initial check
-
-        // Check for dashboard auto-refresh
+        
+        // Background dashboard refresh
         setInterval(() => {
             const today = new Date().toISOString().split('T')[0];
-            if (isOnline && document.visibilityState === 'visible' && currentPage === 'dashboard' && today !== lastDashboardLoadDate) {
-                console.log('New day detected, refreshing dashboard.');
-                loadDashboard();
+            if (document.visibilityState === 'visible' && currentPage === 'dashboard' && today !== lastDashboardLoadDate) {
+                 console.log("Date changed, reloading dashboard.");
+                 loadDashboard();
             }
         }, 60 * 1000); // Check every minute
-        
-        // Finalize UI
-        appContainer.classList.remove('hidden');
-        loadingOverlay.style.opacity = '0';
-        setTimeout(() => {
-            loadingOverlay.style.display = 'none';
-        }, 300);
 
-        // Add a single listener to initialize audio context on first user interaction
-        const initAudio = () => {
-            initAudioContext();
-            document.body.removeEventListener('click', initAudio);
-            document.body.removeEventListener('touchend', initAudio);
-        };
-        document.body.addEventListener('click', initAudio);
-        document.body.addEventListener('touchend', initAudio);
+        // Initialize Audio Context on first user interaction
+        document.body.addEventListener('click', initAudioContext, { once: true });
+        
+        // Setup barcode/label generator button
+        document.getElementById('generateBarcodeLabelBtn').addEventListener('click', generateBarcodeLabel);
+        document.getElementById('downloadPngBtn').addEventListener('click', downloadPng);
+        document.getElementById('printLabelBtn').addEventListener('click', printLabel);
+
+        // --- Online/Offline Handling ---
+        updateSyncStatusUI(isOnline ? 'synced' : 'offline');
+        if (isOnline) {
+            syncWithServer();
+        }
+        window.addEventListener('online', checkOnlineStatus);
+        window.addEventListener('offline', checkOnlineStatus);
+        
+        // --- Finalize UI ---
+        document.getElementById('loadingOverlay').classList.add('opacity-0');
+        setTimeout(() => {
+            document.getElementById('loadingOverlay').style.display = 'none';
+            document.getElementById('appContainer').classList.remove('hidden');
+        }, 300);
 
     } catch (error) {
         console.error("Application initialization failed:", error);
-        loadingOverlay.innerHTML = '<p class="text-red-500 p-4 text-center">Gagal memuat aplikasi. Coba muat ulang halaman.</p>';
+        document.getElementById('loadingOverlay').innerHTML = `
+            <div class="text-center p-4">
+                <i class="fas fa-exclamation-triangle text-red-500 text-4xl mb-4"></i>
+                <h2 class="text-xl font-bold">Gagal Memuat Aplikasi</h2>
+                <p class="text-gray-600 mt-2">Terjadi kesalahan fatal saat inisialisasi. Silakan coba muat ulang halaman.</p>
+                <pre class="text-xs text-left bg-gray-100 p-2 mt-4 rounded overflow-auto">${error.message}</pre>
+            </div>
+        `;
     }
 });
