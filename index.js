@@ -3658,9 +3658,15 @@ window.connectToBluetoothPrinter = async function() {
         document.getElementById('testPrintBtn').disabled = false;
         
     } catch(error) {
-        console.error('Bluetooth connection failed:', error);
-        showToast('Gagal terhubung. Pastikan printer menyala.');
-        updateBluetoothStatus('Gagal terhubung', 'red');
+        // Check if the error is because the user cancelled the dialog
+        if (error.name === 'NotFoundError') {
+            console.log('User cancelled the Bluetooth device selection.');
+            updateBluetoothStatus('Pemilihan dibatalkan'); // Reset to a neutral state
+        } else {
+            console.error('Bluetooth connection failed:', error);
+            showToast('Gagal terhubung. Pastikan printer menyala.');
+            updateBluetoothStatus('Gagal terhubung', 'red');
+        }
     }
 }
 
