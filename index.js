@@ -3607,6 +3607,26 @@ window.saveDueDate = async function() {
 
 
 // --- BLUETOOTH PRINTING ---
+
+/**
+ * Sends data to the connected Bluetooth printer, chunking it to avoid MTU limits.
+ * @param {Uint8Array} data The data to send.
+ */
+async function sendDataToPrinter(data) {
+    if (!bluetoothCharacteristic) {
+        throw new Error('Printer not connected.');
+    }
+
+    // A conservative chunk size that should work for most BLE devices.
+    // The actual limit is device-dependent (MTU - 3), but this is a safe value.
+    const CHUNK_SIZE = 100;
+
+    for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+        const chunk = data.slice(i, i + CHUNK_SIZE);
+        await bluetoothCharacteristic.writeValue(chunk);
+    }
+}
+
 window.connectToBluetoothPrinter = async function() {
     if (!navigator.bluetooth) {
         showToast('Web Bluetooth API tidak didukung di browser ini.');
@@ -3748,7 +3768,7 @@ window.testPrint = async function() {
             .cut()
             .encode();
 
-        await bluetoothCharacteristic.writeValue(encodedData);
+        await sendDataToPrinter(encodedData);
         showToast('Perintah tes cetak dikirim.');
     } catch (error) {
         console.error('Test print failed:', error);
@@ -3843,8 +3863,9 @@ window.printReceipt = async function(isAutoPrint = false) {
         }
         
         encoder.feed(3).cut();
-
-        await bluetoothCharacteristic.writeValue(encoder.encode());
+        
+        const dataToSend = encoder.encode();
+        await sendDataToPrinter(dataToSend);
         
     } catch (error) {
         console.error('Printing failed:', error);
