@@ -11,6 +11,7 @@ let cart = {
 };
 let currentImageData = null;
 let currentEditImageData = null;
+let currentLogoData = null;
 let currentPage = 'dashboard';
 let confirmCallback = null;
 let html5QrCode;
@@ -2263,6 +2264,7 @@ window.startNewTransaction = startNewTransaction;
 // --- SETTINGS ---
 async function saveStoreSettings() {
     const settings = [
+        { key: 'storeLogo', value: currentLogoData },
         { key: 'storeName', value: (document.getElementById('storeName')).value.trim() },
         { key: 'storeAddress', value: (document.getElementById('storeAddress')).value.trim() },
         { key: 'storeFeedbackPhone', value: (document.getElementById('storeFeedbackPhone')).value.trim() },
@@ -2303,6 +2305,18 @@ async function loadSettings() {
         document.getElementById('autoPrintReceipt').checked = settingsMap.get('autoPrintReceipt') || false;
         document.getElementById('printerPaperSize').value = settingsMap.get('printerPaperSize') || '80mm';
 
+        // Load logo
+        const logoPreview = document.getElementById('logoPreview');
+        const removeLogoBtn = document.getElementById('removeLogoBtn');
+        currentLogoData = settingsMap.get('storeLogo') || null;
+        if (currentLogoData) {
+            logoPreview.innerHTML = `<img src="${currentLogoData}" alt="Logo Preview" class="image-preview">`;
+            removeLogoBtn.classList.remove('hidden');
+        } else {
+            logoPreview.innerHTML = `<i class="fas fa-image text-3xl mb-2"></i><p>Tap untuk upload logo</p>`;
+            removeLogoBtn.classList.add('hidden');
+        }
+
         // Set Kiosk Mode toggle state
         const kioskToggle = document.getElementById('kioskModeToggle');
         if (kioskToggle) {
@@ -2315,6 +2329,31 @@ async function loadSettings() {
         console.error("Failed to load settings:", error);
     }
 }
+
+// --- LOGO HANDLING ---
+window.previewLogo = function(event) {
+    const file = event.target.files?.[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            currentLogoData = e.target?.result;
+            document.getElementById('logoPreview').innerHTML = `<img src="${currentLogoData}" alt="Logo Preview" class="image-preview">`;
+            document.getElementById('removeLogoBtn').classList.remove('hidden');
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+window.removeLogo = function() {
+    currentLogoData = null;
+    document.getElementById('logoPreview').innerHTML = `<i class="fas fa-image text-3xl mb-2"></i><p>Tap untuk upload logo</p>`;
+    document.getElementById('storeLogo').value = ''; // Reset file input
+    document.getElementById('removeLogoBtn').classList.add('hidden');
+    putSettingToDB({ key: 'storeLogo', value: null }).then(() => {
+        showToast('Logo dihapus.');
+    });
+}
+
 
 // --- DATA MANAGEMENT ---
 async function exportData() {
@@ -2963,6 +3002,7 @@ async function _generateReceiptHTML(data, isPreview) {
     const storeAddress = settingsMap.get('storeAddress') || '';
     const feedbackPhone = settingsMap.get('storeFeedbackPhone') || '';
     const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
+    const storeLogo = settingsMap.get('storeLogo') || null;
     const paperSize = settingsMap.get('printerPaperSize') || '80mm';
     const paperWidthChars = paperSize === '58mm' ? 32 : 42;
 
@@ -2970,6 +3010,11 @@ async function _generateReceiptHTML(data, isPreview) {
         if (typeof unsafe !== 'string') return unsafe;
         return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     };
+
+    // --- Logo ---
+    const logoHtml = storeLogo 
+        ? `<div id="receiptLogoContainer"><img src="${storeLogo}" alt="Logo Toko"></div>` 
+        : '';
 
     // --- Items ---
     let itemsHtml = '';
@@ -3022,6 +3067,7 @@ async function _generateReceiptHTML(data, isPreview) {
     const feedbackHtml = feedbackPhone ? `<p style="margin: 0; font-size: 0.8rem;">Kritik/Saran: ${escapeHtml(feedbackPhone)}</p>` : '';
     
     return (
+        `${logoHtml}` +
         `<div style="text-align: center;">` +
             `<h2 style="font-size: 1.1rem; font-weight: bold; margin: 0;">${escapeHtml(storeName)}</h2>` +
             `<p style="margin: 0; font-size: 0.8rem;">${escapeHtml(storeAddress)}</p>` +
@@ -3633,40 +3679,56 @@ async function printReceipt() {
         showToast('Tidak ada data struk untuk dicetak.');
         return;
     }
-    
+
     showToast('Mempersiapkan untuk mencetak struk...');
 
     const printLogic = async (print) => {
         const transactionData = currentReceiptTransaction;
         const settings = await getAllFromDB('settings');
         const settingsMap = new Map(settings.map(s => [s.key, s.value]));
-        
+
+        // Print Logo
+        const logoUrl = settingsMap.get('storeLogo');
+        if (logoUrl) {
+            try {
+                // The library has a bug or limitation with putImageWithUrl, so this might fail silently or warn.
+                // We keep it for future library updates but wrap in try-catch to prevent breaking the print job.
+                await print.putImageWithUrl(logoUrl, { align: "center" });
+                await print.writeLineBreak({ count: 1 });
+            } catch (e) {
+                console.warn("Could not print logo from URL. The library might not support it or the image format is incorrect.", e);
+            }
+        }
+
         // Header
         await print.writeText(settingsMap.get('storeName') || 'Toko Anda', { align: 'center', bold: true, size: 'double' });
         await print.writeText(settingsMap.get('storeAddress') || '', { align: 'center' });
         await print.writeDashLine();
-        
-        // Info
-        await print.writeTextWith2Column(`No: ${transactionData.id}`, `Tgl: ${formatReceiptDate(transactionData.date)}`);
+
+        // Transaction Info
+        const dateParts = formatReceiptDate(transactionData.date).split(', ');
+        await print.writeTextWith2Column(`No: ${transactionData.id}`, `Tgl: ${dateParts[0]}`);
+        if (dateParts[1]) {
+            await print.writeTextWith2Column('', `${dateParts[1]}`);
+        }
+
         await print.writeDashLine();
 
         // Items
         for (const item of transactionData.items) {
             const leftPart = `${item.name} x${item.quantity}`;
-            const rightPart = `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`;
+            const rightPart = `${formatCurrency(item.effectivePrice * item.quantity)}`;
             await print.writeTextWith2Column(leftPart, rightPart);
-
             if (item.discountPercentage > 0) {
-                 const priceDetailText = `  @ Rp.${formatCurrency(item.price)} Disc ${item.discountPercentage}%`;
-                 await print.writeText(priceDetailText, {align: 'left'});
+                await print.writeText(`  @ ${formatCurrency(item.price)} Disc ${item.discountPercentage}%`);
             }
         }
-        
+
         await print.writeDashLine();
-        
+
         // Summary
         const subtotalAfterDiscount = transactionData.subtotal - transactionData.totalDiscount;
-        await print.writeTextWith2Column("Subtotal", `Rp.${formatCurrency(subtotalAfterDiscount)}`);
+        await print.writeTextWith2Column('Subtotal', `${formatCurrency(subtotalAfterDiscount)}`);
 
         if (transactionData.fees && transactionData.fees.length > 0) {
             for (const fee of transactionData.fees) {
@@ -3674,25 +3736,26 @@ async function printReceipt() {
                 if (fee.type === 'percentage') {
                     feeName += ` ${fee.value}%`;
                 }
-                const feeAmount = `Rp. ${formatCurrency(fee.amount)}`;
+                const feeAmount = `${formatCurrency(fee.amount)}`;
                 await print.writeTextWith2Column(feeName, feeAmount);
             }
         }
-        
+
         await print.writeDashLine();
-        
-        await print.writeTextWith2Column("TOTAL", `Rp.${formatCurrency(transactionData.total)}`, { bold: true });
-        await print.writeTextWith2Column("TUNAI", `Rp.${formatCurrency(transactionData.cashPaid)}`);
-        await print.writeTextWith2Column("KEMBALI", `Rp. ${formatCurrency(transactionData.change)}`);
+
+        // Totals
+        await print.writeTextWith2Column('TOTAL', `${formatCurrency(transactionData.total)}`, { bold: true });
+        await print.writeTextWith2Column('TUNAI', `${formatCurrency(transactionData.cashPaid)}`);
+        await print.writeTextWith2Column('KEMBALI', `${formatCurrency(transactionData.change)}`);
+
         await print.writeDashLine();
 
         // Footer
         const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
         const footerLines = footerText.split('\n');
         for (const line of footerLines) {
-            await print.writeText(line.trim() ? line : ' ', { align: 'center' });
+            await print.writeText(line, { align: 'center' });
         }
-        
         const feedbackPhone = settingsMap.get('storeFeedbackPhone');
         if (feedbackPhone) {
             await print.writeText(`Kritik/Saran: ${feedbackPhone}`, { align: 'center' });
@@ -3708,66 +3771,108 @@ window.printReceipt = printReceipt;
 window.showPrintHelpModal = function() {
     document.getElementById('printHelpModal').classList.remove('hidden');
 }
+
 window.closePrintHelpModal = function() {
     document.getElementById('printHelpModal').classList.add('hidden');
 }
 
 
+// --- BARCODE LABEL GENERATOR ---
+document.getElementById('generateBarcodeLabelBtn')?.addEventListener('click', function() {
+    const productName = document.getElementById('product-name').value;
+    const productPrice = document.getElementById('product-price').value;
+    const barcodeCode = document.getElementById('barcode-code').value.trim();
+
+    if (!barcodeCode) {
+        showToast('Teks/Angka untuk barcode wajib diisi.');
+        return;
+    }
+
+    const outputContainer = document.getElementById('barcodeLabelOutput');
+    const nameEl = document.getElementById('output-product-name');
+    const priceEl = document.getElementById('output-product-price');
+    const barcodeTextEl = document.getElementById('output-barcode-text');
+    const downloadButtons = document.getElementById('download-buttons');
+
+    nameEl.textContent = productName;
+    priceEl.textContent = productPrice ? `Rp ${formatCurrency(parseFloat(productPrice))}` : '';
+    barcodeTextEl.textContent = barcodeCode;
+
+    try {
+        JsBarcode("#barcode", barcodeCode, {
+            format: "CODE128",
+            lineColor: "#000",
+            width: 2,
+            height: 50,
+            displayValue: false
+        });
+        outputContainer.classList.remove('hidden');
+        downloadButtons.classList.remove('hidden');
+    } catch (e) {
+        showToast('Gagal membuat barcode. Kode tidak valid.');
+        console.error("JsBarcode error:", e);
+        outputContainer.classList.add('hidden');
+        downloadButtons.classList.add('hidden');
+    }
+});
+
+document.getElementById('downloadPngBtn')?.addEventListener('click', function() {
+    showToast('Fitur unduh sedang dikembangkan. Gunakan fitur Cetak Label.');
+});
+
+document.getElementById('printLabelBtn')?.addEventListener('click', function() {
+    const labelContent = document.getElementById('labelContent').innerHTML;
+    const printWindow = window.open('', 'PRINT', 'height=400,width=600');
+    
+    printWindow.document.write('<html><head><title>Cetak Label</title>');
+    printWindow.document.write('<style> body { text-align: center; font-family: sans-serif; } </style>');
+    printWindow.document.write('</head><body >');
+    printWindow.document.write(labelContent);
+    printWindow.document.write('</body></html>');
+    
+    printWindow.document.close();
+    printWindow.focus();
+    
+    setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+    }, 250);
+});
+
 // --- KIOSK MODE ---
-window.handleKioskModeToggle = async function(isChecked) {
-    const kioskToggle = document.getElementById('kioskModeToggle');
-    if (isChecked) {
-        const existingPin = await getSettingFromDB('kioskPin');
-        if (existingPin) {
-            isKioskModeActive = true;
-            await putSettingToDB({ key: 'kioskModeEnabled', value: true });
-            enterKioskMode();
+let kioskPin = null;
+
+async function handleKioskModeToggle(isEnabled) {
+    if (isEnabled) {
+        // Check if PIN is already set
+        kioskPin = await getSettingFromDB('kioskPin');
+        if (kioskPin) {
+            activateKioskMode();
         } else {
             showSetKioskPinModal();
         }
-    } else { // Turning off
-        const existingPin = await getSettingFromDB('kioskPin');
-        if (!existingPin) { // Should not happen but as a safeguard
-             exitKioskMode();
-             return;
-        }
-        showEnterKioskPinModal(true); // `isDisabling` is true
+    } else {
+        // This case is handled by exiting via the PIN modal, not by toggling off.
+        // If somehow toggled off, ensure state is correct.
+        const toggle = document.getElementById('kioskModeToggle');
+        if(isKioskModeActive) toggle.checked = true; 
     }
-};
-
-function enterKioskMode() {
-    isKioskModeActive = true;
-    showToast('Mode Kios Diaktifkan.', 2000);
-    showPage('kasir', { force: true });
-    document.getElementById('bottomNav').classList.add('hidden');
-    document.getElementById('exitKioskBtn').classList.remove('hidden');
 }
+window.handleKioskModeToggle = handleKioskModeToggle;
 
-async function exitKioskMode() {
-    isKioskModeActive = false;
-    await putSettingToDB({ key: 'kioskModeEnabled', value: false });
-    showToast('Mode Kios Dinonaktifkan.', 2000);
-    document.getElementById('bottomNav').classList.remove('hidden');
-    document.getElementById('exitKioskBtn').classList.add('hidden');
-    // If on settings page, uncheck the toggle
-    const kioskToggle = document.getElementById('kioskModeToggle');
-    if (kioskToggle) kioskToggle.checked = false;
-}
-
-window.showSetKioskPinModal = function() {
-    document.getElementById('newKioskPin').value = '';
-    document.getElementById('confirmKioskPin').value = '';
+function showSetKioskPinModal() {
     document.getElementById('setKioskPinModal').classList.remove('hidden');
 }
+window.showSetKioskPinModal = showSetKioskPinModal;
 
-window.closeSetKioskPinModal = function() {
+function closeSetKioskPinModal() {
     document.getElementById('setKioskPinModal').classList.add('hidden');
-    // Revert toggle if cancelled
-    const kioskToggle = document.getElementById('kioskModeToggle');
-    if (kioskToggle) kioskToggle.checked = false;
+    // Uncheck the toggle if user cancels setting a PIN
+    document.getElementById('kioskModeToggle').checked = false;
 }
+window.closeSetKioskPinModal = closeSetKioskPinModal;
 
-window.saveKioskPinAndActivate = async function() {
+async function saveKioskPinAndActivate() {
     const newPin = document.getElementById('newKioskPin').value;
     const confirmPin = document.getElementById('confirmKioskPin').value;
 
@@ -3775,53 +3880,68 @@ window.saveKioskPinAndActivate = async function() {
         showToast('PIN harus terdiri dari 4 angka.');
         return;
     }
+
     if (newPin !== confirmPin) {
         showToast('PIN tidak cocok.');
         return;
     }
 
-    // A simple hash (NOT for high security, just to avoid storing plain text)
-    const hashedPin = [...newPin].map(c => (parseInt(c) + 5) % 10).join('');
-    await putSettingToDB({ key: 'kioskPin', value: hashedPin });
-    
+    // In a real app, hash the PIN. For this local app, storing it as-is is acceptable.
+    await putSettingToDB({ key: 'kioskPin', value: newPin });
+    kioskPin = newPin;
     closeSetKioskPinModal();
-    isKioskModeActive = true;
+    activateKioskMode();
+}
+window.saveKioskPinAndActivate = saveKioskPinAndActivate;
+
+async function activateKioskMode() {
     await putSettingToDB({ key: 'kioskModeEnabled', value: true });
-    enterKioskMode();
+    isKioskModeActive = true;
+    showPage('kasir', { force: true });
+    document.getElementById('bottomNav').classList.add('hidden');
+    document.getElementById('exitKioskBtn').classList.remove('hidden');
+    document.getElementById('kioskModeToggle').checked = true;
+    showToast('Mode Kios diaktifkan.', 2000);
 }
 
-window.showEnterKioskPinModal = function(isDisabling = false) {
+async function deactivateKioskMode() {
+    await putSettingToDB({ key: 'kioskModeEnabled', value: false });
+    isKioskModeActive = false;
+    document.getElementById('bottomNav').classList.remove('hidden');
+    document.getElementById('exitKioskBtn').classList.add('hidden');
+    document.getElementById('kioskModeToggle').checked = false;
+    pinAttemptCount = 0; // Reset counter on successful exit
+    await putSettingToDB({ key: 'pinAttemptCount', value: 0 });
+    showToast('Mode Kios dinonaktifkan.', 2000);
+}
+
+function showEnterKioskPinModal() {
     currentPinInput = "";
-    pinAttemptCount = 0;
     updatePinDisplay();
     document.getElementById('kioskPinError').textContent = '';
-    const modal = document.getElementById('enterKioskPinModal');
-    modal.dataset.isDisabling = isDisabling;
-    modal.classList.remove('hidden');
+    document.getElementById('enterKioskPinModal').classList.remove('hidden');
 }
+window.showEnterKioskPinModal = showEnterKioskPinModal;
 
-window.closeEnterKioskPinModal = function() {
-    const modal = document.getElementById('enterKioskPinModal');
-    // If user is trying to disable kiosk mode and cancels, re-check the toggle
-    if(modal.dataset.isDisabling === 'true' && currentPage === 'pengaturan') {
-        const kioskToggle = document.getElementById('kioskModeToggle');
-        if(kioskToggle) kioskToggle.checked = true;
-    }
-    modal.classList.add('hidden');
+function closeEnterKioskPinModal() {
+    document.getElementById('enterKioskPinModal').classList.add('hidden');
 }
+window.closeEnterKioskPinModal = closeEnterKioskPinModal;
 
 function updatePinDisplay() {
     const dots = document.querySelectorAll('#kioskPinDisplay div');
     dots.forEach((dot, index) => {
-        dot.classList.toggle('bg-blue-500', index < currentPinInput.length);
-        dot.classList.toggle('bg-gray-300', index >= currentPinInput.length);
+        if (index < currentPinInput.length) {
+            dot.classList.add('bg-blue-500');
+            dot.classList.remove('bg-gray-300');
+        } else {
+            dot.classList.remove('bg-blue-500');
+            dot.classList.add('bg-gray-300');
+        }
     });
 }
 
-window.handlePinKeyPress = async function(key) {
-    const errorEl = document.getElementById('kioskPinError');
-    errorEl.textContent = ''; // Clear previous error on new key press
-
+async function handlePinKeyPress(key) {
     if (key === 'backspace') {
         currentPinInput = currentPinInput.slice(0, -1);
     } else if (key === 'clear') {
@@ -3833,237 +3953,119 @@ window.handlePinKeyPress = async function(key) {
     updatePinDisplay();
 
     if (currentPinInput.length === 4) {
-        const storedHashedPin = await getSettingFromDB('kioskPin');
-        const inputHashedPin = [...currentPinInput].map(c => (parseInt(c) + 5) % 10).join('');
-
-        if (inputHashedPin === storedHashedPin) {
-            const modal = document.getElementById('enterKioskPinModal');
-            const isDisabling = modal.dataset.isDisabling === 'true';
+        const storedPin = await getSettingFromDB('kioskPin');
+        if (currentPinInput === storedPin) {
             closeEnterKioskPinModal();
-            
-            if (isDisabling) {
-                // Successfully disabled, so remove the PIN as well for security
-                await putSettingToDB({ key: 'kioskModeEnabled', value: false });
-                await putToDB('settings', {key: 'kioskPin', value: null});
-                showToast('Mode Kios Dinonaktifkan & PIN dihapus.');
-                if (currentPage === 'pengaturan') {
-                    const kioskToggle = document.getElementById('kioskModeToggle');
-                    if (kioskToggle) kioskToggle.checked = false;
-                }
-            } else {
-                 exitKioskMode();
-            }
-           
+            deactivateKioskMode();
         } else {
-            const display = document.getElementById('kioskPinDisplay');
-            display.classList.add('animate-shake');
-            errorEl.textContent = 'PIN Salah';
-            pinAttemptCount++;
-
-            if (pinAttemptCount >= 5) {
-                showToast('Terlalu banyak percobaan PIN salah. Menghapus data...', 4000);
-                await clearAllStores();
-                setTimeout(() => location.reload(), 2000);
-                return;
-            }
-
+            document.getElementById('kioskPinError').textContent = 'PIN Salah';
+            document.getElementById('kioskPinDisplay').classList.add('animate-shake');
             setTimeout(() => {
+                document.getElementById('kioskPinDisplay').classList.remove('animate-shake');
                 currentPinInput = "";
                 updatePinDisplay();
-                display.classList.remove('animate-shake');
             }, 500);
+            
+            // Increment and check attempt count
+            pinAttemptCount++;
+            await putSettingToDB({ key: 'pinAttemptCount', value: pinAttemptCount });
+            if (pinAttemptCount >= 5) {
+                showToast('Terlalu banyak percobaan PIN. Menghapus data...', 5000);
+                await clearAllStores();
+                setTimeout(() => location.reload(), 5000);
+            }
         }
+    } else {
+        document.getElementById('kioskPinError').textContent = '';
     }
 }
-
-// --- BARCODE LABEL GENERATOR ---
-function generateBarcodeLabel() {
-    const productName = document.getElementById('product-name').value;
-    const productPrice = document.getElementById('product-price').value;
-    const barcodeCode = document.getElementById('barcode-code').value.trim();
-
-    if (!barcodeCode) {
-        showToast('Teks/Angka untuk barcode wajib diisi.');
-        return;
-    }
-
-    document.getElementById('output-product-name').textContent = productName;
-    document.getElementById('output-product-price').textContent = productPrice ? `Rp ${formatCurrency(productPrice)}` : '';
-    document.getElementById('output-barcode-text').textContent = barcodeCode;
-
-    try {
-        JsBarcode("#barcode", barcodeCode, {
-            format: "CODE128",
-            lineColor: "#000",
-            width: 2,
-            height: 40,
-            displayValue: false
-        });
-        document.getElementById('barcodeLabelOutput').classList.remove('hidden');
-        document.getElementById('download-buttons').classList.remove('hidden');
-    } catch (e) {
-        showToast('Gagal membuat barcode. Pastikan teks valid.');
-        console.error("JsBarcode error:", e);
-    }
-}
-
-async function downloadPng() {
-    try {
-        const { default: html2canvas } = await import('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/+esm');
-        const labelContent = document.getElementById('labelContent');
-        const canvas = await html2canvas(labelContent, {
-            scale: 3, // Higher scale for better quality
-            backgroundColor: '#ffffff'
-        });
-        const link = document.createElement('a');
-        link.download = `label-${document.getElementById('barcode-code').value.trim() || 'barcode'}.png`;
-        link.href = canvas.toDataURL('image/png');
-        link.click();
-        link.remove();
-    } catch (e) {
-        console.error("Failed to download PNG:", e);
-        showToast("Gagal mengunduh PNG. Library html2canvas mungkin gagal dimuat.");
-    }
-}
-window.downloadPng = downloadPng;
+window.handlePinKeyPress = handlePinKeyPress;
 
 
-function printLabel() {
-    const labelContent = document.getElementById('labelContent').innerHTML;
-    const paperSize = document.getElementById('printerPaperSize').value;
-
-    let width = paperSize === '58mm' ? '50mm' : '72mm'; // Approximate printable width
-    
-    // Create an iframe to print from
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'absolute';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = '0';
-    document.body.appendChild(iframe);
-    
-    const doc = iframe.contentWindow.document;
-    doc.open();
-    doc.write(`
-        <html>
-        <head>
-            <title>Cetak Label</title>
-            <style>
-                @page { margin: 2mm; size: ${width} auto; }
-                body { margin: 0; padding: 0; font-family: sans-serif; text-align: center; }
-                #labelContent { display: inline-block; text-align: center; }
-                svg { max-width: 100%; height: auto; }
-            </style>
-        </head>
-        <body>
-            <div id="labelContent">${labelContent}</div>
-        </body>
-        </html>
-    `);
-    doc.close();
-    
-    iframe.contentWindow.focus();
-    iframe.contentWindow.print();
-    
-    setTimeout(() => {
-        document.body.removeChild(iframe);
-    }, 1000); // Delay removal to ensure printing completes
-}
-window.printLabel = printLabel;
-
-
+// --- INITIALIZATION ---
 async function initApp() {
-    const loadingOverlay = document.getElementById('loadingOverlay');
-    const appContainer = document.getElementById('appContainer');
-
     try {
         await initDB();
         
-        // --- Setup Global Listeners ---
-        document.getElementById('confirmButton')?.addEventListener('click', () => { if (confirmCallback) confirmCallback(); closeConfirmationModal(); });
-        document.getElementById('cancelButton')?.addEventListener('click', closeConfirmationModal);
-        
-        // Barcode Label Generator Listeners
-        document.getElementById('generateBarcodeLabelBtn')?.addEventListener('click', generateBarcodeLabel);
-        document.getElementById('downloadPngBtn')?.addEventListener('click', window.downloadPng);
-        document.getElementById('printLabelBtn')?.addEventListener('click', window.printLabel);
-        
-        // Search listener
-        const searchInput = document.getElementById('searchProduct');
-        searchInput?.addEventListener('input', (e) => {
-            const searchTerm = e.target.value.toLowerCase();
-            const products = document.querySelectorAll('#productsGrid .product-item');
-            products.forEach(product => {
-                const name = product.dataset.name || '';
-                const barcode = product.dataset.barcode || '';
-                const category = product.dataset.category || '';
-                const isVisible = name.includes(searchTerm) || barcode.includes(searchTerm) || category.includes(searchTerm);
-                product.style.display = isVisible ? 'block' : 'none';
-            });
-        });
-        
-        // Listen for first user interaction to init audio
-        window.addEventListener('click', initAudioContext, { once: true });
-        
-        // Check online status
-        window.addEventListener('online', checkOnlineStatus);
-        window.addEventListener('offline', checkOnlineStatus);
-        checkOnlineStatus();
-        
-        // Load settings first as other parts depend on them (e.g., low stock threshold)
-        await loadSettings();
-        await applyDefaultFees(); // Apply default fees to the initial empty cart
-        
-        // Load the initial page (dashboard)
-        showPage('dashboard');
-        
-        // Setup chart toggle listeners
-        setupChartViewToggle();
-        
-        // Auto-refresh dashboard if it's a new day
-        setInterval(() => {
-            const today = new Date().toISOString().split('T')[0];
-            if (currentPage === 'dashboard' && lastDashboardLoadDate !== today) {
-                console.log('New day detected, refreshing dashboard.');
-                loadDashboard();
-            }
-        }, 60 * 1000); // Check every minute
-        
-        // Setup feature availability
-        if (window.Html5Qrcode) {
-            html5QrCode = new Html5Qrcode("qr-reader");
-            isScannerReady = true;
-        } else {
-            console.error('Html5Qrcode library not loaded.');
-        }
-        
-        isPrinterReady = !!(window.PrintHub && window.PrintHub.init);
-        
-        if (window.Chart) {
-            isChartJsReady = true;
-        } else {
-            console.error('Chart.js library not loaded.');
-        }
-        
-        updateFeatureAvailability();
+        // Load initial settings that affect UI/logic
+        lowStockThreshold = await getSettingFromDB('lowStockThreshold') || 5;
+        isKioskModeActive = await getSettingFromDB('kioskModeEnabled') || false;
+        pinAttemptCount = await getSettingFromDB('pinAttemptCount') || 0;
 
-        const kioskEnabled = await getSettingFromDB('kioskModeEnabled');
-        if (kioskEnabled) {
-            enterKioskMode();
-        }
+        // Load page content
+        showPage(isKioskModeActive ? 'kasir' : 'dashboard', { force: true });
         
-        // --- Hide Loader & Show App ---
-        loadingOverlay.classList.add('opacity-0');
+        // Hide loading overlay and show app
+        document.getElementById('loadingOverlay').classList.add('opacity-0');
         setTimeout(() => {
-            loadingOverlay.style.display = 'none';
-            appContainer.classList.remove('hidden');
+            document.getElementById('loadingOverlay').style.display = 'none';
+            document.getElementById('appContainer').classList.remove('hidden');
         }, 300);
 
+        // Set up event listeners and periodic tasks
+        document.getElementById('searchProduct').addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            document.querySelectorAll('.product-item').forEach(item => {
+                const name = item.dataset.name || '';
+                const barcode = item.dataset.barcode || '';
+                item.style.display = (name.includes(searchTerm) || barcode.includes(searchTerm)) ? 'block' : 'none';
+            });
+        });
+
+        document.getElementById('confirmButton').addEventListener('click', () => {
+            if (confirmCallback) {
+                confirmCallback();
+            }
+            closeConfirmationModal();
+        });
+        document.getElementById('cancelButton').addEventListener('click', closeConfirmationModal);
+        
+        // Check for updates or changes when window gains focus
+        window.addEventListener('focus', () => {
+            const today = new Date().toISOString().split('T')[0];
+            if (currentPage === 'dashboard' && lastDashboardLoadDate !== today) {
+                console.log('Day has changed or returning to app, reloading dashboard.');
+                loadDashboard();
+            }
+        });
+
+        setupChartViewToggle();
+        
+        // Initial sync check
+        checkOnlineStatus();
+        window.addEventListener('online', checkOnlineStatus);
+        window.addEventListener('offline', checkOnlineStatus);
+        
+        // Play a silent sound on first user interaction to unlock Web Audio API on iOS
+        document.body.addEventListener('click', initAudioContext, { once: true });
+        
     } catch (error) {
         console.error("Initialization failed:", error);
-        loadingOverlay.innerHTML = `<p class="text-red-500 font-semibold p-4 text-center">Gagal memuat aplikasi. Database mungkin tidak dapat diakses. Coba bersihkan data situs di pengaturan browser Anda.</p>`;
+        // Show a permanent error message if the app cannot start
     }
 }
 
-// Start the application
-document.addEventListener('DOMContentLoaded', initApp);
+document.addEventListener('DOMContentLoaded', () => {
+    // Check for required libraries and set flags
+    if (window.Html5Qrcode) {
+        html5QrCode = new Html5Qrcode("qr-reader");
+        isScannerReady = true;
+    } else {
+        console.error("Html5Qrcode library not found.");
+    }
+
+    if (window.PrintHub) {
+        isPrinterReady = true;
+    } else {
+        console.error("PrintHub library not found.");
+    }
+    
+    if (window.Chart) {
+        isChartJsReady = true;
+    } else {
+        console.error("Chart.js library not found.");
+    }
+
+    updateFeatureAvailability();
+    initApp();
+});

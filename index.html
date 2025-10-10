@@ -389,6 +389,22 @@
                     <h2 class="text-lg font-semibold mb-3">Informasi & Struk</h2>
                     <div class="space-y-3">
                         <div>
+                            <label class="text-sm text-gray-600">Logo Toko (Opsional)</label>
+                            <div class="relative">
+                                <div class="image-upload-container clickable" onclick="document.getElementById('storeLogo').click()">
+                                    <input type="file" id="storeLogo" accept="image/*" style="display: none;" onchange="previewLogo(event)">
+                                    <div id="logoPreview" class="upload-placeholder">
+                                        <i class="fas fa-image text-3xl mb-2"></i>
+                                        <p>Tap untuk upload logo</p>
+                                    </div>
+                                </div>
+                                <button id="removeLogoBtn" onclick="removeLogo()" class="hidden absolute top-2 right-2 btn bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center p-0 text-sm z-10">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1 text-center">Rekomendasi: Gambar hitam putih, rasio 1:1.</p>
+                        </div>
+                        <div>
                             <label class="text-sm text-gray-600">Nama Toko</label>
                             <input type="text" id="storeName" class="input-field w-full" placeholder="Nama Toko Anda">
                         </div>
