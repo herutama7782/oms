@@ -3980,8 +3980,6 @@ window.printBarcodeLabel = async function() {
             await print.writeText(productPrice, { align: 'center', bold: true, size: 'single' });
         }
 
-        await print.writeLineBreak({ count: 1 });
-
         await print.printBarcode(barcodeCode, {
             align: 'center',
             displayValue: true,
