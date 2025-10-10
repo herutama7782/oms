@@ -4232,7 +4232,8 @@ function setupEventListeners() {
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && currentPage === 'dashboard') {
             const todayString = new Date().toISOString().split('T')[0];
-            if (lastDashboardLoadDate !== todayString) {
+            // Ensure lastDashboardLoadDate is not null before comparing
+            if (lastDashboardLoadDate && lastDashboardLoadDate !== todayString) {
                 console.log('App became visible on a new day, refreshing dashboard.');
                 loadDashboard();
             }
