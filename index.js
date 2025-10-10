@@ -30,6 +30,7 @@ let isKioskModeActive = false;
 let currentPinInput = "";
 let pinAttemptCount = 0;
 let lastDashboardLoadDate = null;
+let dashboardDateCheckInterval = null; // For auto-refreshing stats on date change
 let audioContext = null; // For Web Audio API
 let currentContactId = null; // For tracking which contact's ledger is open
 let dueItemsList = []; // For due date notifications
@@ -679,6 +680,12 @@ window.showPage = async function(pageName, options = { force: false, initialTab:
     if (currentPage === pageName || isNavigating) return;
     isNavigating = true;
 
+    // Clear the interval if we are leaving the dashboard
+    if (currentPage === 'dashboard' && pageName !== 'dashboard' && dashboardDateCheckInterval) {
+        clearInterval(dashboardDateCheckInterval);
+        dashboardDateCheckInterval = null;
+    }
+
     const transitionDuration = 300; // Must match CSS transition duration
 
     const oldPage = document.querySelector('.page.active');
@@ -712,6 +719,16 @@ window.showPage = async function(pageName, options = { force: false, initialTab:
     // Load data for the new page
     if (pageName === 'dashboard') {
         loadDashboard();
+        // Set up an interval to check for date change every minute
+        if (dashboardDateCheckInterval) clearInterval(dashboardDateCheckInterval);
+        dashboardDateCheckInterval = setInterval(() => {
+            const todayString = new Date().toISOString().split('T')[0];
+            // Ensure lastDashboardLoadDate is not null before comparing
+            if (lastDashboardLoadDate && lastDashboardLoadDate !== todayString) {
+                console.log('Date changed while dashboard is active. Refreshing stats.');
+                loadDashboard(); // This will also update lastDashboardLoadDate
+            }
+        }, 60000); // Check every 60 seconds
     } else if (pageName === 'kasir') {
         loadProductsGrid();
         await reconcileCartFees();
