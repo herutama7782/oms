@@ -3974,10 +3974,10 @@ window.printBarcodeLabel = async function() {
 
     const printLogic = async (print) => {
         if (productName) {
-            await print.writeText(productName, { align: 'center', bold: true, size: 'double' });
+            await print.writeText(productName, { align: 'center', bold: true, size: 'single' });
         }
         if (productPrice) {
-            await print.writeText(productPrice, { align: 'center', bold: true, size: 'double' });
+            await print.writeText(productPrice, { align: 'center', bold: true, size: 'single' });
         }
 
         await print.writeLineBreak({ count: 1 });
@@ -3986,8 +3986,8 @@ window.printBarcodeLabel = async function() {
             align: 'center',
             displayValue: true,
             format: 'CODE128',
-            height: 60,
-            width: 3
+            height: 50,
+            width: 2
         });
 
         await print.writeLineBreak({ count: 3 });
