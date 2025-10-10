@@ -555,14 +555,14 @@
                             <i class="fas fa-tags mr-2"></i>Buat Label
                         </button>
                        
-                        <div id="barcodeLabelOutput" class="hidden text-center p-4 border rounded-lg bg-white">
-                            <div id="labelContent" class="p-2">
-                                <p id="output-product-name" class="font-bold text-md truncate"></p>
-                                <p id="output-product-price" class="font-semibold text-md"></p>
+                        <div id="barcodeLabelOutput" class="hidden text-center p-2 border rounded-lg bg-white">
+                            <div id="labelContent" class="leading-tight">
+                                <p id="output-product-name" class="font-bold text-sm truncate m-0"></p>
+                                <p id="output-product-price" class="font-semibold text-sm m-0"></p>
                                 <div class="flex justify-center items-center my-1">
                                    <svg id="barcode"></svg>
                                 </div>
-                                 <p id="output-barcode-text" class="font-mono text-xs"></p>
+                                 <p id="output-barcode-text" class="font-mono text-xs m-0"></p>
                             </div>
                         </div>
                 
@@ -570,7 +570,7 @@
                             <button id="downloadPngBtn" class="btn bg-green-500 text-white w-full py-2">
                                 <i class="fas fa-download mr-2"></i>Unduh PNG
                             </button>
-                            <button id="printLabelBtn" class="btn bg-gray-600 text-white w-full py-2">
+                            <button id="printLabelBtn" onclick="printBarcodeLabel()" class="btn bg-gray-600 text-white w-full py-2">
                                 <i class="fas fa-print mr-2"></i>Cetak Label
                             </button>
                         </div>

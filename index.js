@@ -3623,7 +3623,7 @@ async function performPrintJob(printLogicCallback) {
         printerType: 'bluetooth'
     });
 
-    showToast('Buka dialog Bluetooth untuk memilih printer...', 3000);
+    showToast('Pilih printer Anda dari daftar Bluetooth...', 3000);
 
     printer.connectToPrint({
         onReady: async (print) => {
@@ -3638,11 +3638,32 @@ async function performPrintJob(printLogicCallback) {
         },
         onFailed: (message) => {
             console.error("Printer connection failed:", message);
-            // Check for user cancellation which is often a DOMException
+            const cancellationMessage = 'Pemilihan printer dibatalkan.';
+            let isCancellation = false;
+
+            // Case 1: Standard DOMException for cancellation
             if (typeof message === 'object' && message.name === 'NotFoundError') {
-                 showToast('Pemilihan printer dibatalkan.');
+                isCancellation = true;
+            } 
+            // Case 2: Error object with a 'message' property indicating cancellation
+            else if (typeof message === 'object' && message.message && message.message.toLowerCase().includes('user cancelled')) {
+                isCancellation = true;
+            }
+            // Case 3: Simple string message indicating cancellation
+            else if (typeof message === 'string' && message.toLowerCase().includes('user cancelled')) {
+                isCancellation = true;
+            }
+            
+            if (isCancellation) {
+                showToast(cancellationMessage);
             } else {
-                 showToast(`Koneksi printer gagal: ${message}`);
+                let errorMessage = 'Koneksi printer gagal. Pastikan printer menyala & coba lagi.';
+                if (typeof message === 'object' && message.message) {
+                    errorMessage = `Gagal terhubung: ${message.message}`;
+                } else if (typeof message === 'string' && message) {
+                    errorMessage = `Gagal terhubung: ${message}`;
+                }
+                showToast(errorMessage, 4000);
             }
         }
     });
@@ -3794,125 +3815,239 @@ document.getElementById('generateBarcodeLabelBtn')?.addEventListener('click', fu
     const barcodeTextEl = document.getElementById('output-barcode-text');
     const downloadButtons = document.getElementById('download-buttons');
 
-    nameEl.textContent = productName;
+    // Update text content
+    nameEl.textContent = productName || '';
     priceEl.textContent = productPrice ? `Rp ${formatCurrency(parseFloat(productPrice))}` : '';
     barcodeTextEl.textContent = barcodeCode;
 
+    // Generate barcode
     try {
         JsBarcode("#barcode", barcodeCode, {
             format: "CODE128",
             lineColor: "#000",
             width: 2,
             height: 50,
-            displayValue: false
+            displayValue: false,
+            margin: 5
         });
         outputContainer.classList.remove('hidden');
         downloadButtons.classList.remove('hidden');
     } catch (e) {
         showToast('Gagal membuat barcode. Kode tidak valid.');
-        console.error("JsBarcode error:", e);
+        console.error("Barcode generation error:", e);
         outputContainer.classList.add('hidden');
         downloadButtons.classList.add('hidden');
     }
 });
 
-document.getElementById('downloadPngBtn')?.addEventListener('click', function() {
-    showToast('Fitur unduh sedang dikembangkan. Gunakan fitur Cetak Label.');
+/**
+ * Downloads the generated barcode label as a PNG image.
+ * This uses a canvas to "screenshot" the label div.
+ */
+document.getElementById('downloadPngBtn')?.addEventListener('click', async function() {
+    const labelContent = document.getElementById('labelContent');
+    const outputContainer = document.getElementById('barcodeLabelOutput');
+    const barcodeCode = document.getElementById('output-barcode-text').textContent;
+
+    if (!labelContent || !outputContainer) return;
+    showToast('Membuat gambar PNG...', 2000);
+
+    // Temporarily remove border for cleaner screenshot
+    const originalBorder = outputContainer.style.border;
+    outputContainer.style.border = 'none';
+
+    try {
+        // Need to use an external library to convert DOM to canvas for reliable results,
+        // but for this simple case, we'll try to reconstruct it on a canvas manually.
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Serialize the SVG to a string and create an Image object from it.
+        const svgElement = labelContent.querySelector('#barcode');
+        const svgString = new XMLSerializer().serializeToString(svgElement);
+        const svgBlob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
+        const url = URL.createObjectURL(svgBlob);
+        const img = new Image();
+        
+        img.onload = () => {
+            // Get text elements
+            const nameText = labelContent.querySelector('#output-product-name').textContent;
+            const priceText = labelContent.querySelector('#output-product-price').textContent;
+            const codeText = barcodeCode;
+            
+            // Set canvas size, adding padding
+            const padding = 20;
+            const textHeight = (nameText ? 22 : 0) + (priceText ? 22 : 0) + (codeText ? 14 : 0);
+            const totalHeight = img.height + textHeight + padding * 1.5;
+            const totalWidth = Math.max(img.width + padding * 2, 280); // Minimum width
+            
+            canvas.width = totalWidth;
+            canvas.height = totalHeight;
+
+            // White background
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            let currentY = padding;
+
+            // Draw text
+            ctx.fillStyle = 'black';
+            if (nameText) {
+                ctx.font = 'bold 18px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(nameText, canvas.width / 2, currentY + 16);
+                currentY += 22;
+            }
+            if (priceText) {
+                ctx.font = '500 18px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(priceText, canvas.width / 2, currentY + 16);
+                currentY += 22;
+            }
+
+            // Draw barcode image
+            const imgX = (canvas.width - img.width) / 2;
+            ctx.drawImage(img, imgX, currentY);
+            currentY += img.height;
+
+            // Draw barcode text
+            if (codeText) {
+                ctx.font = '14px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(codeText, canvas.width / 2, currentY + 14);
+            }
+            
+            // Trigger download
+            const link = document.createElement('a');
+            link.download = `label-${codeText || 'barcode'}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+            URL.revokeObjectURL(url);
+            outputContainer.style.border = originalBorder; // Restore border
+        };
+        
+        img.onerror = () => {
+            showToast('Gagal memuat gambar barcode untuk diunduh.');
+            URL.revokeObjectURL(url);
+            outputContainer.style.border = originalBorder; // Restore border
+        };
+
+        img.src = url;
+
+    } catch (error) {
+        console.error('Error creating PNG:', error);
+        showToast('Gagal membuat file PNG.');
+        outputContainer.style.border = originalBorder; // Restore border
+    }
 });
 
-document.getElementById('printLabelBtn')?.addEventListener('click', function() {
-    const labelContent = document.getElementById('labelContent').innerHTML;
-    const printWindow = window.open('', 'PRINT', 'height=400,width=600');
-    
-    printWindow.document.write('<html><head><title>Cetak Label</title>');
-    printWindow.document.write('<style> body { text-align: center; font-family: sans-serif; } </style>');
-    printWindow.document.write('</head><body >');
-    printWindow.document.write(labelContent);
-    printWindow.document.write('</body></html>');
-    
-    printWindow.document.close();
-    printWindow.focus();
-    
-    setTimeout(() => {
-        printWindow.print();
-        printWindow.close();
-    }, 250);
-});
+
+/**
+ * Prints the generated barcode label using a Bluetooth thermal printer.
+ */
+window.printBarcodeLabel = async function() {
+    const productName = document.getElementById('output-product-name').textContent;
+    const productPrice = document.getElementById('output-product-price').textContent;
+    const barcodeCode = document.getElementById('output-barcode-text').textContent;
+
+    if (!barcodeCode) {
+        showToast('Tidak ada barcode untuk dicetak.');
+        return;
+    }
+
+    const printLogic = async (print) => {
+        if (productName) {
+            await print.writeText(productName, { align: 'center', bold: true, size: 'double' });
+        }
+        if (productPrice) {
+            await print.writeText(productPrice, { align: 'center', bold: true, size: 'double' });
+        }
+
+        await print.writeLineBreak({ count: 1 });
+
+        await print.printBarcode(barcodeCode, {
+            align: 'center',
+            displayValue: true,
+            format: 'CODE128',
+            height: 60,
+            width: 3
+        });
+
+        await print.writeLineBreak({ count: 3 });
+    };
+
+    await performPrintJob(printLogic);
+};
+
 
 // --- KIOSK MODE ---
-let kioskPin = null;
-
-async function handleKioskModeToggle(isEnabled) {
-    if (isEnabled) {
-        // Check if PIN is already set
-        kioskPin = await getSettingFromDB('kioskPin');
-        if (kioskPin) {
-            activateKioskMode();
-        } else {
-            showSetKioskPinModal();
-        }
+window.handleKioskModeToggle = async function(isChecked) {
+    const currentPin = await getSettingFromDB('kioskPin');
+    if (isChecked && !currentPin) {
+        // If enabling and no PIN is set, show the set PIN modal.
+        // The toggle will be unchecked by the modal's cancel action if needed.
+        showSetKioskPinModal();
+    } else if (isChecked && currentPin) {
+        // If enabling and PIN exists, just activate it.
+        await putSettingToDB({ key: 'kioskModeEnabled', value: true });
+        isKioskModeActive = true;
+        enterKioskMode();
+        showToast('Mode Kios diaktifkan.');
     } else {
-        // This case is handled by exiting via the PIN modal, not by toggling off.
-        // If somehow toggled off, ensure state is correct.
-        const toggle = document.getElementById('kioskModeToggle');
-        if(isKioskModeActive) toggle.checked = true; 
+        // If disabling, show the enter PIN modal.
+        // The toggle will be re-checked if the PIN is wrong.
+        showEnterKioskPinModal();
     }
 }
-window.handleKioskModeToggle = handleKioskModeToggle;
 
 function showSetKioskPinModal() {
     document.getElementById('setKioskPinModal').classList.remove('hidden');
 }
-window.showSetKioskPinModal = showSetKioskPinModal;
 
 function closeSetKioskPinModal() {
     document.getElementById('setKioskPinModal').classList.add('hidden');
-    // Uncheck the toggle if user cancels setting a PIN
-    document.getElementById('kioskModeToggle').checked = false;
+    // If the user cancels setting a PIN, revert the toggle.
+    const kioskToggle = document.getElementById('kioskModeToggle');
+    if (kioskToggle.checked) {
+        kioskToggle.checked = false;
+    }
 }
-window.closeSetKioskPinModal = closeSetKioskPinModal;
 
-async function saveKioskPinAndActivate() {
+window.saveKioskPinAndActivate = async function() {
     const newPin = document.getElementById('newKioskPin').value;
     const confirmPin = document.getElementById('confirmKioskPin').value;
 
-    if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
-        showToast('PIN harus terdiri dari 4 angka.');
+    if (newPin.length !== 4 || newPin !== confirmPin) {
+        showToast('PIN tidak cocok atau kurang dari 4 digit.');
         return;
     }
 
-    if (newPin !== confirmPin) {
-        showToast('PIN tidak cocok.');
-        return;
-    }
-
-    // In a real app, hash the PIN. For this local app, storing it as-is is acceptable.
     await putSettingToDB({ key: 'kioskPin', value: newPin });
-    kioskPin = newPin;
-    closeSetKioskPinModal();
-    activateKioskMode();
-}
-window.saveKioskPinAndActivate = saveKioskPinAndActivate;
-
-async function activateKioskMode() {
     await putSettingToDB({ key: 'kioskModeEnabled', value: true });
     isKioskModeActive = true;
-    showPage('kasir', { force: true });
-    document.getElementById('bottomNav').classList.add('hidden');
-    document.getElementById('exitKioskBtn').classList.remove('hidden');
-    document.getElementById('kioskModeToggle').checked = true;
-    showToast('Mode Kios diaktifkan.', 2000);
+    
+    closeSetKioskPinModal();
+    enterKioskMode();
+    showToast('PIN diatur & Mode Kios diaktifkan.');
 }
 
-async function deactivateKioskMode() {
-    await putSettingToDB({ key: 'kioskModeEnabled', value: false });
+function enterKioskMode() {
+    isKioskModeActive = true;
+    document.getElementById('bottomNav').classList.add('hidden');
+    document.getElementById('exitKioskBtn').classList.remove('hidden');
+    
+    // Force navigate to Kasir page
+    if (currentPage !== 'kasir') {
+        showPage('kasir', { force: true });
+    }
+}
+
+function exitKioskMode() {
     isKioskModeActive = false;
     document.getElementById('bottomNav').classList.remove('hidden');
     document.getElementById('exitKioskBtn').classList.add('hidden');
-    document.getElementById('kioskModeToggle').checked = false;
-    pinAttemptCount = 0; // Reset counter on successful exit
-    await putSettingToDB({ key: 'pinAttemptCount', value: 0 });
-    showToast('Mode Kios dinonaktifkan.', 2000);
+    showPage('dashboard', { force: true });
+    showToast('Mode Kios dinonaktifkan.');
 }
 
 function showEnterKioskPinModal() {
@@ -3921,24 +4056,14 @@ function showEnterKioskPinModal() {
     document.getElementById('kioskPinError').textContent = '';
     document.getElementById('enterKioskPinModal').classList.remove('hidden');
 }
-window.showEnterKioskPinModal = showEnterKioskPinModal;
 
 function closeEnterKioskPinModal() {
     document.getElementById('enterKioskPinModal').classList.add('hidden');
-}
-window.closeEnterKioskPinModal = closeEnterKioskPinModal;
-
-function updatePinDisplay() {
-    const dots = document.querySelectorAll('#kioskPinDisplay div');
-    dots.forEach((dot, index) => {
-        if (index < currentPinInput.length) {
-            dot.classList.add('bg-blue-500');
-            dot.classList.remove('bg-gray-300');
-        } else {
-            dot.classList.remove('bg-blue-500');
-            dot.classList.add('bg-gray-300');
-        }
-    });
+    // If user cancels exiting, and kiosk mode is supposed to be on, re-check the toggle.
+    const kioskToggle = document.getElementById('kioskModeToggle');
+    if (!kioskToggle.checked && isKioskModeActive) {
+        kioskToggle.checked = true;
+    }
 }
 
 async function handlePinKeyPress(key) {
@@ -3949,123 +4074,154 @@ async function handlePinKeyPress(key) {
     } else if (currentPinInput.length < 4) {
         currentPinInput += key;
     }
-
+    
     updatePinDisplay();
 
     if (currentPinInput.length === 4) {
         const storedPin = await getSettingFromDB('kioskPin');
         if (currentPinInput === storedPin) {
+            pinAttemptCount = 0;
+            await putSettingToDB({ key: 'kioskModeEnabled', value: false });
             closeEnterKioskPinModal();
-            deactivateKioskMode();
+            exitKioskMode();
         } else {
-            document.getElementById('kioskPinError').textContent = 'PIN Salah';
-            document.getElementById('kioskPinDisplay').classList.add('animate-shake');
+            pinAttemptCount++;
+            const pinDisplay = document.getElementById('kioskPinDisplay');
+            const errorEl = document.getElementById('kioskPinError');
+            
+            errorEl.textContent = `PIN Salah (${pinAttemptCount}/5)`;
+            pinDisplay.classList.add('animate-shake');
+            updatePinDisplay(true); // 'true' indicates an error state
+            
+            if (pinAttemptCount >= 5) {
+                errorEl.textContent = 'PIN salah 5x. Data akan dihapus.';
+                setTimeout(() => {
+                    clearAllData();
+                }, 1500);
+                return;
+            }
+            
             setTimeout(() => {
-                document.getElementById('kioskPinDisplay').classList.remove('animate-shake');
                 currentPinInput = "";
                 updatePinDisplay();
+                pinDisplay.classList.remove('animate-shake');
             }, 500);
-            
-            // Increment and check attempt count
-            pinAttemptCount++;
-            await putSettingToDB({ key: 'pinAttemptCount', value: pinAttemptCount });
-            if (pinAttemptCount >= 5) {
-                showToast('Terlalu banyak percobaan PIN. Menghapus data...', 5000);
-                await clearAllStores();
-                setTimeout(() => location.reload(), 5000);
-            }
         }
-    } else {
-        document.getElementById('kioskPinError').textContent = '';
     }
 }
 window.handlePinKeyPress = handlePinKeyPress;
 
+function updatePinDisplay(isError = false) {
+    const dots = document.querySelectorAll('#kioskPinDisplay div');
+    dots.forEach((dot, index) => {
+        if (index < currentPinInput.length) {
+            dot.classList.add('bg-blue-500');
+            dot.classList.remove('bg-gray-300');
+        } else {
+            dot.classList.remove('bg-blue-500');
+            dot.classList.add('bg-gray-300');
+        }
+        // Handle error state color
+        if (isError) {
+            dot.classList.replace('bg-blue-500', 'bg-red-500');
+        } else {
+            dot.classList.remove('bg-red-500');
+        }
+    });
+}
 
-// --- INITIALIZATION ---
-async function initApp() {
+
+// --- APP INITIALIZATION ---
+async function initializeApp() {
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    const appContainer = document.getElementById('appContainer');
+    
     try {
         await initDB();
+
+        // Load external libraries and set readiness flags
+        if (typeof Html5Qrcode !== 'undefined') {
+            html5QrCode = new Html5Qrcode("qr-reader");
+            isScannerReady = true;
+        }
+        if (typeof Chart !== 'undefined') {
+            isChartJsReady = true;
+        }
+        if (typeof PrintHub !== 'undefined') {
+            isPrinterReady = true;
+        }
+
+        updateFeatureAvailability();
+        await applyDefaultFees();
         
-        // Load initial settings that affect UI/logic
+        // Load initial settings
         lowStockThreshold = await getSettingFromDB('lowStockThreshold') || 5;
-        isKioskModeActive = await getSettingFromDB('kioskModeEnabled') || false;
-        pinAttemptCount = await getSettingFromDB('pinAttemptCount') || 0;
+        const kioskEnabled = await getSettingFromDB('kioskModeEnabled') || false;
 
-        // Load page content
-        showPage(isKioskModeActive ? 'kasir' : 'dashboard', { force: true });
-        
-        // Hide loading overlay and show app
-        document.getElementById('loadingOverlay').classList.add('opacity-0');
-        setTimeout(() => {
-            document.getElementById('loadingOverlay').style.display = 'none';
-            document.getElementById('appContainer').classList.remove('hidden');
-        }, 300);
+        if (kioskEnabled) {
+            enterKioskMode();
+        } else {
+            showPage('dashboard');
+        }
 
-        // Set up event listeners and periodic tasks
-        document.getElementById('searchProduct').addEventListener('input', (e) => {
-            const searchTerm = e.target.value.toLowerCase();
-            document.querySelectorAll('.product-item').forEach(item => {
-                const name = item.dataset.name || '';
-                const barcode = item.dataset.barcode || '';
-                item.style.display = (name.includes(searchTerm) || barcode.includes(searchTerm)) ? 'block' : 'none';
-            });
-        });
-
-        document.getElementById('confirmButton').addEventListener('click', () => {
-            if (confirmCallback) {
-                confirmCallback();
-            }
-            closeConfirmationModal();
-        });
-        document.getElementById('cancelButton').addEventListener('click', closeConfirmationModal);
-        
-        // Check for updates or changes when window gains focus
-        window.addEventListener('focus', () => {
-            const today = new Date().toISOString().split('T')[0];
-            if (currentPage === 'dashboard' && lastDashboardLoadDate !== today) {
-                console.log('Day has changed or returning to app, reloading dashboard.');
-                loadDashboard();
-            }
-        });
-
-        setupChartViewToggle();
-        
-        // Initial sync check
+        setupEventListeners();
         checkOnlineStatus();
-        window.addEventListener('online', checkOnlineStatus);
-        window.addEventListener('offline', checkOnlineStatus);
-        
-        // Play a silent sound on first user interaction to unlock Web Audio API on iOS
-        document.body.addEventListener('click', initAudioContext, { once: true });
         
     } catch (error) {
         console.error("Initialization failed:", error);
-        // Show a permanent error message if the app cannot start
-    }
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-    // Check for required libraries and set flags
-    if (window.Html5Qrcode) {
-        html5QrCode = new Html5Qrcode("qr-reader");
-        isScannerReady = true;
-    } else {
-        console.error("Html5Qrcode library not found.");
-    }
-
-    if (window.PrintHub) {
-        isPrinterReady = true;
-    } else {
-        console.error("PrintHub library not found.");
+        loadingOverlay.innerHTML = `<p class="text-red-500 p-4">Gagal memuat aplikasi. Coba muat ulang halaman.</p>`;
+        return; // Stop execution
     }
     
-    if (window.Chart) {
-        isChartJsReady = true;
-    } else {
-        console.error("Chart.js library not found.");
-    }
+    // Fade out loading screen and show app
+    loadingOverlay.classList.add('opacity-0');
+    setTimeout(() => {
+        loadingOverlay.classList.add('hidden');
+        appContainer.classList.remove('hidden');
+    }, 300);
+}
 
-    updateFeatureAvailability();
-    initApp();
-});
+function setupEventListeners() {
+    // Online/Offline status
+    window.addEventListener('online', checkOnlineStatus);
+    window.addEventListener('offline', checkOnlineStatus);
+
+    // Search functionality
+    document.getElementById('searchProduct')?.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        document.querySelectorAll('.product-item').forEach(item => {
+            const name = item.dataset.name || '';
+            const barcode = item.dataset.barcode || '';
+            const isVisible = name.includes(searchTerm) || barcode.includes(searchTerm);
+            item.style.display = isVisible ? 'block' : 'none';
+        });
+    });
+
+    // Confirmation modal buttons
+    document.getElementById('confirmButton')?.addEventListener('click', () => {
+        if (confirmCallback) {
+            confirmCallback();
+        }
+        closeConfirmationModal();
+    });
+    document.getElementById('cancelButton')?.addEventListener('click', closeConfirmationModal);
+    
+    setupChartViewToggle();
+
+    // Ensure audio context is initialized on first user interaction
+    document.body.addEventListener('click', initAudioContext, { once: true });
+    
+    // Auto-refresh dashboard if app becomes visible again after some time on a different day
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && currentPage === 'dashboard') {
+            const todayString = new Date().toISOString().split('T')[0];
+            if (lastDashboardLoadDate !== todayString) {
+                console.log('App became visible on a new day, refreshing dashboard.');
+                loadDashboard();
+            }
+        }
+    });
+}
+
+// Start the application once the DOM is ready
+document.addEventListener('DOMContentLoaded', initializeApp);
