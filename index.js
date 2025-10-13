@@ -3698,13 +3698,8 @@ class AndroidBluetoothPrinter {
     
     print(data) {
         if (!this.isAvailable()) {
+            // The pre-flight check should handle this, but as a safeguard:
             showToast('Fitur cetak hanya tersedia di aplikasi Android.', 4000);
-            return;
-        }
-        
-        if (!this.isBluetoothEnabled()) {
-            showToast('Bluetooth tidak aktif. Silakan aktifkan.', 3000);
-            this.requestBluetoothEnable();
             return;
         }
         
@@ -3729,7 +3724,56 @@ class AndroidBluetoothPrinter {
 
 const bluetoothPrinter = new AndroidBluetoothPrinter();
 
+/**
+ * Checks if the printer is ready and returns a list of available printers if successful.
+ * Shows user-friendly alerts for any issues.
+ * @returns {Promise<object[]|null>} A promise that resolves with an array of printer devices if ready, or null if not.
+ */
+async function _prepareForPrinting() {
+    if (!bluetoothPrinter.isAvailable()) {
+        alert('Aplikasi Android tidak tersedia. Pastikan Anda menggunakan aplikasi OMSetin.');
+        return null;
+    }
+
+    if (!bluetoothPrinter.isBluetoothEnabled()) {
+        alert('Bluetooth tidak aktif.\n\nKlik tombol "Aktifkan Bluetooth" di halaman Pengaturan.');
+        return null;
+    }
+
+    try {
+        const devices = JSON.parse(AndroidDownloader.getPairedDevices());
+        if (devices.length === 0) {
+            alert('Tidak ada printer yang dipairing.\n\nKlik tombol "Pairing Printer" di halaman Pengaturan untuk pairing.');
+            return null;
+        }
+
+        const printerDevices = devices.filter(device => {
+            const name = (device.name || '').toLowerCase();
+            return name.includes('printer') || name.includes('thermal') || name.includes('pos') || name.includes('receipt');
+        });
+
+        if (printerDevices.length === 0) {
+            const deviceList = devices.map(d => `- ${d.name || 'Unknown'}`).join('\n');
+            alert(
+                'Tidak ada printer yang terdeteksi di perangkat yang dipairing.\n\n' +
+                `Perangkat terdeteksi:\n${deviceList}\n\n` +
+                'Pastikan nama printer Anda mengandung kata "printer", "thermal", "pos", atau sejenisnya, dan sudah dipairing.'
+            );
+            return null;
+        }
+
+        return printerDevices; // Success
+    } catch (error) {
+        console.error('Error checking devices:', error);
+        alert('Error: ' + error.message);
+        return null;
+    }
+}
+
 window.testPrint = async function() {
+    const printers = await _prepareForPrinting();
+    if (!printers) return; // Stop if checks fail
+
     const paperSize = await getSettingFromDB('printerPaperSize') || '80mm';
     const paperWidthChars = paperSize === '58mm' ? 32 : 42;
     const line = (char) => char.repeat(paperWidthChars);
@@ -3737,6 +3781,7 @@ window.testPrint = async function() {
     let testData = `Test Cetak Berhasil!\n`;
     testData += `Ini adalah test dari Aplikasi POS Mobile.\n`;
     testData += line('-') + '\n';
+    testData += `Printer terdeteksi: ${printers[0].name}\n`;
     testData += `Ukuran Kertas: ${paperSize}\n`;
     testData += `Status: OK\n`;
     testData += line('-') + '\n\n\n';
@@ -3818,6 +3863,9 @@ async function _generateReceiptText(data) {
 }
 
 async function printReceipt() {
+    const printers = await _prepareForPrinting();
+    if (!printers) return;
+
     if (!currentReceiptTransaction) {
         showToast('Tidak ada data struk untuk dicetak.');
         return;
@@ -3826,6 +3874,74 @@ async function printReceipt() {
     bluetoothPrinter.print(receiptText);
 }
 window.printReceipt = printReceipt;
+
+window.openBluetoothSettings = function() {
+    if (!bluetoothPrinter.isAvailable()) {
+        alert('Fitur ini hanya tersedia di aplikasi Android OMSetin.');
+        return;
+    }
+
+    const instructions = `
+LANGKAH PAIRING PRINTER BLUETOOTH:\n
+1. Pastikan printer Bluetooth dalam mode pairing.
+2. Di HP Anda, buka Pengaturan > Bluetooth.
+3. Pastikan Bluetooth ON.
+4. Tap "Pair new device" atau "Scan".
+5. Cari nama printer Anda (e.g., POS-58, Thermal Printer).
+6. Tap nama printer untuk pairing.
+7. Masukkan PIN jika diminta (biasanya: 0000 atau 1234).
+    `;
+    alert(instructions);
+
+    try {
+        // This is an attempt to open Android's Bluetooth settings directly
+        // It might not work on all devices/versions but is a good first try.
+        window.location.href = 'intent://settings/bluetooth#Intent;scheme=android-app;package=com.android.settings;end';
+    } catch (error) {
+        // Fallback if the intent URL fails
+        alert('Gagal membuka otomatis. Silakan buka Pengaturan > Bluetooth secara manual di HP Anda.');
+    }
+};
+
+window.requestBluetoothEnable = function() {
+    if (!bluetoothPrinter.isAvailable()) {
+        alert('Fitur ini hanya tersedia di aplikasi Android OMSetin.');
+        return;
+    }
+    try {
+        bluetoothPrinter.requestBluetoothEnable();
+        alert('Permintaan untuk mengaktifkan Bluetooth telah dikirim.');
+        // Update status after a short delay to allow system changes
+        setTimeout(updateBluetoothStatus, 1500);
+    } catch (error) {
+        alert('Gagal mengirim permintaan: ' + error.message);
+    }
+};
+
+window.checkPairedDevices = function() {
+    if (!bluetoothPrinter.isAvailable()) {
+        alert('Fitur ini hanya tersedia di aplikasi Android OMSetin.');
+        return;
+    }
+    
+    try {
+        const devices = JSON.parse(AndroidDownloader.getPairedDevices());
+        if (devices.length === 0) {
+            alert('Tidak ada perangkat yang dipairing.\n\nKlik tombol "Pairing Printer" untuk memulai.');
+        } else {
+            let deviceList = 'Perangkat yang dipairing:\n\n';
+            devices.forEach(device => {
+                const name = (device.name || '').toLowerCase();
+                const isPrinter = name.includes('printer') || name.includes('thermal') || name.includes('pos') || name.includes('receipt');
+                deviceList += `${isPrinter ? '🖨️ ' : '📱 '} ${device.name || 'Unknown'} (${device.address})\n`;
+            });
+            alert(deviceList);
+        }
+    } catch (error) {
+        console.error('Error getting paired devices:', error);
+        alert('Gagal mendapatkan daftar perangkat. Pastikan aplikasi memiliki izin Bluetooth.');
+    }
+};
 
 
 // --- BARCODE LABEL GENERATOR ---
@@ -3976,6 +4092,9 @@ document.getElementById('downloadPngBtn')?.addEventListener('click', async funct
  * Prints the generated barcode label using the Android interface.
  */
 window.printBarcodeLabel = async function() {
+    const printers = await _prepareForPrinting();
+    if (!printers) return;
+
     const productName = document.getElementById('output-product-name').textContent;
     const productPrice = document.getElementById('output-product-price').textContent;
     const barcodeCode = document.getElementById('output-barcode-text').textContent;
@@ -4153,97 +4272,83 @@ async function init() {
         await initDB();
         await loadSettings(); // Load settings early, especially low stock threshold
         await populateCategoryDropdowns(['productCategory', 'editProductCategory', 'productCategoryFilter']);
+
+        // Initialize scanner library
+        if (window.Html5Qrcode) {
+            html5QrCode = new Html5Qrcode("qr-reader");
+            isScannerReady = true;
+        } else {
+            console.error("Html5Qrcode library not found.");
+            isScannerReady = false;
+        }
+
+        // Initialize chart.js library
+        isChartJsReady = !!window.Chart;
         
-        // Initial page load
-        loadDashboard();
-        
-        // Setup event listeners that aren't onclick attributes
-        document.getElementById('searchProduct')?.addEventListener('input', (e) => {
+        const kioskModeEnabled = await getSettingFromDB('kioskModeEnabled');
+        if (kioskModeEnabled) {
+            isKioskModeActive = true;
+            enterKioskMode();
+        } else {
+            // Load dashboard by default
+            loadDashboard();
+        }
+
+        // Setup global event listeners
+        window.addEventListener('online', checkOnlineStatus);
+        window.addEventListener('offline', checkOnlineStatus);
+        checkOnlineStatus().then(() => syncWithServer()); // Initial check and sync
+        setInterval(() => syncWithServer(), 5 * 60 * 1000); // Sync every 5 minutes
+
+        // Event listener for search/filter on Kasir page
+        const searchProductInput = document.getElementById('searchProduct');
+        searchProductInput?.addEventListener('input', (e) => {
             const searchTerm = e.target.value.toLowerCase();
-            document.querySelectorAll('#productsGrid .product-item').forEach(item => {
-                const name = item.dataset.name || '';
-                const barcode = item.dataset.barcode || '';
-                const category = item.dataset.category || '';
-                item.style.display = (name.includes(searchTerm) || barcode.includes(searchTerm) || category.includes(searchTerm)) ? 'block' : 'none';
+            const products = document.querySelectorAll('#productsGrid .product-item');
+            products.forEach(product => {
+                const name = product.dataset.name || '';
+                const barcode = product.dataset.barcode || '';
+                const isVisible = name.includes(searchTerm) || barcode.includes(searchTerm);
+                product.style.display = isVisible ? 'block' : 'none';
             });
         });
 
-        document.getElementById('confirmButton').addEventListener('click', () => {
+        // Add listener for confirmation modal buttons
+        document.getElementById('confirmButton')?.addEventListener('click', () => {
             if (confirmCallback) {
                 confirmCallback();
             }
             closeConfirmationModal();
         });
-        document.getElementById('cancelButton').addEventListener('click', closeConfirmationModal);
+        document.getElementById('cancelButton')?.addEventListener('click', closeConfirmationModal);
         
-        setupChartViewToggle();
-        
-        // Check online status and setup listeners
-        window.addEventListener('online', checkOnlineStatus);
-        window.addEventListener('offline', checkOnlineStatus);
-        await checkOnlineStatus(); // Initial check
+        // Initialize Audio context on first user interaction
+        document.body.addEventListener('click', initAudioContext, { once: true });
 
-        // Initialize features that depend on external libraries
-        if (typeof Html5Qrcode !== 'undefined') {
-            html5QrCode = new Html5Qrcode("qr-reader");
-            isScannerReady = true;
-        } else {
-            console.error('Html5Qrcode library not loaded.');
-            isScannerReady = false;
-        }
-
-        if (typeof Chart !== 'undefined') {
-            isChartJsReady = true;
-        } else {
-            console.error('Chart.js library not loaded.');
-            isChartJsReady = false;
-        }
-
+        // Final UI updates
         updateFeatureAvailability();
-        
-        // Auto backup routine
-        setInterval(async () => {
-            try {
-                const settings = await getAllFromDB('settings');
-                const lastBackup = await getFromDB('auto_backup', 'lastBackup');
-                const oneDay = 24 * 60 * 60 * 1000;
-                if (!lastBackup || (new Date() - new Date(lastBackup.timestamp)) > oneDay) {
-                    console.log('Performing daily auto-backup...');
-                    await putToDB('auto_backup', { key: 'lastBackup', timestamp: new Date().toISOString(), data: { settings } });
-                }
-            } catch (e) {
-                console.error("Auto backup failed", e);
-            }
-        }, 60 * 60 * 1000); // Check every hour
-        
-        await applyDefaultFees();
-        
-        // Kiosk Mode check on startup
-        const kioskEnabled = await getSettingFromDB('kioskModeEnabled');
-        if (kioskEnabled) {
-            isKioskModeActive = true;
-            enterKioskMode();
-        }
+        setupChartViewToggle();
+
+        // Hide loading overlay and show the app
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const appContainer = document.getElementById('appContainer');
+        loadingOverlay.classList.add('opacity-0');
+        setTimeout(() => {
+            loadingOverlay.style.display = 'none';
+            appContainer.classList.remove('hidden');
+        }, 300);
 
     } catch (error) {
         console.error("Initialization failed:", error);
-        showToast('Aplikasi gagal dimuat. Silakan muat ulang halaman.');
-    } finally {
-        // Hide loading overlay and show app
         const loadingOverlay = document.getElementById('loadingOverlay');
-        const appContainer = document.getElementById('appContainer');
-        if(loadingOverlay) loadingOverlay.classList.add('opacity-0');
-        if(appContainer) appContainer.classList.remove('hidden');
-        
-        setTimeout(() => {
-            if(loadingOverlay) loadingOverlay.style.display = 'none';
-        }, 300); // Match CSS transition duration
+        loadingOverlay.innerHTML = `
+            <div class="text-center p-4">
+                <i class="fas fa-exclamation-triangle text-red-500 text-4xl mb-4"></i>
+                <h2 class="text-xl font-bold">Gagal Memuat Aplikasi</h2>
+                <p class="text-gray-600 mt-2">Terjadi kesalahan. Coba muat ulang halaman. (${error.message})</p>
+            </div>
+        `;
     }
 }
 
-// --- APP START ---
-document.addEventListener('DOMContentLoaded', () => {
-    // Some actions like playing audio need user interaction first
-    document.body.addEventListener('click', initAudioContext, { once: true });
-    init();
-});
+document.addEventListener('DOMContentLoaded', init);

@@ -427,12 +427,21 @@
                         <div id="bluetoothStatus" class="text-sm text-center mb-3 p-2 bg-gray-100 rounded-lg">
                             Status Bluetooth: <span id="bluetoothStatusText" class="font-semibold">...</span>
                         </div>
-                        
-                        <p class="text-sm text-gray-600 mb-3 text-center bg-gray-100 p-2 rounded-lg">Fitur cetak menggunakan koneksi Bluetooth bawaan dari aplikasi Android.</p>
-                        
-                        <button id="testPrintBtn" onclick="testPrint()" class="btn bg-gray-600 text-white w-full py-2">
-                            🖨️ Test Cetak
-                        </button>
+
+                        <div class="grid grid-cols-2 gap-2 mb-3">
+                            <button onclick="checkPairedDevices()" class="btn bg-blue-500 text-white w-full py-2 text-sm">
+                                🔍 Cek Perangkat
+                            </button>
+                            <button onclick="openBluetoothSettings()" class="btn bg-yellow-500 text-black w-full py-2 text-sm">
+                                ⚙️ Pairing Printer
+                            </button>
+                            <button onclick="requestBluetoothEnable()" class="btn bg-cyan-500 text-white w-full py-2 text-sm">
+                                🔵 Aktifkan Bluetooth
+                            </button>
+                            <button id="testPrintBtn" onclick="testPrint()" class="btn bg-gray-600 text-white w-full py-2 text-sm">
+                                🖨️ Test Cetak
+                            </button>
+                        </div>
                         
                         <div id="autoPrintContainer" class="flex justify-between items-center mt-3">
                             <label for="autoPrintReceipt" class="text-sm text-gray-600 cursor-pointer">Cetak Struk Otomatis</label>
