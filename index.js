@@ -21,6 +21,7 @@ let lowStockThreshold = 5; // Default value
 let isOnline = navigator.onLine;
 let isSyncing = false;
 let currentReceiptTransaction = null;
+let isPrinterReady = false;
 let isScannerReady = false;
 let isChartJsReady = false;
 let salesChartInstance = null;
@@ -647,13 +648,12 @@ function updateFeatureAvailability() {
     }
 
     // Printer
-    const isPrinterAvailable = bluetoothPrinter.isAvailable();
     const testPrintBtn = document.getElementById('testPrintBtn');
 
-    if (!isPrinterAvailable) {
+    if (!isPrinterReady) {
         if (testPrintBtn) {
             testPrintBtn.disabled = true;
-            testPrintBtn.title = 'Fitur cetak hanya tersedia di aplikasi Android.';
+            testPrintBtn.title = 'Fitur cetak gagal dimuat.';
             testPrintBtn.classList.replace('bg-gray-600', 'bg-gray-400');
         }
         const autoPrintContainer = document.getElementById('autoPrintContainer');
@@ -661,18 +661,6 @@ function updateFeatureAvailability() {
             autoPrintContainer.classList.add('opacity-50');
             const autoPrintCheckbox = document.getElementById('autoPrintReceipt');
             if (autoPrintCheckbox) autoPrintCheckbox.disabled = true;
-        }
-    } else {
-        if (testPrintBtn) {
-            testPrintBtn.disabled = false;
-            testPrintBtn.title = '';
-            testPrintBtn.classList.replace('bg-gray-400', 'bg-gray-600');
-        }
-        const autoPrintContainer = document.getElementById('autoPrintContainer');
-        if (autoPrintContainer) {
-            autoPrintContainer.classList.remove('opacity-50');
-            const autoPrintCheckbox = document.getElementById('autoPrintReceipt');
-            if (autoPrintCheckbox) autoPrintCheckbox.disabled = false;
         }
     }
 }
@@ -2369,7 +2357,6 @@ async function loadSettings() {
         }
 
         lowStockThreshold = settingsMap.get('lowStockThreshold') || 5;
-        updateBluetoothStatus();
         
     } catch (error) {
         console.error("Failed to load settings:", error);
@@ -3650,230 +3637,199 @@ document.addEventListener('click', (event) => {
 });
 
 
-// --- BLUETOOTH PRINTING (Android WebView) ---
+// --- BLUETOOTH PRINTING (with PrintHub) ---
 
 /**
- * Updates the Bluetooth status indicator on the settings page.
+ * A generic wrapper function to handle the entire lifecycle of a print job.
+ * It initiates a connection, executes the provided print logic, and handles success/failure.
+ * @param {Function} printLogicCallback - An async function that receives the 'print' object and contains the actual printing commands.
  */
-function updateBluetoothStatus() {
-    const statusElement = document.getElementById('bluetoothStatusText');
-    if (!statusElement) return; // Element might not be on the current page
+async function performPrintJob(printLogicCallback) {
+    if (!isPrinterReady) {
+        showToast('Fitur cetak tidak tersedia (library PrintHub gagal dimuat).');
+        return;
+    }
 
-    if (bluetoothPrinter.isAvailable()) {
-        if (bluetoothPrinter.isBluetoothEnabled()) {
-            statusElement.textContent = 'Aktif ✅';
-            statusElement.style.color = 'green';
-        } else {
-            statusElement.textContent = 'Tidak Aktif ❌';
-            statusElement.style.color = 'red';
+    const paperSize = await getSettingFromDB('printerPaperSize') || '80mm';
+    const printer = new PrintHub.init({
+        paperSize: paperSize === '58mm' ? '58' : '80',
+        printerType: 'bluetooth'
+    });
+
+    showToast('Pilih printer Anda dari daftar Bluetooth...', 3000);
+
+    printer.connectToPrint({
+        onReady: async (print) => {
+            try {
+                showToast('Printer terhubung, mengirim data...', 2000);
+                await printLogicCallback(print);
+                showToast('Data cetak berhasil dikirim.');
+            } catch (error) {
+                console.error("Printing failed during job execution:", error);
+                showToast(`Gagal mencetak: ${error.message}`);
+            }
+        },
+        onFailed: (message) => {
+            console.error("Printer connection failed:", message);
+            const cancellationMessage = 'Pemilihan printer dibatalkan.';
+            let isCancellation = false;
+
+            // Case 1: Standard DOMException for cancellation
+            if (typeof message === 'object' && message.name === 'NotFoundError') {
+                isCancellation = true;
+            } 
+            // Case 2: Error object with a 'message' property indicating cancellation
+            else if (typeof message === 'object' && message.message && message.message.toLowerCase().includes('user cancelled')) {
+                isCancellation = true;
+            }
+            // Case 3: Simple string message indicating cancellation
+            else if (typeof message === 'string' && message.toLowerCase().includes('user cancelled')) {
+                isCancellation = true;
+            }
+            
+            if (isCancellation) {
+                showToast(cancellationMessage);
+            } else {
+                let errorMessage = 'Koneksi printer gagal. Pastikan printer menyala & coba lagi.';
+                if (typeof message === 'object' && message.message) {
+                    errorMessage = `Gagal terhubung: ${message.message}`;
+                } else if (typeof message === 'string' && message) {
+                    errorMessage = `Gagal terhubung: ${message}`;
+                }
+                showToast(errorMessage, 4000);
+            }
         }
-    } else {
-        statusElement.textContent = 'Tidak Tersedia (Bukan Aplikasi Android)';
-        statusElement.style.color = 'orange';
-    }
-}
-
-/**
- * A class to interface with a native Android WebView for Bluetooth printing.
- * Assumes a global `AndroidDownloader` object is injected by the WebView.
- */
-class AndroidBluetoothPrinter {
-    constructor() {
-        this.isAndroidApp = typeof AndroidDownloader !== 'undefined' && AndroidDownloader;
-    }
-    
-    isAvailable() {
-        return this.isAndroidApp;
-    }
-    
-    isBluetoothEnabled() {
-        if (!this.isAvailable()) return false;
-        try {
-            return AndroidDownloader.isBluetoothAvailable();
-        } catch (e) {
-            console.error("Error checking Android Bluetooth status:", e);
-            return false;
-        }
-    }
-    
-    print(data) {
-        if (!this.isAvailable()) {
-            // The pre-flight check should handle this, but as a safeguard:
-            showToast('Fitur cetak hanya tersedia di aplikasi Android.', 4000);
-            return;
-        }
-        
-        try {
-            AndroidDownloader.printData(data);
-            showToast('Data dikirim ke printer.');
-        } catch (error) {
-            showToast('Gagal mencetak: ' + error.message, 4000);
-            console.error('Error printing via Android interface:', error);
-        }
-    }
-    
-    requestBluetoothEnable() {
-        if (!this.isAvailable()) return;
-        try {
-            AndroidDownloader.requestBluetoothEnable();
-        } catch(e) {
-            console.error("Error requesting Android Bluetooth enable:", e);
-        }
-    }
-}
-
-const bluetoothPrinter = new AndroidBluetoothPrinter();
-
-/**
- * Checks if the printer is ready and returns a list of available printers if successful.
- * Shows user-friendly alerts for any issues.
- * @returns {Promise<object[]|null>} A promise that resolves with an array of printer devices if ready, or null if not.
- */
-async function _prepareForPrinting() {
-    if (!bluetoothPrinter.isAvailable()) {
-        alert('Aplikasi Android tidak tersedia. Pastikan Anda menggunakan aplikasi OMSetin.');
-        return null;
-    }
-
-    if (!bluetoothPrinter.isBluetoothEnabled()) {
-        alert('Bluetooth tidak aktif.\n\nSilakan aktifkan Bluetooth di pengaturan HP Anda.');
-        return null;
-    }
-
-    try {
-        const devices = JSON.parse(AndroidDownloader.getPairedDevices());
-        if (devices.length === 0) {
-            alert('Tidak ada printer yang dipairing.\n\nSilakan pairing printer di pengaturan Bluetooth HP Anda.');
-            return null;
-        }
-
-        const printerDevices = devices.filter(device => {
-            const name = (device.name || '').toLowerCase();
-            return name.includes('printer') || name.includes('thermal') || name.includes('pos') || name.includes('receipt');
-        });
-
-        if (printerDevices.length === 0) {
-            const deviceList = devices.map(d => `- ${d.name || 'Unknown'}`).join('\n');
-            alert(
-                'Tidak ada printer yang terdeteksi di perangkat yang dipairing.\n\n' +
-                `Perangkat terdeteksi:\n${deviceList}\n\n` +
-                'Pastikan printer Anda sudah dipairing di pengaturan Bluetooth HP Anda dan namanya mengandung kata "printer", "thermal", "pos", atau sejenisnya.'
-            );
-            return null;
-        }
-
-        return printerDevices; // Success
-    } catch (error) {
-        console.error('Error checking devices:', error);
-        alert('Error: ' + error.message);
-        return null;
-    }
+    });
 }
 
 window.testPrint = async function() {
-    const printers = await _prepareForPrinting();
-    if (!printers) return; // Stop if checks fail
-
-    const paperSize = await getSettingFromDB('printerPaperSize') || '80mm';
-    const paperWidthChars = paperSize === '58mm' ? 32 : 42;
-    const line = (char) => char.repeat(paperWidthChars);
-
-    let testData = `Test Cetak Berhasil!\n`;
-    testData += `Ini adalah test dari Aplikasi POS Mobile.\n`;
-    testData += line('-') + '\n';
-    testData += `Printer terdeteksi: ${printers[0].name}\n`;
-    testData += `Ukuran Kertas: ${paperSize}\n`;
-    testData += `Status: OK\n`;
-    testData += line('-') + '\n\n\n';
-
-    bluetoothPrinter.print(testData);
-}
-
-async function _generateReceiptText(data) {
-    const settings = await getAllFromDB('settings');
-    const settingsMap = new Map(settings.map(s => [s.key, s.value]));
-
-    const storeName = settingsMap.get('storeName') || 'Toko Anda';
-    const storeAddress = settingsMap.get('storeAddress') || '';
-    const feedbackPhone = settingsMap.get('storeFeedbackPhone') || '';
-    const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
-    const paperSize = settingsMap.get('printerPaperSize') || '80mm';
-    const paperWidthChars = paperSize === '58mm' ? 32 : 42;
-
-    const line = (char) => char.repeat(paperWidthChars);
-    const center = (text) => text.padStart(Math.floor((paperWidthChars - text.length) / 2) + text.length).padEnd(paperWidthChars);
-    const twoCols = (left, right) => {
-        const rightStr = String(right);
-        const leftStr = String(left);
-        const rightLen = rightStr.length;
-        const leftMaxLen = paperWidthChars - rightLen - 1; // -1 for a space
-        const truncatedLeft = leftStr.length > leftMaxLen ? leftStr.substring(0, leftMaxLen) : leftStr;
-        const spaces = ' '.repeat(paperWidthChars - truncatedLeft.length - rightLen);
-        return truncatedLeft + spaces + rightStr;
-    };
-    
-    let text = '';
-    text += center(storeName) + '\n';
-    if (storeAddress) text += center(storeAddress) + '\n';
-    text += line('=') + '\n';
-    
-    text += twoCols(`No: ${data.id || 'N/A'}`, `Tgl: ${formatReceiptDate(data.date).split(', ')[0]}`) + '\n';
-    text += twoCols('', `${formatReceiptDate(data.date).split(', ')[1] || ''}`) + '\n';
-    text += line('-') + '\n';
-
-    data.items.forEach(item => {
-        text += twoCols(`${item.name} x${item.quantity}`, `${formatCurrency(item.effectivePrice * item.quantity)}`) + '\n';
-        if (item.discountPercentage > 0) {
-            text += `  @ ${formatCurrency(item.price)} Disc ${item.discountPercentage}%\n`;
-        }
-    });
-
-    text += line('-') + '\n';
-
-    const subtotalAfterDiscount = data.subtotal - data.totalDiscount;
-    text += twoCols('Subtotal', `${formatCurrency(subtotalAfterDiscount)}`) + '\n';
-
-    if (data.fees && data.fees.length > 0) {
-        data.fees.forEach(fee => {
-            let feeName = fee.name;
-            if (fee.type === 'percentage') {
-                feeName += ` ${fee.value}%`;
-            }
-            text += twoCols(feeName, formatCurrency(fee.amount)) + '\n';
+    const printLogic = async (print) => {
+        await print.writeText('Test Cetak Berhasil!', { align: 'center', bold: true, size: 'double' });
+        await print.writeText('Ini adalah hasil test dari POS Mobile App.', { align: 'center' });
+        await print.writeDashLine();
+        await print.writeTextWith2Column("Status", "OK");
+        await print.writeTextWith2Column("Koneksi", "Stabil");
+        await print.writeDashLine();
+        await print.writeText("Test QR Code & Barcode:", { align: 'center' });
+        await print.printQRCode("https://github.com/wahyufatur/POS-Mobile-Connect-CDN-jsdelivr-Print", {
+            align: 'center',
+            size: 'medium',
+            errorCorrection: 'M'
         });
-    }
-
-    text += line('-') + '\n';
-    text += twoCols('TOTAL', `${formatCurrency(data.total)}`) + '\n';
-    text += twoCols('TUNAI', `${formatCurrency(data.cashPaid)}`) + '\n';
-    text += twoCols('KEMBALI', `${formatCurrency(data.change)}`) + '\n';
-    
-    text += line('=') + '\n';
-    
-    const footerLines = footerText.split('\n');
-    footerLines.forEach(line => text += center(line) + '\n');
-    
-    if (feedbackPhone) {
-        text += center(`Kritik/Saran: ${feedbackPhone}`) + '\n';
-    }
-
-    text += '\n\n\n';
-
-    return text;
+        await print.writeLineBreak();
+        await print.printBarcode("1234567890", {
+            align: 'center',
+            displayValue: true,
+            format: 'CODE128',
+            height: 50
+        });
+        await print.writeLineBreak({ count: 3 });
+    };
+    await performPrintJob(printLogic);
 }
 
 async function printReceipt() {
-    const printers = await _prepareForPrinting();
-    if (!printers) return;
-
     if (!currentReceiptTransaction) {
         showToast('Tidak ada data struk untuk dicetak.');
         return;
     }
-    const receiptText = await _generateReceiptText(currentReceiptTransaction);
-    bluetoothPrinter.print(receiptText);
+
+    showToast('Mempersiapkan untuk mencetak struk...');
+
+    const printLogic = async (print) => {
+        const transactionData = currentReceiptTransaction;
+        const settings = await getAllFromDB('settings');
+        const settingsMap = new Map(settings.map(s => [s.key, s.value]));
+
+        // Print Logo
+        const logoUrl = settingsMap.get('storeLogo');
+        if (logoUrl) {
+            try {
+                // The library has a bug or limitation with putImageWithUrl, so this might fail silently or warn.
+                // We keep it for future library updates but wrap in try-catch to prevent breaking the print job.
+                await print.putImageWithUrl(logoUrl, { align: "center" });
+                await print.writeLineBreak({ count: 1 });
+            } catch (e) {
+                console.warn("Could not print logo from URL. The library might not support it or the image format is incorrect.", e);
+            }
+        }
+
+        // Header
+        await print.writeText(settingsMap.get('storeName') || 'Toko Anda', { align: 'center', bold: true, size: 'double' });
+        await print.writeText(settingsMap.get('storeAddress') || '', { align: 'center' });
+        await print.writeDashLine();
+
+        // Transaction Info
+        const dateParts = formatReceiptDate(transactionData.date).split(', ');
+        await print.writeTextWith2Column(`No: ${transactionData.id}`, `Tgl: ${dateParts[0]}`);
+        if (dateParts[1]) {
+            await print.writeTextWith2Column('', `${dateParts[1]}`);
+        }
+
+        await print.writeDashLine();
+
+        // Items
+        for (const item of transactionData.items) {
+            const leftPart = `${item.name} x${item.quantity}`;
+            const rightPart = `${formatCurrency(item.effectivePrice * item.quantity)}`;
+            await print.writeTextWith2Column(leftPart, rightPart);
+            if (item.discountPercentage > 0) {
+                await print.writeText(`  @ ${formatCurrency(item.price)} Disc ${item.discountPercentage}%`);
+            }
+        }
+
+        await print.writeDashLine();
+
+        // Summary
+        const subtotalAfterDiscount = transactionData.subtotal - transactionData.totalDiscount;
+        await print.writeTextWith2Column('Subtotal', `${formatCurrency(subtotalAfterDiscount)}`);
+
+        if (transactionData.fees && transactionData.fees.length > 0) {
+            for (const fee of transactionData.fees) {
+                let feeName = fee.name;
+                if (fee.type === 'percentage') {
+                    feeName += ` ${fee.value}%`;
+                }
+                const feeAmount = `${formatCurrency(fee.amount)}`;
+                await print.writeTextWith2Column(feeName, feeAmount);
+            }
+        }
+
+        await print.writeDashLine();
+
+        // Totals
+        await print.writeTextWith2Column('TOTAL', `${formatCurrency(transactionData.total)}`, { bold: true });
+        await print.writeTextWith2Column('TUNAI', `${formatCurrency(transactionData.cashPaid)}`);
+        await print.writeTextWith2Column('KEMBALI', `${formatCurrency(transactionData.change)}`);
+
+        await print.writeDashLine();
+
+        // Footer
+        const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
+        const footerLines = footerText.split('\n');
+        for (const line of footerLines) {
+            await print.writeText(line, { align: 'center' });
+        }
+        const feedbackPhone = settingsMap.get('storeFeedbackPhone');
+        if (feedbackPhone) {
+            await print.writeText(`Kritik/Saran: ${feedbackPhone}`, { align: 'center' });
+        }
+
+        await print.writeLineBreak({ count: 3 });
+    };
+
+    await performPrintJob(printLogic);
 }
 window.printReceipt = printReceipt;
+
+window.showPrintHelpModal = function() {
+    document.getElementById('printHelpModal').classList.remove('hidden');
+}
+
+window.closePrintHelpModal = function() {
+    document.getElementById('printHelpModal').classList.add('hidden');
+}
+
 
 // --- BARCODE LABEL GENERATOR ---
 document.getElementById('generateBarcodeLabelBtn')?.addEventListener('click', function() {
@@ -4020,12 +3976,9 @@ document.getElementById('downloadPngBtn')?.addEventListener('click', async funct
 
 
 /**
- * Prints the generated barcode label using the Android interface.
+ * Prints the generated barcode label using a Bluetooth thermal printer.
  */
 window.printBarcodeLabel = async function() {
-    const printers = await _prepareForPrinting();
-    if (!printers) return;
-
     const productName = document.getElementById('output-product-name').textContent;
     const productPrice = document.getElementById('output-product-price').textContent;
     const barcodeCode = document.getElementById('output-barcode-text').textContent;
@@ -4035,17 +3988,26 @@ window.printBarcodeLabel = async function() {
         return;
     }
 
-    let labelText = `\n`;
-    if (productName) {
-        labelText += `${productName}\n`;
-    }
-    if (productPrice) {
-        labelText += `${productPrice}\n`;
-    }
-    labelText += `\n${barcodeCode}\n\n\n`;
+    const printLogic = async (print) => {
+        if (productName) {
+            await print.writeText(productName, { align: 'center', bold: true, size: 'single' });
+        }
+        if (productPrice) {
+            await print.writeText(productPrice, { align: 'center', bold: true, size: 'single' });
+        }
 
-    bluetoothPrinter.print(labelText);
-    showToast('Data label dikirim. Pencetakan barcode tergantung printer.');
+        await print.printBarcode(barcodeCode, {
+            align: 'center',
+            displayValue: true,
+            format: 'CODE128',
+            height: 50,
+            width: 2
+        });
+
+        await print.writeLineBreak({ count: 3 });
+    };
+
+    await performPrintJob(printLogic);
 };
 
 
@@ -4193,93 +4155,105 @@ function updatePinDisplay(isError = false) {
         // Handle error state color
         if (isError) {
             dot.classList.replace('bg-blue-500', 'bg-red-500');
+        } else {
+            dot.classList.remove('bg-red-500');
         }
     });
 }
 
-// --- INITIALIZATION ---
-async function init() {
+
+// --- APP INITIALIZATION ---
+async function initializeApp() {
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    const appContainer = document.getElementById('appContainer');
+    
     try {
         await initDB();
-        await loadSettings(); // Load settings early, especially low stock threshold
-        await populateCategoryDropdowns(['productCategory', 'editProductCategory', 'productCategoryFilter']);
 
-        // Initialize scanner library
-        if (window.Html5Qrcode) {
+        // Load external libraries and set readiness flags
+        if (typeof Html5Qrcode !== 'undefined') {
             html5QrCode = new Html5Qrcode("qr-reader");
             isScannerReady = true;
-        } else {
-            console.error("Html5Qrcode library not found.");
-            isScannerReady = false;
+        }
+        if (typeof Chart !== 'undefined') {
+            isChartJsReady = true;
+        }
+        if (typeof PrintHub !== 'undefined') {
+            isPrinterReady = true;
         }
 
-        // Initialize chart.js library
-        isChartJsReady = !!window.Chart;
+        updateFeatureAvailability();
+        await applyDefaultFees();
         
-        const kioskModeEnabled = await getSettingFromDB('kioskModeEnabled');
-        if (kioskModeEnabled) {
-            isKioskModeActive = true;
+        // Load initial settings
+        lowStockThreshold = await getSettingFromDB('lowStockThreshold') || 5;
+        const kioskEnabled = await getSettingFromDB('kioskModeEnabled') || false;
+
+        if (kioskEnabled) {
             enterKioskMode();
         } else {
-            // Load dashboard by default
-            loadDashboard();
+            showPage('dashboard');
         }
 
-        // Setup global event listeners
-        window.addEventListener('online', checkOnlineStatus);
-        window.addEventListener('offline', checkOnlineStatus);
-        checkOnlineStatus().then(() => syncWithServer()); // Initial check and sync
-        setInterval(() => syncWithServer(), 5 * 60 * 1000); // Sync every 5 minutes
-
-        // Event listener for search/filter on Kasir page
-        const searchProductInput = document.getElementById('searchProduct');
-        searchProductInput?.addEventListener('input', (e) => {
-            const searchTerm = e.target.value.toLowerCase();
-            const products = document.querySelectorAll('#productsGrid .product-item');
-            products.forEach(product => {
-                const name = product.dataset.name || '';
-                const barcode = product.dataset.barcode || '';
-                const isVisible = name.includes(searchTerm) || barcode.includes(searchTerm);
-                product.style.display = isVisible ? 'block' : 'none';
-            });
-        });
-
-        // Add listener for confirmation modal buttons
-        document.getElementById('confirmButton')?.addEventListener('click', () => {
-            if (confirmCallback) {
-                confirmCallback();
-            }
-            closeConfirmationModal();
-        });
-        document.getElementById('cancelButton')?.addEventListener('click', closeConfirmationModal);
+        setupEventListeners();
+        checkOnlineStatus();
         
-        // Initialize Audio context on first user interaction
-        document.body.addEventListener('click', initAudioContext, { once: true });
-
-        // Final UI updates
-        updateFeatureAvailability();
-        setupChartViewToggle();
-
-        // Hide loading overlay and show the app
-        const loadingOverlay = document.getElementById('loadingOverlay');
-        const appContainer = document.getElementById('appContainer');
-        loadingOverlay.classList.add('opacity-0');
-        setTimeout(() => {
-            loadingOverlay.style.display = 'none';
-            appContainer.classList.remove('hidden');
-        }, 300);
-
     } catch (error) {
         console.error("Initialization failed:", error);
-        const loadingOverlay = document.getElementById('loadingOverlay');
-        loadingOverlay.innerHTML = `
-            <div class="text-center p-4">
-                <i class="fas fa-exclamation-triangle text-red-500 text-4xl mb-4"></i>
-                <h2 class="text-xl font-bold">Gagal Memuat Aplikasi</h2>
-                <p class="text-gray-600 mt-2">Terjadi kesalahan. Coba muat ulang halaman. (${error.message})</p>
-            </div>
-        `;
+        loadingOverlay.innerHTML = `<p class="text-red-500 p-4">Gagal memuat aplikasi. Coba muat ulang halaman.</p>`;
+        return; // Stop execution
     }
+    
+    // Fade out loading screen and show app
+    loadingOverlay.classList.add('opacity-0');
+    setTimeout(() => {
+        loadingOverlay.classList.add('hidden');
+        appContainer.classList.remove('hidden');
+    }, 300);
 }
 
-document.addEventListener('DOMContentLoaded', init);
+function setupEventListeners() {
+    // Online/Offline status
+    window.addEventListener('online', checkOnlineStatus);
+    window.addEventListener('offline', checkOnlineStatus);
+
+    // Search functionality
+    document.getElementById('searchProduct')?.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        document.querySelectorAll('.product-item').forEach(item => {
+            const name = item.dataset.name || '';
+            const barcode = item.dataset.barcode || '';
+            const isVisible = name.includes(searchTerm) || barcode.includes(searchTerm);
+            item.style.display = isVisible ? 'block' : 'none';
+        });
+    });
+
+    // Confirmation modal buttons
+    document.getElementById('confirmButton')?.addEventListener('click', () => {
+        if (confirmCallback) {
+            confirmCallback();
+        }
+        closeConfirmationModal();
+    });
+    document.getElementById('cancelButton')?.addEventListener('click', closeConfirmationModal);
+    
+    setupChartViewToggle();
+
+    // Ensure audio context is initialized on first user interaction
+    document.body.addEventListener('click', initAudioContext, { once: true });
+    
+    // Auto-refresh dashboard if app becomes visible again after some time on a different day
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && currentPage === 'dashboard') {
+            const todayString = getLocalDateString(new Date());
+            // Ensure lastDashboardLoadDate is not null before comparing
+            if (lastDashboardLoadDate && lastDashboardLoadDate !== todayString) {
+                console.log('App became visible on a new day, refreshing dashboard.');
+                loadDashboard();
+            }
+        }
+    });
+}
+
+// Start the application once the DOM is ready
+document.addEventListener('DOMContentLoaded', initializeApp);
