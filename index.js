@@ -3894,12 +3894,20 @@ LANGKAH PAIRING PRINTER BLUETOOTH:\n
     alert(instructions);
 
     try {
-        // This is an attempt to open Android's Bluetooth settings directly
-        // It might not work on all devices/versions but is a good first try.
-        window.location.href = 'intent://settings/bluetooth#Intent;scheme=android-app;package=com.android.settings;end';
+        // The most reliable method is to call a function on the native Android interface.
+        // This avoids the ERR_UNKNOWN_URL_SCHEME error caused by intent URLs in some WebViews.
+        if (typeof AndroidDownloader !== 'undefined' && typeof AndroidDownloader.openBluetoothSettings === 'function') {
+            AndroidDownloader.openBluetoothSettings();
+        } else {
+            // If the native function doesn't exist, we inform the user.
+            // This is safer than attempting a URL that might crash the page.
+            console.warn("AndroidDownloader.openBluetoothSettings() function not found. User must open settings manually.");
+            alert('Gagal membuka pengaturan otomatis. Silakan buka Pengaturan > Bluetooth secara manual di HP Anda.');
+        }
     } catch (error) {
-        // Fallback if the intent URL fails
-        alert('Gagal membuka otomatis. Silakan buka Pengaturan > Bluetooth secara manual di HP Anda.');
+        // This catch block handles any unexpected JS errors during the call.
+        console.error("Error calling openBluetoothSettings:", error);
+        alert('Terjadi kesalahan. Silakan buka Pengaturan > Bluetooth secara manual di HP Anda.');
     }
 };
 
