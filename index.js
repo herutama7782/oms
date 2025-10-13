@@ -37,6 +37,22 @@ let dueItemsList = []; // For due date notifications
 let activePopover = null; // For the ledger actions popover
 let cameraStream = null; // For camera capture stream
 
+/**
+ * Converts a Date object to a YYYY-MM-DD string in the local timezone.
+ * @param {Date} date - The date object to convert.
+ * @returns {string} The formatted date string.
+ */
+function getLocalDateString(date) {
+    if (!(date instanceof Date) || isNaN(date)) {
+        return ''; // Handle invalid date inputs gracefully
+    }
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+
 // --- AUDIO FUNCTIONS ---
 /**
  * Initializes the AudioContext. Must be called after a user interaction.
@@ -722,7 +738,7 @@ window.showPage = async function(pageName, options = { force: false, initialTab:
         // Set up an interval to check for date change every minute
         if (dashboardDateCheckInterval) clearInterval(dashboardDateCheckInterval);
         dashboardDateCheckInterval = setInterval(() => {
-            const todayString = new Date().toISOString().split('T')[0];
+            const todayString = getLocalDateString(new Date());
             // Ensure lastDashboardLoadDate is not null before comparing
             if (lastDashboardLoadDate && lastDashboardLoadDate !== todayString) {
                 console.log('Date changed while dashboard is active. Refreshing stats.');
@@ -858,13 +874,13 @@ function loadDashboard() {
     updateDashboardDate();
 
     // Set the date for the auto-refresh check
-    lastDashboardLoadDate = new Date().toISOString().split('T')[0];
+    lastDashboardLoadDate = getLocalDateString(new Date());
 
     console.log('Refreshing dashboard stats.');
 
     const today = new Date();
-    const todayString = today.toISOString().split('T')[0];
-    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    const todayString = getLocalDateString(today);
+    const monthStart = getLocalDateString(new Date(today.getFullYear(), today.getMonth(), 1));
     
     getAllFromDB('transactions').then(transactions => {
         dashboardTransactions = transactions; // Store for chart use
@@ -873,7 +889,7 @@ function loadDashboard() {
         let monthSales = 0;
         
         transactions.forEach(t => {
-            const transactionDate = t.date.split('T')[0];
+            const transactionDate = getLocalDateString(new Date(t.date));
             if (transactionDate === todayString) {
                 todaySales += t.total;
                 todayTransactionsCount++;
@@ -2546,7 +2562,7 @@ window.generateReport = async function() {
     const products = await getAllFromDB('products'); // Get all products for cost calculation
     
     const filteredTransactions = transactions.filter(t => {
-        const date = t.date.split('T')[0];
+        const date = getLocalDateString(new Date(t.date));
         return date >= dateFrom && date <= dateTo;
     });
     
@@ -2797,7 +2813,7 @@ function displaySalesReport(transactions, viewType) {
         let key;
 
         if (viewType === 'daily') {
-            key = date.toISOString().split('T')[0];
+            key = getLocalDateString(date);
         } else { // weekly
             key = `${date.getFullYear()}-W${getWeek(date)}`;
         }
@@ -4229,7 +4245,7 @@ function setupEventListeners() {
     // Auto-refresh dashboard if app becomes visible again after some time on a different day
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && currentPage === 'dashboard') {
-            const todayString = new Date().toISOString().split('T')[0];
+            const todayString = getLocalDateString(new Date());
             // Ensure lastDashboardLoadDate is not null before comparing
             if (lastDashboardLoadDate && lastDashboardLoadDate !== todayString) {
                 console.log('App became visible on a new day, refreshing dashboard.');

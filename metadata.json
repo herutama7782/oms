@@ -1,5 +1,5 @@
 {
-  "name": "POS Mobile Connect CDNjsdelivr Jenis Print Banyak + Cashdrawer",
+  "name": "POS CDNjsdelivr banyak type print, khusus laptop logo,barcode. No Support PrintHub cashdrawer,",
   "description": "A mobile-first Point of Sale application with barcode scanning for small businesses.",
   "requestFramePermissions": [
     "camera",
