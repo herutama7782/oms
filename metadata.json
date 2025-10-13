@@ -1,12 +1,9 @@
 {
-  "name": "POS CDNjsdelivr banyak type print, khusus laptop logo,barcode. No Support PrintHub cashdrawer,",
+  "name": "POS CDNjsdelivr Penerapan Ke Android Studio",
   "description": "A mobile-first Point of Sale application with barcode scanning for small businesses.",
   "requestFramePermissions": [
     "camera",
-    "bluetooth",
     "geolocation"
   ],
-  "enabledApis": [
-    "bluetooth"
-  ]
+  "enabledApis": []
 }
