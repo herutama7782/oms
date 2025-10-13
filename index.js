@@ -3736,14 +3736,14 @@ async function _prepareForPrinting() {
     }
 
     if (!bluetoothPrinter.isBluetoothEnabled()) {
-        alert('Bluetooth tidak aktif.\n\nKlik tombol "Aktifkan Bluetooth" di halaman Pengaturan.');
+        alert('Bluetooth tidak aktif.\n\nSilakan aktifkan Bluetooth di pengaturan HP Anda.');
         return null;
     }
 
     try {
         const devices = JSON.parse(AndroidDownloader.getPairedDevices());
         if (devices.length === 0) {
-            alert('Tidak ada printer yang dipairing.\n\nKlik tombol "Pairing Printer" di halaman Pengaturan untuk pairing.');
+            alert('Tidak ada printer yang dipairing.\n\nSilakan pairing printer di pengaturan Bluetooth HP Anda.');
             return null;
         }
 
@@ -3757,7 +3757,7 @@ async function _prepareForPrinting() {
             alert(
                 'Tidak ada printer yang terdeteksi di perangkat yang dipairing.\n\n' +
                 `Perangkat terdeteksi:\n${deviceList}\n\n` +
-                'Pastikan nama printer Anda mengandung kata "printer", "thermal", "pos", atau sejenisnya, dan sudah dipairing.'
+                'Pastikan printer Anda sudah dipairing di pengaturan Bluetooth HP Anda dan namanya mengandung kata "printer", "thermal", "pos", atau sejenisnya.'
             );
             return null;
         }
@@ -3874,83 +3874,6 @@ async function printReceipt() {
     bluetoothPrinter.print(receiptText);
 }
 window.printReceipt = printReceipt;
-
-window.openBluetoothSettings = function() {
-    if (!bluetoothPrinter.isAvailable()) {
-        alert('Fitur ini hanya tersedia di aplikasi Android OMSetin.');
-        return;
-    }
-
-    const instructions = `
-LANGKAH PAIRING PRINTER BLUETOOTH:\n
-1. Pastikan printer Bluetooth dalam mode pairing.
-2. Di HP Anda, buka Pengaturan > Bluetooth.
-3. Pastikan Bluetooth ON.
-4. Tap "Pair new device" atau "Scan".
-5. Cari nama printer Anda (e.g., POS-58, Thermal Printer).
-6. Tap nama printer untuk pairing.
-7. Masukkan PIN jika diminta (biasanya: 0000 atau 1234).
-    `;
-    alert(instructions);
-
-    try {
-        // The most reliable method is to call a function on the native Android interface.
-        // This avoids the ERR_UNKNOWN_URL_SCHEME error caused by intent URLs in some WebViews.
-        if (typeof AndroidDownloader !== 'undefined' && typeof AndroidDownloader.openBluetoothSettings === 'function') {
-            AndroidDownloader.openBluetoothSettings();
-        } else {
-            // If the native function doesn't exist, we inform the user.
-            // This is safer than attempting a URL that might crash the page.
-            console.warn("AndroidDownloader.openBluetoothSettings() function not found. User must open settings manually.");
-            alert('Gagal membuka pengaturan otomatis. Silakan buka Pengaturan > Bluetooth secara manual di HP Anda.');
-        }
-    } catch (error) {
-        // This catch block handles any unexpected JS errors during the call.
-        console.error("Error calling openBluetoothSettings:", error);
-        alert('Terjadi kesalahan. Silakan buka Pengaturan > Bluetooth secara manual di HP Anda.');
-    }
-};
-
-window.requestBluetoothEnable = function() {
-    if (!bluetoothPrinter.isAvailable()) {
-        alert('Fitur ini hanya tersedia di aplikasi Android OMSetin.');
-        return;
-    }
-    try {
-        bluetoothPrinter.requestBluetoothEnable();
-        alert('Permintaan untuk mengaktifkan Bluetooth telah dikirim.');
-        // Update status after a short delay to allow system changes
-        setTimeout(updateBluetoothStatus, 1500);
-    } catch (error) {
-        alert('Gagal mengirim permintaan: ' + error.message);
-    }
-};
-
-window.checkPairedDevices = function() {
-    if (!bluetoothPrinter.isAvailable()) {
-        alert('Fitur ini hanya tersedia di aplikasi Android OMSetin.');
-        return;
-    }
-    
-    try {
-        const devices = JSON.parse(AndroidDownloader.getPairedDevices());
-        if (devices.length === 0) {
-            alert('Tidak ada perangkat yang dipairing.\n\nKlik tombol "Pairing Printer" untuk memulai.');
-        } else {
-            let deviceList = 'Perangkat yang dipairing:\n\n';
-            devices.forEach(device => {
-                const name = (device.name || '').toLowerCase();
-                const isPrinter = name.includes('printer') || name.includes('thermal') || name.includes('pos') || name.includes('receipt');
-                deviceList += `${isPrinter ? '🖨️ ' : '📱 '} ${device.name || 'Unknown'} (${device.address})\n`;
-            });
-            alert(deviceList);
-        }
-    } catch (error) {
-        console.error('Error getting paired devices:', error);
-        alert('Gagal mendapatkan daftar perangkat. Pastikan aplikasi memiliki izin Bluetooth.');
-    }
-};
-
 
 // --- BARCODE LABEL GENERATOR ---
 document.getElementById('generateBarcodeLabelBtn')?.addEventListener('click', function() {
