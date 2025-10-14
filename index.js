@@ -21,7 +21,6 @@ let lowStockThreshold = 5; // Default value
 let isOnline = navigator.onLine;
 let isSyncing = false;
 let currentReceiptTransaction = null;
-let isPrinterReady = false;
 let isScannerReady = false;
 let isChartJsReady = false;
 let salesChartInstance = null;
@@ -644,23 +643,6 @@ function updateFeatureAvailability() {
             scanBtn.classList.add('bg-gray-600');
             scanBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
             scanBtn.title = '';
-        }
-    }
-
-    // Printer
-    const testPrintBtn = document.getElementById('testPrintBtn');
-
-    if (!isPrinterReady) {
-        if (testPrintBtn) {
-            testPrintBtn.disabled = true;
-            testPrintBtn.title = 'Fitur cetak gagal dimuat.';
-            testPrintBtn.classList.replace('bg-gray-600', 'bg-gray-400');
-        }
-        const autoPrintContainer = document.getElementById('autoPrintContainer');
-        if (autoPrintContainer) {
-            autoPrintContainer.classList.add('opacity-50');
-            const autoPrintCheckbox = document.getElementById('autoPrintReceipt');
-            if (autoPrintCheckbox) autoPrintCheckbox.disabled = true;
         }
     }
 }
@@ -3024,7 +3006,7 @@ async function exportReportToCSV() {
 }
 window.exportReportToCSV = exportReportToCSV;
 
-// --- RECEIPT PRINTING ---
+// --- RECEIPT & PRINTING ---
 const receiptLine = (char, paperWidthChars) => char.repeat(paperWidthChars);
 
 async function _generateReceiptHTML(data, isPreview) {
@@ -3037,7 +3019,7 @@ async function _generateReceiptHTML(data, isPreview) {
     const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
     const storeLogo = settingsMap.get('storeLogo') || null;
     const paperSize = settingsMap.get('printerPaperSize') || '80mm';
-    const paperWidthChars = paperSize === '58mm' ? 32 : 42;
+    const paperWidthChars = paperSize === '58mm' ? 32 : 48;
 
     const escapeHtml = (unsafe) => {
         if (typeof unsafe !== 'string') return unsafe;
@@ -3165,567 +3147,151 @@ window.closePreviewReceiptModal = function() {
     document.getElementById('previewReceiptModal').classList.add('hidden');
 }
 
-// --- CONTACT & LEDGER MANAGEMENT (HUTANG/PIUTANG) ---
-let currentContactTab = 'customer'; // 'customer' or 'supplier'
+// --- RawBT PRINTING ---
 
-function switchContactTab(tabName) {
-    if (currentContactTab === tabName) return;
+function uint8ArrayToBase64(bytes) {
+    let binary = '';
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
+}
 
-    currentContactTab = tabName;
-    const customerTab = document.getElementById('customerTab');
-    const supplierTab = document.getElementById('supplierTab');
-    const customerListContainer = document.getElementById('customerListContainer');
-    const supplierListContainer = document.getElementById('supplierListContainer');
-
-    if (tabName === 'customer') {
-        customerTab.classList.add('active');
-        supplierTab.classList.remove('active');
-        customerListContainer.classList.remove('hidden');
-        supplierListContainer.classList.add('hidden');
-        loadContacts('customer');
-    } else {
-        supplierTab.classList.add('active');
-        customerTab.classList.remove('active');
-        supplierListContainer.classList.remove('hidden');
-        customerListContainer.classList.add('hidden');
-        loadContacts('supplier');
+function sendToRawBT(printData) {
+    try {
+        const encoder = new TextEncoder();
+        const encodedData = encoder.encode(printData);
+        const base64Data = uint8ArrayToBase64(encodedData);
+        const url = `rawbt:base64,${base64Data}`;
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        
+        showToast('Mengirim data ke aplikasi RawBT...');
+    } catch (error) {
+        console.error("RawBT error:", error);
+        showToast('Gagal mengirim data cetak. Pastikan RawBT terinstall.');
     }
 }
-window.switchContactTab = switchContactTab;
 
-async function loadContacts(type) {
-    const listElId = type === 'customer' ? 'customerList' : 'supplierList';
-    const listEl = document.getElementById(listElId);
-    
-    const contacts = await getAllFromDB('contacts', 'type', type);
-    const ledgers = await getAllFromDB('ledgers');
-    
-    const balanceMap = new Map();
-    ledgers.forEach(entry => {
-        const currentBalance = balanceMap.get(entry.contactId) || 0;
-        const amount = entry.type === 'debit' ? entry.amount : -entry.amount;
-        balanceMap.set(entry.contactId, currentBalance + amount);
-    });
+async function generateReceiptESCPOS(data) {
+    const settings = await getAllFromDB('settings');
+    const settingsMap = new Map(settings.map(s => [s.key, s.value]));
 
-    if (contacts.length === 0) {
-        listEl.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon"><i class="fas fa-users-slash"></i></div>
-                <h3 class="empty-state-title">Belum Ada Kontak</h3>
-                <p class="empty-state-description">Tambahkan ${type === 'customer' ? 'pelanggan' : 'supplier'} baru untuk mulai melacak hutang/piutang.</p>
-                <button onclick="showContactModal()" class="empty-state-action">
-                    <i class="fas fa-plus mr-2"></i>Tambah Kontak
-                </button>
-            </div>
-        `;
-        return;
-    }
+    const storeName = settingsMap.get('storeName') || 'Toko Anda';
+    const storeAddress = settingsMap.get('storeAddress') || '';
+    const feedbackPhone = settingsMap.get('storeFeedbackPhone') || '';
+    const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
+    const paperSize = settingsMap.get('printerPaperSize') || '80mm';
+    const paperWidthChars = paperSize === '58mm' ? 32 : 48;
+
+    const ESC = '\x1B';
+    const GS = '\x1D';
+    const LF = '\n';
     
-    listEl.innerHTML = contacts.sort((a,b) => a.name.localeCompare(b.name)).map(contact => {
-        const balance = balanceMap.get(contact.id) || 0;
-        let balanceHtml = '';
-        if (balance > 0) {
-            const balanceColor = type === 'customer' ? 'text-teal-600' : 'text-red-600';
-            const balanceLabel = type === 'customer' ? 'Piutang' : 'Hutang';
-            balanceHtml = `<p class="text-sm font-semibold ${balanceColor}">${balanceLabel}: Rp ${formatCurrency(balance)}</p>`;
-        } else {
-            balanceHtml = `<p class="text-sm text-green-600">Lunas</p>`;
+    const align = (type) => `${ESC}a${type === 'center' ? '\x01' : type === 'right' ? '\x02' : '\x00'}`;
+    const bold = (on) => `${ESC}E${on ? '\x01' : '\x00'}`;
+    const setSize = (width, height) => `${GS}!${String.fromCharCode((width - 1) * 16 + (height - 1))}`;
+    
+    const twoCols = (left, right) => {
+        left = left.toString();
+        right = right.toString();
+        const leftLen = left.length;
+        const rightLen = right.length;
+        if (leftLen + rightLen + 1 > paperWidthChars) {
+            const availableWidth = paperWidthChars - rightLen - 1;
+            const leftWrapped = left.substring(0, availableWidth);
+            const spaces = ' '.repeat(paperWidthChars - leftWrapped.length - rightLen);
+            return `${leftWrapped}${spaces}${right}${LF}`;
         }
-
-        return `
-            <div class="card p-4 clickable" onclick="showLedgerModal(${contact.id})">
-                <div class="flex justify-between items-start">
-                    <div>
-                        <h3 class="font-semibold text-lg">${contact.name}</h3>
-                        <p class="text-sm text-gray-500"><i class="fas fa-phone mr-2"></i>${contact.phone || '-'}</p>
-                    </div>
-                    <div class="text-right">
-                         ${balanceHtml}
-                    </div>
-                </div>
-                <div class="flex justify-end gap-2 mt-2 pt-2 border-t">
-                    <button onclick="event.stopPropagation(); showContactModal(${contact.id})" class="btn bg-blue-100 text-blue-700 px-3 py-1 text-xs">Edit</button>
-                    <button onclick="event.stopPropagation(); deleteContact(${contact.id})" class="btn bg-red-100 text-red-700 px-3 py-1 text-xs">Hapus</button>
-                </div>
-            </div>
-        `;
-    }).join('');
-}
-function loadContactsPage(initialTab = 'customer') {
-    switchContactTab(initialTab);
-}
-
-window.showContactModal = async function(contactId = null) {
-    const modal = document.getElementById('contactModal');
-    const title = document.getElementById('contactModalTitle');
-    const idInput = document.getElementById('contactId');
-    const nameInput = document.getElementById('contactName');
-    const phoneInput = document.getElementById('contactPhone');
-    const addressInput = document.getElementById('contactAddress');
-    const notesInput = document.getElementById('contactNotes');
-    const typeInput = document.getElementById('contactType');
-
-    // Reset form
-    idInput.value = '';
-    nameInput.value = '';
-    phoneInput.value = '';
-    addressInput.value = '';
-    notesInput.value = '';
-    typeInput.value = currentContactTab;
-
-    if (contactId) {
-        title.textContent = 'Edit Kontak';
-        const contact = await getFromDB('contacts', contactId);
-        if (contact) {
-            idInput.value = contact.id;
-            nameInput.value = contact.name;
-            phoneInput.value = contact.phone || '';
-            addressInput.value = contact.address || '';
-            notesInput.value = contact.notes || '';
-            typeInput.value = contact.type;
-        }
-    } else {
-        title.textContent = 'Tambah Kontak';
-    }
-
-    modal.classList.remove('hidden');
-}
-
-window.closeContactModal = function() {
-    document.getElementById('contactModal').classList.add('hidden');
-}
-
-window.saveContact = async function() {
-    const id = document.getElementById('contactId').value ? parseInt(document.getElementById('contactId').value) : null;
-    const name = document.getElementById('contactName').value.trim();
-    const phone = document.getElementById('contactPhone').value.trim();
-    const address = document.getElementById('contactAddress').value.trim();
-    const notes = document.getElementById('contactNotes').value.trim();
-    const type = document.getElementById('contactType').value;
-
-    if (!name) {
-        showToast('Nama kontak tidak boleh kosong.');
-        return;
-    }
-
-    const contactData = {
-        name,
-        phone,
-        address,
-        notes,
-        type,
-        updatedAt: new Date().toISOString()
+        const spaces = ' '.repeat(paperWidthChars - leftLen - rightLen);
+        return `${left}${spaces}${right}${LF}`;
     };
     
-    let action = '';
-    if (id) {
-        contactData.id = id;
-        action = 'UPDATE_CONTACT';
-    } else {
-        contactData.createdAt = new Date().toISOString();
-        action = 'CREATE_CONTACT';
-    }
+    let commands = '';
+    commands += `${ESC}@`; // Initialize printer
     
-    try {
-        const savedId = await putToDB('contacts', contactData);
-        const syncPayload = id ? contactData : { ...contactData, id: savedId };
-        await queueSyncAction(action, syncPayload);
-        showToast(`Kontak berhasil ${id ? 'diperbarui' : 'disimpan'}.`);
-        closeContactModal();
-        loadContacts(type); // Refresh the list for the current tab
-    } catch (error) {
-        console.error('Failed to save contact:', error);
-        showToast('Gagal menyimpan kontak.');
+    commands += align('center');
+    commands += bold(true) + setSize(2, 2) + storeName + LF;
+    commands += setSize(1, 1) + bold(false);
+    if (storeAddress) commands += storeAddress.split('\n').join(LF) + LF;
+    commands += '-'.repeat(paperWidthChars) + LF;
+
+    commands += align('left');
+    const dateParts = formatReceiptDate(data.date).split(', ');
+    commands += twoCols(`No: ${data.id}`, `Tgl: ${dateParts[0]}`);
+    if (dateParts[1]) {
+        commands += twoCols('', dateParts[1]);
     }
-}
+    commands += '-'.repeat(paperWidthChars) + LF;
 
-window.deleteContact = async function(contactId) {
-    const ledgers = await getAllFromDB('ledgers', 'contactId', contactId);
-    if (ledgers.length > 0) {
-        showToast('Kontak tidak dapat dihapus karena memiliki riwayat transaksi.');
-        return;
+    for (const item of data.items) {
+        commands += `${item.name} x${item.quantity}${LF}`;
+        const priceLine = `  @${formatCurrency(item.price)}${item.discountPercentage > 0 ? ` Disc ${item.discountPercentage}%` : ''}`;
+        commands += twoCols(priceLine, formatCurrency(item.effectivePrice * item.quantity));
     }
+    commands += '-'.repeat(paperWidthChars) + LF;
 
-    showConfirmationModal('Hapus Kontak', 'Yakin ingin menghapus kontak ini?', async () => {
-        try {
-            const contactToDelete = await getFromDB('contacts', contactId);
-            const tx = db.transaction('contacts', 'readwrite');
-            tx.objectStore('contacts').delete(contactId);
-            tx.oncomplete = async () => {
-                await queueSyncAction('DELETE_CONTACT', contactToDelete);
-                showToast('Kontak berhasil dihapus.');
-                loadContacts(contactToDelete.type);
-            };
-        } catch (error) {
-            console.error('Failed to delete contact:', error);
-            showToast('Gagal menghapus kontak.');
-        }
-    }, 'Ya, Hapus', 'bg-red-500');
-}
+    const subtotalAfterDiscount = data.subtotal - data.totalDiscount;
+    commands += twoCols('Subtotal', formatCurrency(subtotalAfterDiscount));
 
-window.showLedgerModal = async function(contactId) {
-    currentContactId = contactId;
-    const modal = document.getElementById('ledgerModal');
-    const nameEl = document.getElementById('ledgerContactName');
-    const typeEl = document.getElementById('ledgerContactType');
-    const detailsEl = document.getElementById('ledgerContactDetails');
-    const historyEl = document.getElementById('ledgerHistory');
-    const addDebitBtn = document.getElementById('addDebitButton');
-
-    const contact = await getFromDB('contacts', contactId);
-    if (!contact) {
-        showToast('Kontak tidak ditemukan.');
-        return;
-    }
-
-    nameEl.textContent = contact.name;
-    const isCustomer = contact.type === 'customer';
-    typeEl.textContent = isCustomer ? 'Pelanggan' : 'Supplier';
-    typeEl.className = `text-sm font-semibold ${isCustomer ? 'text-teal-600' : 'text-red-600'}`;
-    addDebitBtn.innerHTML = `<i class="fas fa-minus-circle"></i> Tambah ${isCustomer ? 'Piutang' : 'Hutang'}`;
-    
-    let contactDetailsHtml = '';
-    if (contact.phone) contactDetailsHtml += `<p><i class="fas fa-phone fa-fw mr-2"></i>${contact.phone}</p>`;
-    if (contact.address) contactDetailsHtml += `<p><i class="fas fa-map-marker-alt fa-fw mr-2"></i>${contact.address}</p>`;
-    if (contact.notes) contactDetailsHtml += `<p><i class="fas fa-sticky-note fa-fw mr-2"></i>${contact.notes}</p>`;
-    detailsEl.innerHTML = contactDetailsHtml || '<p>Tidak ada detail tambahan.</p>';
-
-    await renderLedgerHistory(contactId);
-    modal.classList.remove('hidden');
-}
-
-async function renderLedgerHistory(contactId) {
-    const historyEl = document.getElementById('ledgerHistory');
-    const ledgers = await getAllFromDB('ledgers', 'contactId', contactId);
-    ledgers.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    let balance = 0;
-    const historyWithBalance = ledgers.map(entry => {
-        const amount = entry.type === 'debit' ? entry.amount : -entry.amount;
-        const entryWithBalance = { ...entry, balance: balance + amount };
-        balance += amount;
-        return entryWithBalance;
-    }).reverse(); // now chronological
-
-    historyEl.innerHTML = historyWithBalance.reverse().map(entry => {
-        const isDebit = entry.type === 'debit';
-        const amountColor = isDebit ? 'text-red-500' : 'text-green-500';
-        const amountSign = isDebit ? '+' : '-';
-        const date = new Date(entry.createdAt).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'});
-
-        let dueDateHtml = '';
-        if (entry.dueDate) {
-            const dueDate = new Date(entry.dueDate);
-            const today = new Date(); today.setHours(0,0,0,0);
-            let color = 'text-gray-500';
-            if(dueDate < today) color = 'text-red-500';
-            else if (dueDate.getTime() === today.getTime()) color = 'text-orange-500';
-            dueDateHtml = `<p class="text-xs ${color}"><i class="fas fa-calendar-alt mr-1"></i>Jatuh tempo: ${dueDate.toLocaleDateString('id-ID')}</p>`;
-        }
-
-        return `
-            <div class="border-b pb-2">
-                <div class="flex justify-between items-start">
-                    <div>
-                        <p class="font-semibold">${entry.description}</p>
-                        <p class="text-xs text-gray-500">${date}</p>
-                        ${dueDateHtml}
-                    </div>
-                    <div class="text-right">
-                        <p class="font-bold ${amountColor}">${amountSign} Rp ${formatCurrency(entry.amount)}</p>
-                        <p class="text-xs text-gray-600">Saldo: Rp ${formatCurrency(entry.balance)}</p>
-                    </div>
-                     <button onclick="showLedgerActions(event, ${entry.id})" class="ml-2 text-gray-500 clickable"><i class="fas fa-ellipsis-v"></i></button>
-                </div>
-            </div>
-        `;
-    }).join('');
-
-    if (ledgers.length === 0) {
-        historyEl.innerHTML = `<p class="text-center text-gray-500 py-4">Belum ada riwayat transaksi.</p>`;
-    }
-}
-
-window.closeLedgerModal = function() {
-    document.getElementById('ledgerModal').classList.add('hidden');
-    currentContactId = null;
-}
-
-window.showAddLedgerEntryModal = async function(entryId = null, entryType = 'credit') {
-    const modal = document.getElementById('addLedgerEntryModal');
-    const titleEl = document.getElementById('addLedgerEntryTitle');
-    const amountInput = document.getElementById('ledgerAmount');
-    const descInput = document.getElementById('ledgerDescription');
-    const dueDateContainer = document.getElementById('ledgerDueDateContainer');
-    const dueDateInput = document.getElementById('ledgerDueDate');
-
-    // Reset form
-    amountInput.value = '';
-    descInput.value = '';
-    dueDateInput.value = '';
-    modal.dataset.entryId = entryId || '';
-    modal.dataset.entryType = entryType;
-    
-    if(entryId) { // Editing existing entry
-        const entry = await getFromDB('ledgers', entryId);
-        titleEl.textContent = 'Edit Transaksi';
-        amountInput.value = entry.amount;
-        descInput.value = entry.description;
-        dueDateInput.value = entry.dueDate || '';
-        modal.dataset.entryType = entry.type; // override
-    } else { // Adding new entry
-        const isDebit = entryType === 'debit';
-        const contact = await getFromDB('contacts', currentContactId);
-        const isCustomer = contact.type === 'customer';
-        if(isDebit) {
-            titleEl.textContent = `Tambah ${isCustomer ? 'Piutang' : 'Hutang'}`;
-            descInput.placeholder = 'e.g., Penjualan kredit, Pinjaman';
-        } else {
-            titleEl.textContent = 'Catat Pembayaran';
-            descInput.placeholder = 'e.g., Pelunasan, Cicilan';
+    if (data.fees && data.fees.length > 0) {
+        for (const fee of data.fees) {
+            let feeName = fee.name;
+            if (fee.type === 'percentage') feeName += ` ${fee.value}%`;
+            commands += twoCols(feeName, formatCurrency(fee.amount));
         }
     }
+    commands += '-'.repeat(paperWidthChars) + LF;
     
-    // Show due date only for debit entries
-    dueDateContainer.style.display = modal.dataset.entryType === 'debit' ? 'block' : 'none';
-
-    modal.classList.remove('hidden');
-}
-
-window.closeAddLedgerEntryModal = function() {
-    document.getElementById('addLedgerEntryModal').classList.add('hidden');
-}
-
-window.saveLedgerEntry = async function() {
-    const modal = document.getElementById('addLedgerEntryModal');
-    const entryId = modal.dataset.entryId ? parseInt(modal.dataset.entryId) : null;
-    const type = modal.dataset.entryType;
-    const amount = parseFloat(document.getElementById('ledgerAmount').value);
-    const description = document.getElementById('ledgerDescription').value.trim();
-    const dueDate = document.getElementById('ledgerDueDate').value || null;
-
-    if (isNaN(amount) || amount <= 0 || !description) {
-        showToast('Jumlah dan Keterangan harus diisi.');
-        return;
-    }
-
-    const entryData = {
-        contactId: currentContactId,
-        type,
-        amount,
-        description,
-        dueDate: type === 'debit' ? dueDate : null, // only save due date for debits
-        updatedAt: new Date().toISOString()
-    };
+    commands += bold(true) + twoCols('TOTAL', formatCurrency(data.total)) + bold(false);
+    commands += twoCols('TUNAI', formatCurrency(data.cashPaid));
+    commands += twoCols('KEMBALI', formatCurrency(data.change));
+    commands += '-'.repeat(paperWidthChars) + LF;
     
-    let action = '';
-    if (entryId) {
-        entryData.id = entryId;
-        const originalEntry = await getFromDB('ledgers', entryId);
-        entryData.createdAt = originalEntry.createdAt; // preserve creation date
-        action = 'UPDATE_LEDGER_ENTRY';
-    } else {
-        entryData.createdAt = new Date().toISOString();
-        action = 'CREATE_LEDGER_ENTRY';
-    }
-    
-    try {
-        const savedId = await putToDB('ledgers', entryData);
-        const syncPayload = entryId ? entryData : { ...entryData, id: savedId };
-        await queueSyncAction(action, syncPayload);
-        showToast(`Transaksi berhasil ${entryId ? 'diperbarui' : 'dicatat'}.`);
-        closeAddLedgerEntryModal();
-        await renderLedgerHistory(currentContactId);
-        await updateDashboardSummaries();
-        await checkDueDateNotifications(); // Refresh notifications
-    } catch (error) {
-        console.error('Failed to save ledger entry:', error);
-        showToast('Gagal menyimpan transaksi.');
-    }
-}
+    commands += align('center');
+    if (footerText) commands += footerText.split('\n').join(LF) + LF;
+    if (feedbackPhone) commands += `Kritik/Saran: ${feedbackPhone}${LF}`;
+    commands += LF + LF + LF;
+    commands += `${GS}V\x01`;
 
-window.showLedgerActions = async function(event, entryId) {
-    event.stopPropagation();
-    const popover = document.getElementById('ledgerActionsPopover');
-    
-    const entry = await getFromDB('ledgers', entryId);
-    if (!entry) return;
-
-    let actionsHtml = `<a onclick="event.stopPropagation(); showAddLedgerEntryModal(${entryId})"><i class="fas fa-edit fa-fw mr-2"></i>Edit</a>`;
-    if (entry.type === 'debit') {
-        actionsHtml += `<a onclick="event.stopPropagation(); showEditDueDateModal(${entryId})"><i class="fas fa-calendar-alt fa-fw mr-2"></i>Ubah Jatuh Tempo</a>`;
-    }
-    actionsHtml += `<a onclick="event.stopPropagation(); deleteLedgerEntry(${entryId})" class="text-red-600"><i class="fas fa-trash fa-fw mr-2"></i>Hapus</a>`;
-
-    popover.innerHTML = actionsHtml;
-
-    // Position and show popover
-    const button = event.currentTarget;
-    const rect = button.getBoundingClientRect();
-    popover.style.display = 'block';
-    popover.style.top = `${rect.bottom + window.scrollY}px`;
-    popover.style.left = `${rect.right + window.scrollX - popover.offsetWidth}px`;
-    activePopover = popover;
-}
-
-window.deleteLedgerEntry = function(entryId) {
-    closeActivePopover();
-    showConfirmationModal('Hapus Transaksi', 'Yakin ingin menghapus catatan transaksi ini?', async () => {
-        try {
-            const entryToDelete = await getFromDB('ledgers', entryId);
-            const tx = db.transaction('ledgers', 'readwrite');
-            tx.objectStore('ledgers').delete(entryId);
-            tx.oncomplete = async () => {
-                await queueSyncAction('DELETE_LEDGER_ENTRY', entryToDelete);
-                showToast('Transaksi berhasil dihapus.');
-                await renderLedgerHistory(currentContactId);
-                await updateDashboardSummaries();
-                await checkDueDateNotifications();
-            };
-        } catch (error) {
-            console.error('Failed to delete ledger entry:', error);
-            showToast('Gagal menghapus transaksi.');
-        }
-    }, 'Ya, Hapus', 'bg-red-500');
-}
-
-window.showEditDueDateModal = async function(entryId) {
-    closeActivePopover();
-    const modal = document.getElementById('editDueDateModal');
-    const entry = await getFromDB('ledgers', entryId);
-    if (entry) {
-        modal.querySelector('#editDueDateEntryId').value = entryId;
-        modal.querySelector('#newDueDate').value = entry.dueDate || '';
-        modal.classList.remove('hidden');
-    }
-}
-
-window.closeEditDueDateModal = function() {
-    document.getElementById('editDueDateModal').classList.add('hidden');
-}
-
-window.saveDueDate = async function() {
-    const modal = document.getElementById('editDueDateModal');
-    const entryId = parseInt(modal.querySelector('#editDueDateEntryId').value);
-    const newDueDate = modal.querySelector('#newDueDate').value;
-
-    const entry = await getFromDB('ledgers', entryId);
-    if (entry) {
-        entry.dueDate = newDueDate || null;
-        entry.updatedAt = new Date().toISOString();
-        await putToDB('ledgers', entry);
-        await queueSyncAction('UPDATE_LEDGER_ENTRY', entry);
-        showToast('Tanggal jatuh tempo diperbarui.');
-        closeEditDueDateModal();
-        await renderLedgerHistory(entry.contactId);
-        await checkDueDateNotifications();
-    }
-}
-
-function closeActivePopover() {
-    if (activePopover) {
-        activePopover.style.display = 'none';
-        activePopover = null;
-    }
-}
-
-// Event listener to close popover when clicking outside
-document.addEventListener('click', (event) => {
-    if (activePopover && !activePopover.contains(event.target) && !event.target.closest('[onclick^="showLedgerActions"]')) {
-        closeActivePopover();
-    }
-});
-
-
-// --- BLUETOOTH PRINTING (with PrintHub) ---
-
-/**
- * A generic wrapper function to handle the entire lifecycle of a print job.
- * It initiates a connection, executes the provided print logic, and handles success/failure.
- * @param {Function} printLogicCallback - An async function that receives the 'print' object and contains the actual printing commands.
- */
-async function performPrintJob(printLogicCallback) {
-    if (!isPrinterReady) {
-        showToast('Fitur cetak tidak tersedia (library PrintHub gagal dimuat).');
-        return;
-    }
-
-    const paperSize = await getSettingFromDB('printerPaperSize') || '80mm';
-    const printer = new PrintHub.init({
-        paperSize: paperSize === '58mm' ? '58' : '80',
-        printerType: 'bluetooth'
-    });
-
-    showToast('Pilih printer Anda dari daftar Bluetooth...', 3000);
-
-    printer.connectToPrint({
-        onReady: async (print) => {
-            try {
-                showToast('Printer terhubung, mengirim data...', 2000);
-                await printLogicCallback(print);
-                showToast('Data cetak berhasil dikirim.');
-            } catch (error) {
-                console.error("Printing failed during job execution:", error);
-                showToast(`Gagal mencetak: ${error.message}`);
-            }
-        },
-        onFailed: (message) => {
-            console.error("Printer connection failed:", message);
-            const cancellationMessage = 'Pemilihan printer dibatalkan.';
-            let isCancellation = false;
-
-            // Case 1: Standard DOMException for cancellation
-            if (typeof message === 'object' && message.name === 'NotFoundError') {
-                isCancellation = true;
-            } 
-            // Case 2: Error object with a 'message' property indicating cancellation
-            else if (typeof message === 'object' && message.message && message.message.toLowerCase().includes('user cancelled')) {
-                isCancellation = true;
-            }
-            // Case 3: Simple string message indicating cancellation
-            else if (typeof message === 'string' && message.toLowerCase().includes('user cancelled')) {
-                isCancellation = true;
-            }
-            
-            if (isCancellation) {
-                showToast(cancellationMessage);
-            } else {
-                let errorMessage = 'Koneksi printer gagal. Pastikan printer menyala & coba lagi.';
-                if (typeof message === 'object' && message.message) {
-                    errorMessage = `Gagal terhubung: ${message.message}`;
-                } else if (typeof message === 'string' && message) {
-                    errorMessage = `Gagal terhubung: ${message}`;
-                }
-                showToast(errorMessage, 4000);
-            }
-        }
-    });
+    return commands;
 }
 
 window.testPrint = async function() {
-    const printLogic = async (print) => {
-        await print.writeText('Test Cetak Berhasil!', { align: 'center', bold: true, size: 'double' });
-        await print.writeText('Ini adalah hasil test dari POS Mobile App.', { align: 'center' });
-        await print.writeDashLine();
-        await print.writeTextWith2Column("Status", "OK");
-        await print.writeTextWith2Column("Koneksi", "Stabil");
-        await print.writeDashLine();
-        await print.writeText("Test QR Code & Barcode:", { align: 'center' });
-        await print.printQRCode("https://github.com/wahyufatur/POS-Mobile-Connect-CDN-jsdelivr-Print", {
-            align: 'center',
-            size: 'medium',
-            errorCorrection: 'M'
-        });
-        await print.writeLineBreak();
-        await print.printBarcode("1234567890", {
-            align: 'center',
-            displayValue: true,
-            format: 'CODE128',
-            height: 50
-        });
-        await print.writeLineBreak({ count: 3 });
-    };
-    await performPrintJob(printLogic);
+    const paperSize = await getSettingFromDB('printerPaperSize') || '80mm';
+    const paperWidthChars = paperSize === '58mm' ? 32 : 48;
+
+    const ESC = '\x1B';
+    const GS = '\x1D';
+    const LF = '\n';
+    
+    const align = (type) => `${ESC}a${type === 'center' ? '\x01' : type === 'right' ? '\x02' : '\x00'}`;
+    const bold = (on) => `${ESC}E${on ? '\x01' : '\x00'}`;
+    const setSize = (width, height) => `${GS}!${String.fromCharCode((width - 1) * 16 + (height - 1))}`;
+    
+    let commands = '';
+    commands += `${ESC}@`; // Init
+    commands += align('center');
+    commands += bold(true) + setSize(2, 2) + 'Test Cetak' + LF + setSize(1, 1) + bold(false);
+    commands += 'Test cetak dari POS Mobile berhasil.' + LF;
+    commands += '-'.repeat(paperWidthChars) + LF + LF;
+    
+    const barcodeData = '1234567890';
+    commands += 'Barcode Test (CODE128):' + LF;
+    commands += `${GS}h\x50`; // Barcode height 80
+    commands += `${GS}w\x02`; // Barcode width 2
+    commands += `${GS}H\x02`; // Print text below barcode
+    commands += `${GS}k\x49${String.fromCharCode(barcodeData.length)}${barcodeData}`; // Print CODE128 (m=73)
+    commands += LF + LF + LF + LF;
+    commands += `${GS}V\x01`; // Cut
+
+    sendToRawBT(commands);
 }
 
 async function printReceipt() {
@@ -3733,92 +3299,9 @@ async function printReceipt() {
         showToast('Tidak ada data struk untuk dicetak.');
         return;
     }
-
-    showToast('Mempersiapkan untuk mencetak struk...');
-
-    const printLogic = async (print) => {
-        const transactionData = currentReceiptTransaction;
-        const settings = await getAllFromDB('settings');
-        const settingsMap = new Map(settings.map(s => [s.key, s.value]));
-
-        // Print Logo
-        const logoUrl = settingsMap.get('storeLogo');
-        if (logoUrl) {
-            try {
-                // The library has a bug or limitation with putImageWithUrl, so this might fail silently or warn.
-                // We keep it for future library updates but wrap in try-catch to prevent breaking the print job.
-                await print.putImageWithUrl(logoUrl, { align: "center" });
-                await print.writeLineBreak({ count: 1 });
-            } catch (e) {
-                console.warn("Could not print logo from URL. The library might not support it or the image format is incorrect.", e);
-            }
-        }
-
-        // Header
-        await print.writeText(settingsMap.get('storeName') || 'Toko Anda', { align: 'center', bold: true, size: 'double' });
-        await print.writeText(settingsMap.get('storeAddress') || '', { align: 'center' });
-        await print.writeDashLine();
-
-        // Transaction Info
-        const dateParts = formatReceiptDate(transactionData.date).split(', ');
-        await print.writeTextWith2Column(`No: ${transactionData.id}`, `Tgl: ${dateParts[0]}`);
-        if (dateParts[1]) {
-            await print.writeTextWith2Column('', `${dateParts[1]}`);
-        }
-
-        await print.writeDashLine();
-
-        // Items
-        for (const item of transactionData.items) {
-            const leftPart = `${item.name} x${item.quantity}`;
-            const rightPart = `${formatCurrency(item.effectivePrice * item.quantity)}`;
-            await print.writeTextWith2Column(leftPart, rightPart);
-            if (item.discountPercentage > 0) {
-                await print.writeText(`  @ ${formatCurrency(item.price)} Disc ${item.discountPercentage}%`);
-            }
-        }
-
-        await print.writeDashLine();
-
-        // Summary
-        const subtotalAfterDiscount = transactionData.subtotal - transactionData.totalDiscount;
-        await print.writeTextWith2Column('Subtotal', `${formatCurrency(subtotalAfterDiscount)}`);
-
-        if (transactionData.fees && transactionData.fees.length > 0) {
-            for (const fee of transactionData.fees) {
-                let feeName = fee.name;
-                if (fee.type === 'percentage') {
-                    feeName += ` ${fee.value}%`;
-                }
-                const feeAmount = `${formatCurrency(fee.amount)}`;
-                await print.writeTextWith2Column(feeName, feeAmount);
-            }
-        }
-
-        await print.writeDashLine();
-
-        // Totals
-        await print.writeTextWith2Column('TOTAL', `${formatCurrency(transactionData.total)}`, { bold: true });
-        await print.writeTextWith2Column('TUNAI', `${formatCurrency(transactionData.cashPaid)}`);
-        await print.writeTextWith2Column('KEMBALI', `${formatCurrency(transactionData.change)}`);
-
-        await print.writeDashLine();
-
-        // Footer
-        const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
-        const footerLines = footerText.split('\n');
-        for (const line of footerLines) {
-            await print.writeText(line, { align: 'center' });
-        }
-        const feedbackPhone = settingsMap.get('storeFeedbackPhone');
-        if (feedbackPhone) {
-            await print.writeText(`Kritik/Saran: ${feedbackPhone}`, { align: 'center' });
-        }
-
-        await print.writeLineBreak({ count: 3 });
-    };
-
-    await performPrintJob(printLogic);
+    showToast('Mempersiapkan data untuk RawBT...');
+    const commands = await generateReceiptESCPOS(currentReceiptTransaction);
+    sendToRawBT(commands);
 }
 window.printReceipt = printReceipt;
 
@@ -3829,7 +3312,6 @@ window.showPrintHelpModal = function() {
 window.closePrintHelpModal = function() {
     document.getElementById('printHelpModal').classList.add('hidden');
 }
-
 
 // --- BARCODE LABEL GENERATOR ---
 document.getElementById('generateBarcodeLabelBtn')?.addEventListener('click', function() {
@@ -3976,7 +3458,7 @@ document.getElementById('downloadPngBtn')?.addEventListener('click', async funct
 
 
 /**
- * Prints the generated barcode label using a Bluetooth thermal printer.
+ * Prints the generated barcode label using RawBT.
  */
 window.printBarcodeLabel = async function() {
     const productName = document.getElementById('output-product-name').textContent;
@@ -3988,26 +3470,35 @@ window.printBarcodeLabel = async function() {
         return;
     }
 
-    const printLogic = async (print) => {
-        if (productName) {
-            await print.writeText(productName, { align: 'center', bold: true, size: 'single' });
-        }
-        if (productPrice) {
-            await print.writeText(productPrice, { align: 'center', bold: true, size: 'single' });
-        }
+    const ESC = '\x1B';
+    const GS = '\x1D';
+    const LF = '\n';
+    
+    const align = (type) => `${ESC}a${type === 'center' ? '\x01' : type === 'right' ? '\x02' : '\x00'}`;
+    const bold = (on) => `${ESC}E${on ? '\x01' : '\x00'}`;
 
-        await print.printBarcode(barcodeCode, {
-            align: 'center',
-            displayValue: true,
-            format: 'CODE128',
-            height: 50,
-            width: 2
-        });
+    let commands = '';
+    commands += `${ESC}@`; // Init
+    commands += align('center');
 
-        await print.writeLineBreak({ count: 3 });
-    };
+    if (productName) {
+        commands += bold(true) + productName + LF + bold(false);
+    }
+    if (productPrice) {
+        commands += productPrice + LF;
+    }
+    commands += LF;
 
-    await performPrintJob(printLogic);
+    // Barcode command (CODE128)
+    commands += `${GS}H\x02`; // Print HRI characters below the barcode
+    commands += `${GS}h\x50`; // Set barcode height to 80
+    commands += `${GS}w\x02`; // Set barcode width
+    commands += `${GS}k\x49${String.fromCharCode(barcodeCode.length)}${barcodeCode}`; // Print CODE128 (m=73)
+    
+    commands += LF + LF + LF + LF;
+    commands += `${GS}V\x01`; // Cut
+
+    sendToRawBT(commands);
 };
 
 
@@ -4177,9 +3668,6 @@ async function initializeApp() {
         }
         if (typeof Chart !== 'undefined') {
             isChartJsReady = true;
-        }
-        if (typeof PrintHub !== 'undefined') {
-            isPrinterReady = true;
         }
 
         updateFeatureAvailability();
