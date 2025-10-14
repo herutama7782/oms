@@ -3,10 +3,6 @@
   "description": "A mobile-first Point of Sale application with barcode scanning for small businesses.",
   "requestFramePermissions": [
     "camera",
-    "bluetooth",
     "geolocation"
-  ],
-  "enabledApis": [
-    "bluetooth"
   ]
 }

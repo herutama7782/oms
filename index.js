@@ -3179,6 +3179,71 @@ function sendToRawBT(printData) {
     }
 }
 
+/**
+ * Converts a base64 data URL image to ESC/POS commands for printing a raster bitmap.
+ * @param {string} dataUrl The base64 data URL of the image.
+ * @param {number} maxWidth The maximum width in pixels for the printer.
+ * @returns {Promise<string>} A promise that resolves with the ESC/POS command string.
+ */
+function imageToEscPos(dataUrl, maxWidth) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            const scale = Math.min(1, maxWidth / img.width);
+            const width = Math.floor(img.width * scale);
+            const height = Math.floor(img.height * scale);
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            const imageData = ctx.getImageData(0, 0, width, height);
+            const pixels = imageData.data;
+            const threshold = 128;
+            
+            const widthInBytes = Math.ceil(width / 8);
+            
+            let commands = '';
+            commands += '\x1B\x61\x01'; // Center align image
+
+            // Using GS v 0 command for raster bitmap
+            const header = `\x1D\x76\x30\x00${String.fromCharCode(widthInBytes % 256)}${String.fromCharCode(Math.floor(widthInBytes / 256))}${String.fromCharCode(height % 256)}${String.fromCharCode(Math.floor(height / 256))}`;
+            
+            let bitmapData = '';
+            for (let y = 0; y < height; y++) {
+                for (let xByte = 0; xByte < widthInBytes; xByte++) {
+                    let byte = 0;
+                    for (let bit = 0; bit < 8; bit++) {
+                        const x = xByte * 8 + bit;
+                        if (x < width) {
+                            const pixelIndex = (y * width + x) * 4;
+                            const r = pixels[pixelIndex];
+                            const g = pixels[pixelIndex + 1];
+                            const b = pixels[pixelIndex + 2];
+                            const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+                            if (luminance < threshold) {
+                                byte |= (1 << (7 - bit));
+                            }
+                        }
+                    }
+                    bitmapData += String.fromCharCode(byte);
+                }
+            }
+            
+            resolve(commands + header + bitmapData + '\n');
+        };
+        img.onerror = (err) => {
+            console.error("Failed to load image for printing.", err);
+            reject("Image load error");
+        };
+        img.src = dataUrl;
+    });
+}
+
+
 async function generateReceiptESCPOS(data) {
     const settings = await getAllFromDB('settings');
     const settingsMap = new Map(settings.map(s => [s.key, s.value]));
@@ -3187,8 +3252,10 @@ async function generateReceiptESCPOS(data) {
     const storeAddress = settingsMap.get('storeAddress') || '';
     const feedbackPhone = settingsMap.get('storeFeedbackPhone') || '';
     const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
+    const storeLogo = settingsMap.get('storeLogo') || null;
     const paperSize = settingsMap.get('printerPaperSize') || '80mm';
     const paperWidthChars = paperSize === '58mm' ? 32 : 48;
+    const paperWidthPixels = paperSize === '58mm' ? 384 : 576;
 
     const ESC = '\x1B';
     const GS = '\x1D';
@@ -3215,6 +3282,17 @@ async function generateReceiptESCPOS(data) {
     
     let commands = '';
     commands += `${ESC}@`; // Initialize printer
+    
+    // Add logo commands if logo exists
+    if (storeLogo) {
+        try {
+            const logoCommands = await imageToEscPos(storeLogo, paperWidthPixels);
+            commands += logoCommands;
+        } catch (error) {
+            console.error('Could not generate logo commands for printing:', error);
+            // Continue without the logo
+        }
+    }
     
     commands += align('center');
     commands += bold(true) + setSize(2, 2) + storeName + LF;
