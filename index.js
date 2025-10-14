@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -799,6 +798,20 @@ function formatCurrency(amount) {
     return Math.round(amount).toLocaleString('id-ID');
 }
 
+/**
+ * Converts a Date object or ISO string to a local YYYY-MM-DD string.
+ * @param {Date|string} dateInput The date to convert.
+ * @returns {string} The formatted local date string.
+ */
+function getLocalDateString(dateInput) {
+    const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+
 function formatReceiptDate(isoString) {
     if (!isoString) return '';
     const date = new Date(isoString);
@@ -855,14 +868,14 @@ function loadDashboard() {
     // Always update the displayed date string (e.g., "Kamis, 1 Agustus 2024")
     updateDashboardDate();
 
-    // Set the date for the auto-refresh check
-    lastDashboardLoadDate = new Date().toISOString().split('T')[0];
+    // Set the date for the auto-refresh check using local date
+    lastDashboardLoadDate = getLocalDateString(new Date());
 
     console.log('Refreshing dashboard stats.');
 
     const today = new Date();
-    const todayString = today.toISOString().split('T')[0];
-    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    const todayString = getLocalDateString(today);
+    const monthStart = getLocalDateString(new Date(today.getFullYear(), today.getMonth(), 1));
     
     getAllFromDB('transactions').then(transactions => {
         dashboardTransactions = transactions; // Store for chart use
@@ -871,7 +884,7 @@ function loadDashboard() {
         let monthSales = 0;
         
         transactions.forEach(t => {
-            const transactionDate = t.date.split('T')[0];
+            const transactionDate = getLocalDateString(t.date);
             if (transactionDate === todayString) {
                 todaySales += t.total;
                 todayTransactionsCount++;
@@ -4163,7 +4176,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Periodically check if dashboard needs refresh
         setInterval(() => {
-            const today = new Date().toISOString().split('T')[0];
+            const today = getLocalDateString(new Date());
             if (currentPage === 'dashboard' && lastDashboardLoadDate !== today) {
                 console.log('Day has changed, refreshing dashboard.');
                 loadDashboard();
