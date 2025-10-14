@@ -3090,20 +3090,29 @@ async function _generateReceiptTextForRawBT(data) {
     (data.fees || []).forEach(fee => {
         let feeName = fee.name;
         if (fee.type === 'percentage') feeName += ` ${fee.value}%`;
-        summaryItems.push({ label: feeName, value: `Rp. ${formatCurrency(fee.amount)}` });
+        summaryItems.push({ label: feeName, value: `Rp.${formatCurrency(fee.amount)}` });
     });
-
-    summaryItems.push(
-        { label: "TOTAL", value: `Rp.${formatCurrency(data.total)}`, isBold: true },
-        { label: "TUNAI", value: `Rp.${formatCurrency(data.cashPaid)}` },
-        { label: "KEMBALI", value: `Rp. ${formatCurrency(data.change)}` }
-    );
     
+    // Print subtotal and fees
     summaryItems.forEach(item => {
         const spaces = ' '.repeat(Math.max(1, paperWidthChars - item.label.length - item.value.length));
-        if(item.isBold) receipt += ESC + 'E' + '\x01'; // Bold on
         receipt += item.label + spaces + item.value + LF;
-        if(item.isBold) receipt += ESC + 'E' + '\x00'; // Bold off
+    });
+
+    receipt += line; // Add separator before TOTAL
+
+    // Print final totals
+    const finalSummaryItems = [
+        { label: "TOTAL", value: `Rp.${formatCurrency(data.total)}`, isBold: true },
+        { label: "TUNAI", value: `Rp.${formatCurrency(data.cashPaid)}` },
+        { label: "KEMBALI", value: `Rp.${formatCurrency(data.change)}` }
+    ];
+
+    finalSummaryItems.forEach(item => {
+        const spaces = ' '.repeat(Math.max(1, paperWidthChars - item.label.length - item.value.length));
+        if (item.isBold) receipt += ESC + 'E' + '\x01'; // Bold on
+        receipt += item.label + spaces + item.value + LF;
+        if (item.isBold) receipt += ESC + 'E' + '\x00'; // Bold off
     });
     
     receipt += doubleLine;
@@ -3166,25 +3175,87 @@ window.testPrint = async function() {
 
 async function generateReceiptContent(transactionData, targetElementId = 'receiptContent') {
     const contentEl = document.getElementById(targetElementId);
-    
+    if (!contentEl) return;
+
     const settings = await getAllFromDB('settings');
     const settingsMap = new Map(settings.map(s => [s.key, s.value]));
-    const storeLogo = settingsMap.get('storeLogo') || null;
-    const logoHtml = storeLogo 
-        ? `<div id="receiptLogoContainer"><img src="${storeLogo}" alt="Logo Toko"></div>` 
-        : '';
+    const storeName = settingsMap.get('storeName') || 'Toko Anda';
+    const storeAddress = settingsMap.get('storeAddress') || '';
+    const feedbackPhone = settingsMap.get('storeFeedbackPhone') || '';
+    const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
+    const storeLogo = settingsMap.get('storeLogo');
+
+    let html = '';
+
+    // Logo
+    if (storeLogo) {
+        html += `<div id="receiptLogoContainer"><img src="${storeLogo}" alt="Logo Toko"></div>`;
+    }
+
+    // Header
+    html += `<div style="text-align: center;">`;
+    html += `<h2 style="font-weight: bold; margin: 0; font-size: 1.1em;">${storeName}</h2>`;
+    if (storeAddress) {
+        html += `<p style="margin: 2px 0; font-size: 0.9em;">${storeAddress.replace(/\n/g, '<br>')}</p>`;
+    }
+    html += `</div>`;
+
+    // Divider
+    html += `<div class="receipt-divider" style="margin: 4px 0;">==========================================</div>`;
+
+    // Transaction Info
+    html += `<div class="receipt-line-justify"><span>No:</span><span>${transactionData.id}</span></div>`;
+    html += `<div class="receipt-line-justify"><span>Tgl:</span><span>${formatReceiptDate(transactionData.date)}</span></div>`;
     
-    const textReceipt = await _generateReceiptTextForRawBT(transactionData);
-    // Convert text receipt to HTML for preview
-    const htmlReceipt = textReceipt
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;')
-        .replace(/\n/g, '<br>');
-        
-    contentEl.innerHTML = logoHtml + `<pre class="receipt-modal-content" style="white-space: pre-wrap; word-break: break-all;">${textReceipt}</pre>`;
+    // Divider
+    html += `<div class="receipt-divider" style="margin: 4px 0;">------------------------------------------</div>`;
+
+    // Items
+    transactionData.items.forEach(item => {
+        const totalItemPrice = formatCurrency(item.effectivePrice * item.quantity);
+        html += `<div class="receipt-line-justify">
+                    <span>${item.name} x${item.quantity}</span>
+                    <span>Rp ${totalItemPrice}</span>
+                 </div>`;
+        if (item.discountPercentage > 0) {
+            html += `<div style="font-size: 0.8em; padding-left: 8px;">@${formatCurrency(item.price)} Disc ${item.discountPercentage}%</div>`;
+        }
+    });
+    
+    // Divider
+    html += `<div class="receipt-divider" style="margin: 4px 0;">------------------------------------------</div>`;
+    
+    // Summary
+    const subtotalAfterDiscount = transactionData.subtotal - transactionData.totalDiscount;
+    html += `<div class="receipt-line-justify"><span>Subtotal:</span><span>Rp ${formatCurrency(subtotalAfterDiscount)}</span></div>`;
+    
+    (transactionData.fees || []).forEach(fee => {
+        let feeName = fee.name;
+        if (fee.type === 'percentage') feeName += ` ${fee.value}%`;
+        html += `<div class="receipt-line-justify"><span>${feeName}:</span><span>Rp ${formatCurrency(fee.amount)}</span></div>`;
+    });
+
+    // Add separator before TOTAL
+    html += `<div class="receipt-divider" style="margin: 4px 0;">------------------------------------------</div>`;
+
+    html += `<div class="receipt-line-justify" style="font-weight: bold;"><span>TOTAL:</span><span>Rp ${formatCurrency(transactionData.total)}</span></div>`;
+    html += `<div class="receipt-line-justify"><span>TUNAI:</span><span>Rp ${formatCurrency(transactionData.cashPaid)}</span></div>`;
+    html += `<div class="receipt-line-justify"><span>KEMBALI:</span><span>Rp ${formatCurrency(transactionData.change)}</span></div>`;
+
+    // Divider
+    html += `<div class="receipt-divider" style="margin: 4px 0;">==========================================</div>`;
+    
+    // Footer
+    html += `<div style="text-align: center; margin-top: 8px;">`;
+    if (footerText) {
+        html += `<p style="margin: 2px 0; font-size: 0.9em;">${footerText.replace(/\n/g, '<br>')}</p>`;
+    }
+    if (feedbackPhone) {
+        html += `<p style="margin: 2px 0; font-size: 0.9em;">Kritik/Saran: ${feedbackPhone}</p>`;
+    }
+    html += `</div>`;
+
+    contentEl.innerHTML = html;
 }
 
 window.showPreviewReceiptModal = async function() {
