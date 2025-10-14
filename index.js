@@ -3022,7 +3022,7 @@ async function exportReportToCSV() {
 }
 window.exportReportToCSV = exportReportToCSV;
 
-// --- RECEIPT PRINTING ---
+// --- RECEIPT PRINTING (REFACTORED) ---
 
 /**
  * Converts a Uint8Array to a Base64 string and sends it to RawBT via URL intent.
@@ -3066,16 +3066,19 @@ async function _generateReceiptText(transactionData, isPreview) {
     };
     const centerText = (text) => {
         if (!text) return ''.padStart(paperWidthChars, ' ');
-        const padding = Math.max(0, paperWidthChars - text.length);
-        const leftPad = Math.floor(padding / 2);
-        return ' '.repeat(leftPad) + text;
+        const textLines = text.split('\n');
+        return textLines.map(line => {
+            const padding = Math.max(0, paperWidthChars - line.length);
+            const leftPad = Math.floor(padding / 2);
+            return ' '.repeat(leftPad) + line;
+        }).join('\n');
     };
 
     let receiptText = "";
     
     // Header
     receiptText += centerText(storeName) + '\n';
-    receiptText += centerText(storeAddress) + '\n';
+    if (storeAddress) receiptText += centerText(storeAddress) + '\n';
     receiptText += receiptLine('=') + '\n';
     receiptText += `No: ${transactionData.id || (isPreview ? 'PREVIEW' : 'N/A')}\n`;
     receiptText += `Tgl: ${formatReceiptDate(transactionData.date)}\n`;
@@ -3121,9 +3124,9 @@ async function _generateReceiptText(transactionData, isPreview) {
 
     // Footer
     receiptText += receiptLine('=') + '\n';
-    footerText.split('\n').forEach(line => {
-        receiptText += centerText(line) + '\n';
-    });
+    if (footerText) {
+        receiptText += centerText(footerText) + '\n';
+    }
     if (feedbackPhone) {
         receiptText += centerText(`Kritik/Saran: ${feedbackPhone}`) + '\n';
     }
@@ -3131,6 +3134,39 @@ async function _generateReceiptText(transactionData, isPreview) {
     return receiptText;
 }
 
+/**
+ * Generates HTML for the on-screen receipt preview using the pre-formatted text.
+ * @param {object} data The transaction data.
+ * @param {boolean} isPreview True if it's for the preview modal.
+ * @returns {Promise<string>} A promise that resolves with the HTML string.
+ */
+async function _generateReceiptHTML(data, isPreview) {
+    const settings = await getAllFromDB('settings');
+    const settingsMap = new Map(settings.map(s => [s.key, s.value]));
+    const logoData = settingsMap.get('storeLogo') || null;
+    const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
+
+    // 1. Generate the master plain text
+    let receiptText = await _generateReceiptText(data, isPreview);
+
+    // 2. Prepare logo HTML if needed
+    const logoHtml = showLogo && logoData 
+        ? `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 2px;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto;"></div>` 
+        : '';
+        
+    // 3. Create a <pre> element to preserve formatting
+    const pre = document.createElement('pre');
+    pre.textContent = receiptText;
+    
+    // 4. Find the TOTAL line and wrap it in <b> tags for emphasis in the preview
+    pre.innerHTML = pre.innerHTML.replace(
+        /^(TOTAL\s+Rp\..*)$/m, // Use ^ and m flag for multiline match
+        `<b>$1</b>`
+    );
+
+    // 5. Combine and return the final HTML
+    return logoHtml + pre.outerHTML;
+}
 
 /**
  * Generates raw ESC/POS commands for printing a receipt using the pre-formatted text.
@@ -3201,40 +3237,16 @@ async function generateReceiptEscPos(transactionData) {
 }
 
 /**
- * Generates HTML for the on-screen receipt preview using the pre-formatted text.
- * @param {object} data The transaction data.
- * @param {boolean} isPreview True if it's for the preview modal.
- * @returns {Promise<string>} A promise that resolves with the HTML string.
+ * Renders the receipt content (HTML) into a specified element.
+ * @param {object} transactionData - The transaction object.
+ * @param {string} [targetElementId='receiptContent'] - The ID of the element to render into.
  */
-async function _generateReceiptHTML(data, isPreview) {
-    const settings = await getAllFromDB('settings');
-    const settingsMap = new Map(settings.map(s => [s.key, s.value]));
-    const logoData = settingsMap.get('storeLogo') || null;
-    const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
-
-    // 1. Generate the master plain text
-    let receiptText = await _generateReceiptText(data, isPreview);
-
-    // 2. Prepare logo HTML if needed
-    const logoHtml = showLogo && logoData 
-        ? `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 2px;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto;"></div>` 
-        : '';
-        
-    // 3. Create a <pre> element to preserve formatting
-    const pre = document.createElement('pre');
-    pre.textContent = receiptText;
-    
-    // 4. Find the TOTAL line and wrap it in <b> tags for emphasis in the preview
-    const totalLineText = `TOTAL           Rp.${formatCurrency(data.total)}`;
-    pre.innerHTML = pre.innerHTML.replace(
-        /TOTAL\s+Rp\..*/,
-        (match) => `<b>${match}</b>`
-    );
-
-    // 5. Combine and return the final HTML
-    return logoHtml + pre.outerHTML;
+async function generateReceiptContent(transactionData, targetElementId = 'receiptContent') {
+    const contentEl = document.getElementById(targetElementId);
+    if (contentEl) {
+        contentEl.innerHTML = await _generateReceiptHTML(transactionData, targetElementId === 'previewReceiptContent');
+    }
 }
-
 
 window.printReceipt = async function(isAutoPrint = false) {
     if (!isPrinterReady) {
@@ -3330,18 +3342,12 @@ window.closePrintHelpModal = function() {
     if (modal) modal.classList.add('hidden');
 };
 
-async function generateReceiptContent(transactionData, targetElementId = 'receiptContent') {
-    const contentEl = document.getElementById(targetElementId);
-    contentEl.innerHTML = await _generateReceiptHTML(transactionData, targetElementId === 'previewReceiptContent');
-}
-
 window.showPreviewReceiptModal = async function() {
     if (cart.items.length === 0) {
         showToast('Keranjang kosong, tidak ada struk untuk ditampilkan.');
         return;
     }
     
-    // --- START OF ROUNDING FIX ---
     const subtotalAfterDiscount = cart.items.reduce((sum, item) => {
         return sum + Math.round(item.effectivePrice * item.quantity);
     }, 0);
@@ -3357,7 +3363,6 @@ window.showPreviewReceiptModal = async function() {
     
     const total = subtotalAfterDiscount + totalFeeAmount;
 
-    // For consistency with transaction object structure for the receipt generator
     const subtotal_raw = cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const totalDiscount_raw = cart.items.reduce((sum, item) => {
          const discountAmount = item.price * (item.discountPercentage / 100);
@@ -3370,11 +3375,10 @@ window.showPreviewReceiptModal = async function() {
         totalDiscount: totalDiscount_raw,
         fees: calculatedFees,
         total,
-        cashPaid: 0, // Preview doesn't have cash paid
-        change: 0,   // Preview doesn't have change
+        cashPaid: 0,
+        change: 0,
         date: new Date().toISOString()
     };
-    // --- END OF ROUNDING FIX ---
     
     await generateReceiptContent(previewData, 'previewReceiptContent');
     document.getElementById('previewReceiptModal').classList.remove('hidden');
