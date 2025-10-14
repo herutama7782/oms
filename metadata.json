@@ -1,5 +1,5 @@
 {
-  "name": "(OK) POS Mobile",
+  "name": "(OK) POS Mobile + Allow Camera, Bluetooth, Location, Hutang Piutang",
   "description": "A mobile-first Point of Sale application with barcode scanning for small businesses.",
   "requestFramePermissions": [
     "camera",
