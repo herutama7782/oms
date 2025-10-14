@@ -3022,18 +3022,6 @@ window.sendToRawBT = function(data) {
 };
 
 /**
- * Generates a justified line for the receipt.
- * @param {string} left The left-aligned text.
- * @param {string} right The right-aligned text.
- * @param {number} width The total character width of the line.
- * @returns {string} The formatted line.
- */
-function formatLine(left, right, width) {
-    const spaces = Math.max(0, width - left.length - right.length);
-    return left + ' '.repeat(spaces) + right;
-}
-
-/**
  * Generates raw ESC/POS commands for printing a receipt.
  * @param {object} transactionData The transaction data object.
  * @returns {Promise<Uint8Array>} A promise that resolves with the encoded commands.
@@ -3093,6 +3081,12 @@ async function generateReceiptEscPos(transactionData) {
         }
     }
 
+    // Helper to format a justified line
+    const formatLine = (left, right) => {
+        const spaces = Math.max(0, paperWidthChars - left.length - right.length);
+        return left + ' '.repeat(spaces) + right;
+    };
+
     // Header
     encoder
         .align('center')
@@ -3109,32 +3103,32 @@ async function generateReceiptEscPos(transactionData) {
         encoder.line(`${item.name} x${item.quantity}`);
         if (item.discountPercentage > 0) {
             const priceDetailText = `@ Rp.${formatCurrency(item.price)} Disc ${item.discountPercentage}%`;
-            encoder.line(formatLine(priceDetailText, `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`, paperWidthChars));
+            encoder.line(formatLine(priceDetailText, `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`));
         } else {
-             encoder.line(formatLine(`@ Rp.${formatCurrency(item.price)}`, `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`, paperWidthChars));
+             encoder.line(formatLine(`@ Rp.${formatCurrency(item.price)}`, `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`));
         }
     });
 
     // Summary
     encoder.line(receiptLine('-', paperWidthChars));
     const subtotalAfterDiscount = transactionData.subtotal - transactionData.totalDiscount;
-    encoder.line(formatLine('Subtotal', `Rp.${formatCurrency(subtotalAfterDiscount)}`, paperWidthChars));
+    encoder.line(formatLine('Subtotal', `Rp.${formatCurrency(subtotalAfterDiscount)}`));
     
     if (transactionData.fees && transactionData.fees.length > 0) {
         transactionData.fees.forEach(fee => {
             let feeName = fee.name;
             if (fee.type === 'percentage') feeName += ` ${fee.value}%`;
-            encoder.line(formatLine(feeName, `Rp. ${formatCurrency(fee.amount)}`, paperWidthChars));
+            encoder.line(formatLine(feeName, `Rp. ${formatCurrency(fee.amount)}`));
         });
     }
 
     encoder.line(receiptLine('-', paperWidthChars));
     encoder
         .bold(true)
-        .line(formatLine('TOTAL', `Rp.${formatCurrency(transactionData.total)}`, paperWidthChars))
+        .line(formatLine('TOTAL', `Rp.${formatCurrency(transactionData.total)}`))
         .bold(false)
-        .line(formatLine('TUNAI', `Rp.${formatCurrency(transactionData.cashPaid)}`, paperWidthChars))
-        .line(formatLine('KEMBALI', `Rp. ${formatCurrency(transactionData.change)}`, paperWidthChars));
+        .line(formatLine('TUNAI', `Rp.${formatCurrency(transactionData.cashPaid)}`))
+        .line(formatLine('KEMBALI', `Rp. ${formatCurrency(transactionData.change)}`));
 
     // Footer
     encoder
@@ -3247,6 +3241,10 @@ window.closePrintHelpModal = function() {
 };
 
 async function _generateReceiptHTML(data, isPreview) {
+    // This function now builds a single text string and places it in a <pre> tag.
+    // This ensures that the whitespace and alignment calculated by the helper functions
+    // are perfectly preserved, making the preview an accurate reflection of the printed receipt.
+
     const settings = await getAllFromDB('settings');
     const settingsMap = new Map(settings.map(s => [s.key, s.value]));
 
@@ -3259,23 +3257,32 @@ async function _generateReceiptHTML(data, isPreview) {
     const paperSize = settingsMap.get('printerPaperSize') || '80mm';
     const paperWidthChars = paperSize === '58mm' ? 32 : 42;
 
-    const escapeHtml = (unsafe) => {
-        if (typeof unsafe !== 'string') return unsafe;
-        return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-    };
-    
-    const formatLine = (left, right, width) => {
-        const spaces = Math.max(0, width - left.length - right.length);
+    // Helpers to mimic ESC/POS text formatting
+    const receiptLine = (char) => char.repeat(paperWidthChars);
+    const formatLine = (left, right) => {
+        const spaces = Math.max(0, paperWidthChars - left.length - right.length);
         return left + ' '.repeat(spaces) + right;
     };
+    const centerText = (text) => {
+        if (!text) return ''.padStart(paperWidthChars, ' ');
+        const padding = Math.max(0, paperWidthChars - text.length);
+        const leftPad = Math.floor(padding / 2);
+        return ' '.repeat(leftPad) + text;
+    };
 
-    // --- Items ---
-    let itemsHtml = '';
+    let receiptText = "";
+    
+    // Header - Mirroring generateReceiptEscPos
+    receiptText += centerText(storeName) + '\n';
+    receiptText += centerText(storeAddress) + '\n';
+    receiptText += receiptLine('=') + '\n';
+    receiptText += `No: ${data.id || (isPreview ? 'PREVIEW' : 'N/A')}\n`;
+    receiptText += `Tgl: ${formatReceiptDate(data.date)}\n`;
+    receiptText += receiptLine('-') + '\n';
+
+    // Items
     data.items.forEach(item => {
-        // Line 1: Item name and quantity, left-aligned, to match ESC/POS output.
-        itemsHtml += `<div>${escapeHtml(`${item.name} x${item.quantity}`)}</div>`;
-
-        // Line 2: Price details, justified, to match ESC/POS output.
+        receiptText += `${item.name} x${item.quantity}\n`;
         const totalItemPriceText = `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`;
         let priceDetailText;
         if (item.discountPercentage > 0) {
@@ -3283,14 +3290,13 @@ async function _generateReceiptHTML(data, isPreview) {
         } else {
              priceDetailText = `@ Rp.${formatCurrency(item.price)}`;
         }
-        
-        itemsHtml += `<div>${escapeHtml(formatLine(priceDetailText, totalItemPriceText, paperWidthChars))}</div>`;
+        receiptText += formatLine(priceDetailText, totalItemPriceText) + '\n';
     });
 
-    // --- Summary ---
-    let summaryHtml = `<div class="receipt-divider">${receiptLine('-', paperWidthChars)}</div>`;
+    // Summary
+    receiptText += receiptLine('-') + '\n';
     const subtotalAfterDiscount = data.subtotal - data.totalDiscount;
-    summaryHtml += `<div>${escapeHtml(formatLine("Subtotal", `Rp.${formatCurrency(subtotalAfterDiscount)}`, paperWidthChars))}</div>`;
+    receiptText += formatLine('Subtotal', `Rp.${formatCurrency(subtotalAfterDiscount)}`) + '\n';
     
     if (data.fees && data.fees.length > 0) {
         data.fees.forEach(fee => {
@@ -3299,40 +3305,42 @@ async function _generateReceiptHTML(data, isPreview) {
                 feeName += ` ${fee.value}%`;
             }
             const feeAmount = `Rp. ${formatCurrency(fee.amount)}`;
-            summaryHtml += `<div>${escapeHtml(formatLine(feeName, feeAmount, paperWidthChars))}</div>`;
+            receiptText += formatLine(feeName, feeAmount) + '\n';
         });
     }
     
-    summaryHtml += `<div class="receipt-divider">${receiptLine('-', paperWidthChars)}</div>`;
-    summaryHtml += `<div style="font-weight: bold;">${escapeHtml(formatLine("TOTAL", `Rp.${formatCurrency(data.total)}`, paperWidthChars))}</div>`;
-    summaryHtml += `<div>${escapeHtml(formatLine("TUNAI", `Rp.${formatCurrency(data.cashPaid)}`, paperWidthChars))}</div>`;
-    summaryHtml += `<div>${escapeHtml(formatLine("KEMBALI", `Rp. ${formatCurrency(data.change)}`, paperWidthChars))}</div>`;
+    receiptText += receiptLine('-') + '\n';
+    const totalLineText = formatLine('TOTAL', `Rp.${formatCurrency(data.total)}`);
+    receiptText += totalLineText + '\n';
+    receiptText += formatLine('TUNAI', `Rp.${formatCurrency(data.cashPaid)}`) + '\n';
+    receiptText += formatLine('KEMBALI', `Rp. ${formatCurrency(data.change)}`) + '\n';
 
-    // --- Footer ---
-    const footerLines = escapeHtml(footerText).split('\n').map(line => `<p style="margin: 0;">${line}</p>`).join('');
-    const feedbackHtml = feedbackPhone ? `<p style="margin: 0; font-size: 0.8rem;">Kritik/Saran: ${escapeHtml(feedbackPhone)}</p>` : '';
+    // Footer
+    receiptText += receiptLine('=') + '\n';
+    footerText.split('\n').forEach(line => {
+        receiptText += centerText(line) + '\n';
+    });
+    if (feedbackPhone) {
+        receiptText += centerText(`Kritik/Saran: ${feedbackPhone}`) + '\n';
+    }
+
+    // Final HTML assembly
+    const logoHtml = showLogo && logoData 
+        ? `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 2px;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto;"></div>` 
+        : '';
+
+    const pre = document.createElement('pre');
+    pre.textContent = receiptText;
     
-    return (
-        `${showLogo && logoData ? `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 2px;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto;"></div>` : ''}` +
-        `<div style="text-align: center;">` +
-            `<h2 style="font-size: 1.1rem; font-weight: bold; margin: 0;">${escapeHtml(storeName)}</h2>` +
-            `<p style="margin: 0; font-size: 0.8rem;">${escapeHtml(storeAddress)}</p>` +
-        `</div>` +
-        `<div class="receipt-divider">${receiptLine('=', paperWidthChars)}</div>` +
-        `<div style="font-size: 0.8rem;">` +
-            `<div>No: ${data.id || (isPreview ? 'PREVIEW' : 'N/A')}</div>` +
-            `<div>Tgl: ${formatReceiptDate(data.date)}</div>` +
-        `</div>` +
-        `<div class="receipt-divider">${receiptLine('-', paperWidthChars)}</div>` +
-        `<div style="font-size: 0.9rem;">${itemsHtml}</div>` +
-        `${summaryHtml}` +
-        `<div class="receipt-divider" style="margin-top: 2px;">${receiptLine('=', paperWidthChars)}</div>` +
-        `<div style="text-align: center; margin-top: 4px; font-size: 0.8rem;">` +
-            `${footerLines}` +
-            `${feedbackHtml}` +
-        `</div>`
+    // Bold the TOTAL line for better visual hierarchy, replicating the ESC/POS command.
+    pre.innerHTML = pre.innerHTML.replace(
+        totalLineText,
+        (match) => `<b>${match}</b>`
     );
+
+    return logoHtml + pre.outerHTML;
 }
+
 
 async function generateReceiptContent(transactionData, targetElementId = 'receiptContent') {
     const contentEl = document.getElementById(targetElementId);
