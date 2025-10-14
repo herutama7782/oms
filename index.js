@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -2267,6 +2266,13 @@ window.completeTransaction = async function() {
         
         currentReceiptTransaction = { ...transaction, id: addedId };
 
+        // Check setting and trigger print immediately after saving.
+        const autoPrint = await getSettingFromDB('autoPrintReceipt');
+        if (autoPrint && isPrinterReady) {
+            // No need to await, let it print in the background while the modal shows
+            printReceipt(true); 
+        }
+
         showReceiptModal();
         
     } catch (error) {
@@ -2288,13 +2294,6 @@ function showReceiptModal() {
     const actionButton = document.getElementById('receiptActionButton');
     actionButton.textContent = 'Transaksi Baru';
     actionButton.onclick = startNewTransaction;
-
-    // Auto print if enabled
-    getSettingFromDB('autoPrintReceipt').then(autoPrint => {
-        if (autoPrint && isPrinterReady) {
-            printReceipt(true);
-        }
-    });
 }
 
 function startNewTransaction() {
