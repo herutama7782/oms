@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -1880,17 +1881,16 @@ function updateCartDisplay() {
         paymentButton.classList.remove('opacity-50', 'cursor-not-allowed');
     }
     
-    const subtotal = cart.items.reduce((sum, item) => sum + (item.effectivePrice * item.quantity), 0);
+    // --- START OF ROUNDING FIX ---
+    // Calculate subtotal by summing the rounded total of each line item.
+    const subtotal = cart.items.reduce((sum, item) => sum + Math.round(item.effectivePrice * item.quantity), 0);
     
+    // Calculate fees based on the consistent, rounded subtotal.
     let totalFees = 0;
     cartFeesEl.innerHTML = '';
     cart.fees.forEach(fee => {
-        let feeAmount = 0;
-        if (fee.type === 'percentage') {
-            feeAmount = subtotal * (fee.value / 100);
-        } else {
-            feeAmount = fee.value;
-        }
+        const feeAmountRaw = fee.type === 'percentage' ? subtotal * (fee.value / 100) : fee.value;
+        const feeAmount = Math.round(feeAmountRaw);
         totalFees += feeAmount;
         
         const feeElement = document.createElement('div');
@@ -1902,10 +1902,13 @@ function updateCartDisplay() {
         cartFeesEl.appendChild(feeElement);
     });
     
+    // The final total is a simple sum of integers.
     const total = subtotal + totalFees;
 
     cartSubtotalEl.textContent = `Rp ${formatCurrency(subtotal)}`;
     cartTotalEl.textContent = `Rp ${formatCurrency(total)}`;
+    // --- END OF ROUNDING FIX ---
+
     updateCartFabBadge();
 }
 
@@ -2099,13 +2102,16 @@ window.showPaymentModal = function() {
         showToast('Keranjang kosong. Tidak dapat melakukan pembayaran.');
         return;
     }
-    const total = cart.items.reduce((sum, item) => sum + (item.effectivePrice * item.quantity), 0);
-    const subtotal = cart.items.reduce((sum, item) => sum + (item.effectivePrice * item.quantity), 0);
+    // --- START OF ROUNDING FIX ---
+    const subtotal = cart.items.reduce((sum, item) => sum + Math.round(item.effectivePrice * item.quantity), 0);
+
     let totalFees = 0;
     cart.fees.forEach(fee => {
-        totalFees += fee.type === 'percentage' ? subtotal * (fee.value / 100) : fee.value;
+        const feeAmountRaw = fee.type === 'percentage' ? subtotal * (fee.value / 100) : fee.value;
+        totalFees += Math.round(feeAmountRaw);
     });
     const finalTotal = subtotal + totalFees;
+    // --- END OF ROUNDING FIX ---
 
     (document.getElementById('paymentTotal')).textContent = `Rp ${formatCurrency(finalTotal)}`;
     (document.getElementById('paymentModal')).classList.remove('hidden');
@@ -2139,12 +2145,16 @@ window.handleQuickCash = function(amount) {
 
 document.getElementById('cashPaidInput')?.addEventListener('input', (e) => {
     const cashPaidValue = e.target.value;
-    const subtotal = cart.items.reduce((sum, item) => sum + (item.effectivePrice * item.quantity), 0);
+
+    // --- START OF ROUNDING FIX ---
+    const subtotal = cart.items.reduce((sum, item) => sum + Math.round(item.effectivePrice * item.quantity), 0);
     let totalFees = 0;
     cart.fees.forEach(fee => {
-        totalFees += fee.type === 'percentage' ? subtotal * (fee.value / 100) : fee.value;
+        const feeAmountRaw = fee.type === 'percentage' ? subtotal * (fee.value / 100) : fee.value;
+        totalFees += Math.round(feeAmountRaw);
     });
     const total = subtotal + totalFees;
+    // --- END OF ROUNDING FIX ---
 
     const changeEl = document.getElementById('paymentChange');
     const changeLabelEl = document.getElementById('paymentChangeLabel');
@@ -2190,27 +2200,37 @@ window.completeTransaction = async function() {
     spinner.classList.remove('hidden');
 
     try {
-        const cashPaid = parseFloat(document.getElementById('cashPaidInput').value) || 0;
-        const subtotal = cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-        const totalDiscount = cart.items.reduce((sum, item) => {
+        const cashPaid = Math.round(parseFloat(document.getElementById('cashPaidInput').value) || 0);
+
+        // --- START OF ROUNDING FIX ---
+        // Calculate subtotal after discount by summing the rounded total of each line item.
+        // This ensures this value matches exactly what is shown in the cart.
+        const subtotalAfterDiscount = cart.items.reduce((sum, item) => {
+            return sum + Math.round(item.effectivePrice * item.quantity);
+        }, 0);
+
+        // Calculate fees based on the consistent, rounded subtotal.
+        let calculatedFees = [];
+        let totalFeeAmount = 0;
+        cart.fees.forEach(fee => {
+            const feeAmountRaw = fee.type === 'percentage' 
+                ? subtotalAfterDiscount * (fee.value / 100) 
+                : fee.value;
+            const roundedFeeAmount = Math.round(feeAmountRaw);
+            calculatedFees.push({ ...fee, amount: roundedFeeAmount });
+            totalFeeAmount += roundedFeeAmount;
+        });
+
+        // The final total is a simple sum of integers.
+        const total = subtotalAfterDiscount + totalFeeAmount;
+        const change = cashPaid - total;
+
+        // For reporting purposes, we can still store the raw pre-discount subtotal and discount.
+        const subtotal_for_report = cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const totalDiscount_for_report = cart.items.reduce((sum, item) => {
              const discountAmount = item.price * (item.discountPercentage / 100);
              return sum + (discountAmount * item.quantity);
         }, 0);
-
-        let calculatedFees = [];
-        let totalFeeAmount = 0;
-        const subtotalAfterDiscount = subtotal - totalDiscount;
-
-        cart.fees.forEach(fee => {
-            const feeAmount = fee.type === 'percentage' 
-                ? subtotalAfterDiscount * (fee.value / 100) 
-                : fee.value;
-            calculatedFees.push({ ...fee, amount: feeAmount });
-            totalFeeAmount += feeAmount;
-        });
-
-        const total = subtotalAfterDiscount + totalFeeAmount;
-        const change = cashPaid - total;
 
         const transaction = {
             items: cart.items.map(item => ({
@@ -2221,14 +2241,15 @@ window.completeTransaction = async function() {
                 effectivePrice: item.effectivePrice,
                 discountPercentage: item.discountPercentage,
             })),
-            subtotal: subtotal,
-            totalDiscount: totalDiscount,
+            subtotal: subtotal_for_report,
+            totalDiscount: totalDiscount_for_report,
             fees: calculatedFees,
             total: total,
             cashPaid: cashPaid,
             change: change,
             date: new Date().toISOString()
         };
+        // --- END OF ROUNDING FIX ---
 
         const addedId = await putToDB('transactions', transaction);
         await queueSyncAction('CREATE_TRANSACTION', { ...transaction, id: addedId });
@@ -3109,9 +3130,16 @@ async function generateReceiptEscPos(transactionData) {
         }
     });
 
+    // --- START OF ROUNDING FIX ---
+    // Recalculate subtotal using the same consistent rounding logic to ensure the subtotal line is correct.
+    const subtotalAfterDiscount = transactionData.items.reduce((sum, item) => {
+        const priceToUse = item.effectivePrice !== undefined ? item.effectivePrice : (item.price * (1 - (item.discountPercentage || 0) / 100));
+        return sum + Math.round(priceToUse * item.quantity);
+    }, 0);
+    // --- END OF ROUNDING FIX ---
+
     // Summary
     encoder.line(receiptLine('-', paperWidthChars));
-    const subtotalAfterDiscount = transactionData.subtotal - transactionData.totalDiscount;
     encoder.line(formatLine('Subtotal', `Rp.${formatCurrency(subtotalAfterDiscount)}`));
     
     if (transactionData.fees && transactionData.fees.length > 0) {
@@ -3293,9 +3321,17 @@ async function _generateReceiptHTML(data, isPreview) {
         receiptText += formatLine(priceDetailText, totalItemPriceText) + '\n';
     });
 
+    // --- START OF ROUNDING FIX ---
+    // Recalculate subtotal using the same consistent rounding logic to ensure the subtotal line is correct.
+    const subtotalAfterDiscount = data.items.reduce((sum, item) => {
+        // For new transactions, effectivePrice exists. For old ones, it might not.
+        const priceToUse = item.effectivePrice !== undefined ? item.effectivePrice : (item.price * (1 - (item.discountPercentage || 0) / 100));
+        return sum + Math.round(priceToUse * item.quantity);
+    }, 0);
+    // --- END OF ROUNDING FIX ---
+
     // Summary
     receiptText += receiptLine('-') + '\n';
-    const subtotalAfterDiscount = data.subtotal - data.totalDiscount;
     receiptText += formatLine('Subtotal', `Rp.${formatCurrency(subtotalAfterDiscount)}`) + '\n';
     
     if (data.fees && data.fees.length > 0) {
@@ -3352,31 +3388,41 @@ window.showPreviewReceiptModal = async function() {
         showToast('Keranjang kosong, tidak ada struk untuk ditampilkan.');
         return;
     }
-    const subtotal = cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const totalDiscount = cart.items.reduce((sum, item) => {
-         const discountAmount = item.price * (item.discountPercentage / 100);
-         return sum + (discountAmount * item.quantity);
+    
+    // --- START OF ROUNDING FIX ---
+    const subtotalAfterDiscount = cart.items.reduce((sum, item) => {
+        return sum + Math.round(item.effectivePrice * item.quantity);
     }, 0);
-    const subtotalAfterDiscount = subtotal - totalDiscount;
+
     let calculatedFees = [];
     let totalFeeAmount = 0;
     cart.fees.forEach(fee => {
-        const feeAmount = fee.type === 'percentage' ? subtotalAfterDiscount * (fee.value / 100) : fee.value;
-        calculatedFees.push({ ...fee, amount: feeAmount });
-        totalFeeAmount += feeAmount;
+        const feeAmountRaw = fee.type === 'percentage' ? subtotalAfterDiscount * (fee.value / 100) : fee.value;
+        const roundedFeeAmount = Math.round(feeAmountRaw);
+        calculatedFees.push({ ...fee, amount: roundedFeeAmount });
+        totalFeeAmount += roundedFeeAmount;
     });
+    
     const total = subtotalAfterDiscount + totalFeeAmount;
+
+    // For consistency with transaction object structure for the receipt generator
+    const subtotal_raw = cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const totalDiscount_raw = cart.items.reduce((sum, item) => {
+         const discountAmount = item.price * (item.discountPercentage / 100);
+         return sum + (discountAmount * item.quantity);
+    }, 0);
 
     const previewData = {
         items: cart.items,
-        subtotal,
-        totalDiscount,
+        subtotal: subtotal_raw,
+        totalDiscount: totalDiscount_raw,
         fees: calculatedFees,
         total,
-        cashPaid: 0,
-        change: 0,
+        cashPaid: 0, // Preview doesn't have cash paid
+        change: 0,   // Preview doesn't have change
         date: new Date().toISOString()
     };
+    // --- END OF ROUNDING FIX ---
     
     await generateReceiptContent(previewData, 'previewReceiptContent');
     document.getElementById('previewReceiptModal').classList.remove('hidden');
