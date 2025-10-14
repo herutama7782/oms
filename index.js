@@ -3250,52 +3250,45 @@ async function _generateReceiptHTML(data, isPreview) {
         if (typeof unsafe !== 'string') return unsafe;
         return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     };
+    
+    const formatLine = (left, right, width) => {
+        const spaces = Math.max(0, width - left.length - right.length);
+        return left + ' '.repeat(spaces) + right;
+    };
 
     // --- Items ---
     let itemsHtml = '';
     data.items.forEach(item => {
-        const leftPart = `${escapeHtml(item.name)} x${item.quantity}`;
+        const leftPart = `${item.name} x${item.quantity}`;
         const rightPart = `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`;
-        
-        itemsHtml += `<div class="receipt-line-justify"><span>${leftPart}</span><span>${rightPart}</span></div>`;
+        itemsHtml += `<div>${escapeHtml(formatLine(leftPart, rightPart, paperWidthChars))}</div>`;
         
         if (item.discountPercentage > 0) {
             const priceDetailText = `  @ Rp.${formatCurrency(item.price)} Disc ${item.discountPercentage}%`;
-            itemsHtml += `<div style="font-size: 0.8rem;">${priceDetailText}</div>`;
+            itemsHtml += `<div style="font-size: 0.8rem;">${escapeHtml(priceDetailText)}</div>`;
         }
     });
 
     // --- Summary ---
     let summaryHtml = `<div class="receipt-divider">${receiptLine('-', paperWidthChars)}</div>`;
     const subtotalAfterDiscount = data.subtotal - data.totalDiscount;
-    const subtotalText = "Subtotal";
-    const subtotalValue = `Rp.${formatCurrency(subtotalAfterDiscount)}`;
-    summaryHtml += `<div class="receipt-line-justify"><span>${subtotalText}</span><span>${subtotalValue}</span></div>`;
+    summaryHtml += `<div>${escapeHtml(formatLine("Subtotal", `Rp.${formatCurrency(subtotalAfterDiscount)}`, paperWidthChars))}</div>`;
     
     if (data.fees && data.fees.length > 0) {
         data.fees.forEach(fee => {
-            let feeName = escapeHtml(fee.name);
+            let feeName = fee.name;
              if (fee.type === 'percentage') {
                 feeName += ` ${fee.value}%`;
             }
             const feeAmount = `Rp. ${formatCurrency(fee.amount)}`;
-            summaryHtml += `<div class="receipt-line-justify"><span>${feeName}</span><span>${feeAmount}</span></div>`;
+            summaryHtml += `<div>${escapeHtml(formatLine(feeName, feeAmount, paperWidthChars))}</div>`;
         });
     }
     
     summaryHtml += `<div class="receipt-divider">${receiptLine('-', paperWidthChars)}</div>`;
-
-    const totalText = "TOTAL";
-    const totalValue = `Rp.${formatCurrency(data.total)}`;
-    summaryHtml += `<div class="receipt-line-justify" style="font-weight: bold;"><span>${totalText}</span><span>${totalValue}</span></div>`;
-
-    const cashText = "TUNAI";
-    const cashValue = `Rp.${formatCurrency(data.cashPaid)}`;
-    summaryHtml += `<div class="receipt-line-justify"><span>${cashText}</span><span>${cashValue}</span></div>`;
-    
-    const changeText = "KEMBALI";
-    const changeValue = `Rp. ${formatCurrency(data.change)}`;
-    summaryHtml += `<div class="receipt-line-justify"><span>${changeText}</span><span>${changeValue}</span></div>`;
+    summaryHtml += `<div style="font-weight: bold;">${escapeHtml(formatLine("TOTAL", `Rp.${formatCurrency(data.total)}`, paperWidthChars))}</div>`;
+    summaryHtml += `<div>${escapeHtml(formatLine("TUNAI", `Rp.${formatCurrency(data.cashPaid)}`, paperWidthChars))}</div>`;
+    summaryHtml += `<div>${escapeHtml(formatLine("KEMBALI", `Rp. ${formatCurrency(data.change)}`, paperWidthChars))}</div>`;
 
     // --- Footer ---
     const footerLines = escapeHtml(footerText).split('\n').map(line => `<p style="margin: 0;">${line}</p>`).join('');
