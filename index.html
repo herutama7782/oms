@@ -1149,34 +1149,49 @@
                     <button onclick="closePrintHelpModal()" class="text-gray-500 text-2xl">&times;</button>
                 </div>
                 <div class="space-y-4 text-gray-700 text-sm">
-                    <p>Jika hasil cetak struk Anda keluar dalam bentuk teks acak (seperti Base64), ini biasanya karena masalah konfigurasi pada ponsel Anda, bukan pada aplikasi ini.</p>
+                    <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <h3 class="font-semibold text-md mb-2">Cara Kerja Pencetakan</h3>
+                        <ol class="list-decimal list-inside space-y-2">
+                            <li>
+                                <strong>Aplikasi POS Menyiapkan Data:</strong> Saat Anda menekan "Cetak", aplikasi ini mengubah detail transaksi menjadi format perintah khusus untuk printer thermal (ESC/POS).
+                            </li>
+                            <li>
+                                <strong>Data Dikirim ke RawBT:</strong> Data yang sudah diformat ini kemudian "dikirim" ke aplikasi RawBT melalui URL khusus (<code>rawbt:</code>), mirip seperti link <code>mailto:</code> yang membuka aplikasi email.
+                            </li>
+                            <li>
+                                <strong>RawBT Mengambil Alih:</strong> Aplikasi RawBT menerima data, mengelola koneksi Bluetooth ke printer Anda, dan mengirimkan perintah cetak.
+                            </li>
+                        </ol>
+                    </div>
+
+                    <p class="pt-2">Jika hasil cetak struk Anda keluar dalam bentuk teks acak atau tidak tercetak sama sekali, ini biasanya karena masalah konfigurasi pada ponsel Anda, bukan pada aplikasi ini.</p>
                     
                     <div class="p-3 bg-gray-50 border rounded-lg">
-                        <h3 class="font-semibold text-md mb-2">Penyebab Umum:</h3>
+                        <h3 class="font-semibold text-md mb-2">Penyebab Umum Kegagalan Cetak:</h3>
                         <ul class="list-disc list-inside space-y-1">
                             <li>Aplikasi <strong class="text-blue-600">RawBT</strong> tidak ter-install.</li>
-                            <li>Koneksi printer belum diatur di dalam aplikasi RawBT.</li>
-                            <li>Ada aplikasi lain yang mengambil alih fungsi cetak.</li>
+                            <li>Koneksi printer belum diatur dengan benar di dalam aplikasi RawBT.</li>
+                            <li>Ada aplikasi lain yang mencoba menangani perintah cetak.</li>
                         </ul>
                     </div>
 
                     <div class="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                        <h3 class="font-semibold text-md mb-2">Solusi & Metode Cetak:</h3>
-                        <p class="mb-2">Aplikasi ini menyediakan dua cara untuk mencetak:</p>
+                        <h3 class="font-semibold text-md mb-2">Solusi & Metode Cetak Alternatif:</h3>
+                        <p class="mb-2">Aplikasi ini menyediakan dua tombol untuk mencetak:</p>
                         <p><strong>1. Cetak via RawBT (Direkomendasikan):</strong></p>
                         <ul class="list-disc list-inside ml-4 mb-2">
-                            <li>Metode tercepat dan otomatis.</li>
-                            <li><strong>Jika gagal</strong>, coba metode kedua.</li>
+                            <li>Metode tercepat dan otomatis menggunakan cara di atas.</li>
+                            <li><strong>Jika gagal</strong>, coba metode kedua di bawah ini.</li>
                         </ul>
 
                         <p><strong>2. Share ke Printer (Alternatif Andal):</strong></p>
                         <ul class="list-disc list-inside ml-4">
                             <li>Menggunakan menu "Share" bawaan Android.</li>
                             <li>Setelah menekan tombol ini, akan muncul pilihan aplikasi.</li>
-                            <li>Pilih <strong class="text-blue-600">RawBT</strong> dari daftar untuk mencetak.</li>
+                            <li>Pilih <strong class="text-blue-600">RawBT</strong> dari daftar untuk mencetak. Metode ini seringkali lebih stabil.</li>
                         </ul>
                     </div>
-
+                    
                     <a href="https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter" target="_blank" class="btn bg-green-500 text-white w-full py-2 mt-4 block text-center">
                         <i class="fab fa-google-play mr-2"></i>Download RawBT di Play Store
                     </a>

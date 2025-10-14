@@ -3023,7 +3023,6 @@ async function exportReportToCSV() {
 window.exportReportToCSV = exportReportToCSV;
 
 // --- RECEIPT PRINTING ---
-const receiptLine = (char, paperWidthChars) => char.repeat(paperWidthChars);
 
 /**
  * Converts a Uint8Array to a Base64 string and sends it to RawBT via URL intent.
@@ -3043,15 +3042,12 @@ window.sendToRawBT = function(data) {
 };
 
 /**
- * Generates raw ESC/POS commands for printing a receipt.
- * @param {object} transactionData The transaction data object.
- * @returns {Promise<Uint8Array>} A promise that resolves with the encoded commands.
+ * Generates a pre-formatted plain text receipt. This is the single source of truth.
+ * @param {object} transactionData The transaction data.
+ * @param {boolean} isPreview Whether this is for a preview modal.
+ * @returns {Promise<string>} A promise that resolves with the formatted text string.
  */
-async function generateReceiptEscPos(transactionData) {
-    if (!isPrinterReady) {
-        throw new Error('Printer library not loaded.');
-    }
-
+async function _generateReceiptText(transactionData, isPreview) {
     const settings = await getAllFromDB('settings');
     const settingsMap = new Map(settings.map(s => [s.key, s.value]));
 
@@ -3059,15 +3055,103 @@ async function generateReceiptEscPos(transactionData) {
     const storeAddress = settingsMap.get('storeAddress') || '';
     const feedbackPhone = settingsMap.get('storeFeedbackPhone') || '';
     const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
-    const logoData = settingsMap.get('storeLogo') || null;
-    const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
     const paperSize = settingsMap.get('printerPaperSize') || '80mm';
     const paperWidthChars = paperSize === '58mm' ? 32 : 42;
 
-    const encoder = new EscPosEncoder.default();
-    encoder.initialize().codepage('cp850'); // Use a common codepage
+    // Helpers for formatting plain text for a fixed-width font
+    const receiptLine = (char) => char.repeat(paperWidthChars);
+    const formatLine = (left, right) => {
+        const spaces = Math.max(0, paperWidthChars - left.length - right.length);
+        return left + ' '.repeat(spaces) + right;
+    };
+    const centerText = (text) => {
+        if (!text) return ''.padStart(paperWidthChars, ' ');
+        const padding = Math.max(0, paperWidthChars - text.length);
+        const leftPad = Math.floor(padding / 2);
+        return ' '.repeat(leftPad) + text;
+    };
 
-    // Logo
+    let receiptText = "";
+    
+    // Header
+    receiptText += centerText(storeName) + '\n';
+    receiptText += centerText(storeAddress) + '\n';
+    receiptText += receiptLine('=') + '\n';
+    receiptText += `No: ${transactionData.id || (isPreview ? 'PREVIEW' : 'N/A')}\n`;
+    receiptText += `Tgl: ${formatReceiptDate(transactionData.date)}\n`;
+    receiptText += receiptLine('-') + '\n';
+
+    // Items
+    transactionData.items.forEach(item => {
+        receiptText += `${item.name} x${item.quantity}\n`;
+        const totalItemPriceText = `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`;
+        let priceDetailText;
+        if (item.discountPercentage > 0) {
+            priceDetailText = `@ Rp.${formatCurrency(item.price)} Disc ${item.discountPercentage}%`;
+        } else {
+             priceDetailText = `@ Rp.${formatCurrency(item.price)}`;
+        }
+        receiptText += formatLine(priceDetailText, totalItemPriceText) + '\n';
+    });
+    
+    const subtotalAfterDiscount = transactionData.items.reduce((sum, item) => {
+        const priceToUse = item.effectivePrice !== undefined ? item.effectivePrice : (item.price * (1 - (item.discountPercentage || 0) / 100));
+        return sum + Math.round(priceToUse * item.quantity);
+    }, 0);
+
+    // Summary
+    receiptText += receiptLine('-') + '\n';
+    receiptText += formatLine('Subtotal', `Rp.${formatCurrency(subtotalAfterDiscount)}`) + '\n';
+    
+    if (transactionData.fees && transactionData.fees.length > 0) {
+        transactionData.fees.forEach(fee => {
+            let feeName = fee.name;
+             if (fee.type === 'percentage') {
+                feeName += ` ${fee.value}%`;
+            }
+            const feeAmount = `Rp. ${formatCurrency(fee.amount)}`;
+            receiptText += formatLine(feeName, feeAmount) + '\n';
+        });
+    }
+    
+    receiptText += receiptLine('-') + '\n';
+    receiptText += formatLine('TOTAL', `Rp.${formatCurrency(transactionData.total)}`) + '\n';
+    receiptText += formatLine('TUNAI', `Rp.${formatCurrency(transactionData.cashPaid)}`) + '\n';
+    receiptText += formatLine('KEMBALI', `Rp. ${formatCurrency(transactionData.change)}`) + '\n';
+
+    // Footer
+    receiptText += receiptLine('=') + '\n';
+    footerText.split('\n').forEach(line => {
+        receiptText += centerText(line) + '\n';
+    });
+    if (feedbackPhone) {
+        receiptText += centerText(`Kritik/Saran: ${feedbackPhone}`) + '\n';
+    }
+
+    return receiptText;
+}
+
+
+/**
+ * Generates raw ESC/POS commands for printing a receipt using the pre-formatted text.
+ * @param {object} transactionData The transaction data object.
+ * @returns {Promise<Uint8Array>} A promise that resolves with the encoded commands.
+ */
+async function generateReceiptEscPos(transactionData) {
+    if (!isPrinterReady) {
+        throw new Error('Printer library not loaded.');
+    }
+    
+    const settings = await getAllFromDB('settings');
+    const settingsMap = new Map(settings.map(s => [s.key, s.value]));
+    const logoData = settingsMap.get('storeLogo') || null;
+    const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
+    const paperSize = settingsMap.get('printerPaperSize') || '80mm';
+
+    const encoder = new EscPosEncoder.default();
+    encoder.initialize().codepage('cp850');
+
+    // Handle Logo separately as it's a graphical element
     if (showLogo && logoData) {
         try {
             const image = await new Promise((resolve, reject) => {
@@ -3080,7 +3164,6 @@ async function generateReceiptEscPos(transactionData) {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             const maxWidth = paperSize === '58mm' ? 384 : 576;
-            
             let imgWidth = image.width;
             let imgHeight = image.height;
 
@@ -3096,83 +3179,62 @@ async function generateReceiptEscPos(transactionData) {
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             
             encoder.align('center').image(imageData, 'd24');
-
         } catch (e) {
             console.error('Failed to process logo for printing:', e);
         }
     }
 
-    // Helper to format a justified line
-    const formatLine = (left, right) => {
-        const spaces = Math.max(0, paperWidthChars - left.length - right.length);
-        return left + ' '.repeat(spaces) + right;
-    };
-
-    // Header
-    encoder
-        .align('center')
-        .width(2).height(2).line(storeName).width(1).height(1)
-        .line(storeAddress)
-        .line(receiptLine('=', paperWidthChars))
-        .align('left')
-        .text('No: ' + (transactionData.id || 'N/A')).newline()
-        .text('Tgl: ' + formatReceiptDate(transactionData.date)).newline()
-        .line(receiptLine('-', paperWidthChars));
-
-    // Items
-    transactionData.items.forEach(item => {
-        encoder.line(`${item.name} x${item.quantity}`);
-        if (item.discountPercentage > 0) {
-            const priceDetailText = `@ Rp.${formatCurrency(item.price)} Disc ${item.discountPercentage}%`;
-            encoder.line(formatLine(priceDetailText, `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`));
+    // Generate the master text and process it line by line
+    const receiptText = await _generateReceiptText(transactionData, false);
+    encoder.align('left'); // Set default alignment
+    
+    receiptText.split('\n').forEach(line => {
+        if (line.startsWith('TOTAL')) {
+            encoder.bold(true).line(line).bold(false);
         } else {
-             encoder.line(formatLine(`@ Rp.${formatCurrency(item.price)}`, `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`));
+            encoder.line(line);
         }
     });
 
-    // --- START OF ROUNDING FIX ---
-    // Recalculate subtotal using the same consistent rounding logic to ensure the subtotal line is correct.
-    const subtotalAfterDiscount = transactionData.items.reduce((sum, item) => {
-        const priceToUse = item.effectivePrice !== undefined ? item.effectivePrice : (item.price * (1 - (item.discountPercentage || 0) / 100));
-        return sum + Math.round(priceToUse * item.quantity);
-    }, 0);
-    // --- END OF ROUNDING FIX ---
-
-    // Summary
-    encoder.line(receiptLine('-', paperWidthChars));
-    encoder.line(formatLine('Subtotal', `Rp.${formatCurrency(subtotalAfterDiscount)}`));
-    
-    if (transactionData.fees && transactionData.fees.length > 0) {
-        transactionData.fees.forEach(fee => {
-            let feeName = fee.name;
-            if (fee.type === 'percentage') feeName += ` ${fee.value}%`;
-            encoder.line(formatLine(feeName, `Rp. ${formatCurrency(fee.amount)}`));
-        });
-    }
-
-    encoder.line(receiptLine('-', paperWidthChars));
-    encoder
-        .bold(true)
-        .line(formatLine('TOTAL', `Rp.${formatCurrency(transactionData.total)}`))
-        .bold(false)
-        .line(formatLine('TUNAI', `Rp.${formatCurrency(transactionData.cashPaid)}`))
-        .line(formatLine('KEMBALI', `Rp. ${formatCurrency(transactionData.change)}`));
-
-    // Footer
-    encoder
-        .line(receiptLine('=', paperWidthChars))
-        .align('center');
-
-    footerText.split('\n').forEach(line => encoder.line(line));
-    
-    if (feedbackPhone) {
-        encoder.line(`Kritik/Saran: ${feedbackPhone}`);
-    }
-
     encoder.feed(3).cut();
-
     return encoder.encode();
 }
+
+/**
+ * Generates HTML for the on-screen receipt preview using the pre-formatted text.
+ * @param {object} data The transaction data.
+ * @param {boolean} isPreview True if it's for the preview modal.
+ * @returns {Promise<string>} A promise that resolves with the HTML string.
+ */
+async function _generateReceiptHTML(data, isPreview) {
+    const settings = await getAllFromDB('settings');
+    const settingsMap = new Map(settings.map(s => [s.key, s.value]));
+    const logoData = settingsMap.get('storeLogo') || null;
+    const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
+
+    // 1. Generate the master plain text
+    let receiptText = await _generateReceiptText(data, isPreview);
+
+    // 2. Prepare logo HTML if needed
+    const logoHtml = showLogo && logoData 
+        ? `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 2px;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto;"></div>` 
+        : '';
+        
+    // 3. Create a <pre> element to preserve formatting
+    const pre = document.createElement('pre');
+    pre.textContent = receiptText;
+    
+    // 4. Find the TOTAL line and wrap it in <b> tags for emphasis in the preview
+    const totalLineText = `TOTAL           Rp.${formatCurrency(data.total)}`;
+    pre.innerHTML = pre.innerHTML.replace(
+        /TOTAL\s+Rp\..*/,
+        (match) => `<b>${match}</b>`
+    );
+
+    // 5. Combine and return the final HTML
+    return logoHtml + pre.outerHTML;
+}
+
 
 window.printReceipt = async function(isAutoPrint = false) {
     if (!isPrinterReady) {
@@ -3267,116 +3329,6 @@ window.closePrintHelpModal = function() {
     const modal = document.getElementById('printHelpModal');
     if (modal) modal.classList.add('hidden');
 };
-
-async function _generateReceiptHTML(data, isPreview) {
-    // This function now builds a single text string and places it in a <pre> tag.
-    // This ensures that the whitespace and alignment calculated by the helper functions
-    // are perfectly preserved, making the preview an accurate reflection of the printed receipt.
-
-    const settings = await getAllFromDB('settings');
-    const settingsMap = new Map(settings.map(s => [s.key, s.value]));
-
-    const storeName = settingsMap.get('storeName') || 'Toko Anda';
-    const storeAddress = settingsMap.get('storeAddress') || '';
-    const feedbackPhone = settingsMap.get('storeFeedbackPhone') || '';
-    const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
-    const logoData = settingsMap.get('storeLogo') || null;
-    const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
-    const paperSize = settingsMap.get('printerPaperSize') || '80mm';
-    const paperWidthChars = paperSize === '58mm' ? 32 : 42;
-
-    // Helpers to mimic ESC/POS text formatting
-    const receiptLine = (char) => char.repeat(paperWidthChars);
-    const formatLine = (left, right) => {
-        const spaces = Math.max(0, paperWidthChars - left.length - right.length);
-        return left + ' '.repeat(spaces) + right;
-    };
-    const centerText = (text) => {
-        if (!text) return ''.padStart(paperWidthChars, ' ');
-        const padding = Math.max(0, paperWidthChars - text.length);
-        const leftPad = Math.floor(padding / 2);
-        return ' '.repeat(leftPad) + text;
-    };
-
-    let receiptText = "";
-    
-    // Header - Mirroring generateReceiptEscPos
-    receiptText += centerText(storeName) + '\n';
-    receiptText += centerText(storeAddress) + '\n';
-    receiptText += receiptLine('=') + '\n';
-    receiptText += `No: ${data.id || (isPreview ? 'PREVIEW' : 'N/A')}\n`;
-    receiptText += `Tgl: ${formatReceiptDate(data.date)}\n`;
-    receiptText += receiptLine('-') + '\n';
-
-    // Items
-    data.items.forEach(item => {
-        receiptText += `${item.name} x${item.quantity}\n`;
-        const totalItemPriceText = `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`;
-        let priceDetailText;
-        if (item.discountPercentage > 0) {
-            priceDetailText = `@ Rp.${formatCurrency(item.price)} Disc ${item.discountPercentage}%`;
-        } else {
-             priceDetailText = `@ Rp.${formatCurrency(item.price)}`;
-        }
-        receiptText += formatLine(priceDetailText, totalItemPriceText) + '\n';
-    });
-
-    // --- START OF ROUNDING FIX ---
-    // Recalculate subtotal using the same consistent rounding logic to ensure the subtotal line is correct.
-    const subtotalAfterDiscount = data.items.reduce((sum, item) => {
-        // For new transactions, effectivePrice exists. For old ones, it might not.
-        const priceToUse = item.effectivePrice !== undefined ? item.effectivePrice : (item.price * (1 - (item.discountPercentage || 0) / 100));
-        return sum + Math.round(priceToUse * item.quantity);
-    }, 0);
-    // --- END OF ROUNDING FIX ---
-
-    // Summary
-    receiptText += receiptLine('-') + '\n';
-    receiptText += formatLine('Subtotal', `Rp.${formatCurrency(subtotalAfterDiscount)}`) + '\n';
-    
-    if (data.fees && data.fees.length > 0) {
-        data.fees.forEach(fee => {
-            let feeName = fee.name;
-             if (fee.type === 'percentage') {
-                feeName += ` ${fee.value}%`;
-            }
-            const feeAmount = `Rp. ${formatCurrency(fee.amount)}`;
-            receiptText += formatLine(feeName, feeAmount) + '\n';
-        });
-    }
-    
-    receiptText += receiptLine('-') + '\n';
-    const totalLineText = formatLine('TOTAL', `Rp.${formatCurrency(data.total)}`);
-    receiptText += totalLineText + '\n';
-    receiptText += formatLine('TUNAI', `Rp.${formatCurrency(data.cashPaid)}`) + '\n';
-    receiptText += formatLine('KEMBALI', `Rp. ${formatCurrency(data.change)}`) + '\n';
-
-    // Footer
-    receiptText += receiptLine('=') + '\n';
-    footerText.split('\n').forEach(line => {
-        receiptText += centerText(line) + '\n';
-    });
-    if (feedbackPhone) {
-        receiptText += centerText(`Kritik/Saran: ${feedbackPhone}`) + '\n';
-    }
-
-    // Final HTML assembly
-    const logoHtml = showLogo && logoData 
-        ? `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 2px;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto;"></div>` 
-        : '';
-
-    const pre = document.createElement('pre');
-    pre.textContent = receiptText;
-    
-    // Bold the TOTAL line for better visual hierarchy, replicating the ESC/POS command.
-    pre.innerHTML = pre.innerHTML.replace(
-        totalLineText,
-        (match) => `<b>${match}</b>`
-    );
-
-    return logoHtml + pre.outerHTML;
-}
-
 
 async function generateReceiptContent(transactionData, targetElementId = 'receiptContent') {
     const contentEl = document.getElementById(targetElementId);
