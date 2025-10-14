@@ -3001,15 +3001,23 @@ const GS = '\x1D';
 const LF = '\n';
 
 /**
- * Encodes a string to Base64, correctly handling UTF-8 characters.
- * @param {string} str The string to encode.
+ * Encodes a raw command string to Base64 without corrupting control characters.
+ * This is crucial for sending ESC/POS commands.
+ * @param {string} str The raw command string.
  * @returns {string} The Base64 encoded string.
  */
 function toBase64(str) {
-    // encodeURIComponent handles multi-byte characters, and unescape converts them
-    // back to single-byte characters in a way that btoa can process.
-    return btoa(unescape(encodeURIComponent(str)));
+    const bytes = new Uint8Array(str.length);
+    for (let i = 0; i < str.length; i++) {
+        bytes[i] = str.charCodeAt(i);
+    }
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
 }
+
 
 /**
  * Sends a string of data to the RawBT app via its URL scheme.
