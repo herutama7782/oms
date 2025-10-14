@@ -422,9 +422,9 @@
                         </div>
 
                         <div class="border-t my-4"></div>
-                        <h3 class="text-md font-semibold mb-2">Pengaturan Cetak (RawBT)</h3>
+                        <h3 class="text-md font-semibold mb-2">Pengaturan Cetak Bluetooth</h3>
                         
-                        <p class="text-sm text-gray-600 mb-3 text-center bg-gray-100 p-2 rounded-lg">Memerlukan aplikasi <a href="https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter" target="_blank" class="text-blue-600 font-semibold hover:underline">RawBT</a> terinstall di Android.</p>
+                        <p class="text-sm text-gray-600 mb-3 text-center bg-gray-100 p-2 rounded-lg">Koneksi ke printer akan diminta setiap kali Anda mencetak.</p>
                         
                         <button id="testPrintBtn" onclick="testPrint()" class="btn bg-gray-600 text-white w-full py-2">
                             <i class="fas fa-print"></i> Test Cetak
@@ -447,7 +447,7 @@
                         </div>
 
                         <button onclick="showPrintHelpModal()" class="text-sm text-blue-600 hover:underline text-center w-full mt-3">
-                            <i class="fas fa-question-circle mr-1"></i> Bantuan Cetak (RawBT)
+                            <i class="fas fa-question-circle mr-1"></i> Bantuan Cetak Bluetooth
                         </button>
                         
                         <div class="border-t my-4"></div>
@@ -1031,42 +1031,42 @@
         <div class="flex items-center justify-center h-full p-4">
             <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
                 <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-bold">Bantuan Cetak (RawBT)</h2>
+                    <h2 class="text-xl font-bold">Bantuan Cetak Bluetooth</h2>
                     <button onclick="closePrintHelpModal()" class="text-gray-500 text-2xl">&times;</button>
                 </div>
                 <div class="text-gray-700 space-y-4 text-sm">
-                    <p>Aplikasi ini menggunakan layanan cetak <strong class="font-semibold">RawBT</strong> untuk mencetak struk via Bluetooth. Pastikan aplikasi RawBT sudah terinstall di perangkat Anda.</p>
-                    
-                    <a href="https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter" target="_blank" class="block w-full text-center btn bg-green-500 text-white py-2">
-                        <i class="fab fa-google-play mr-2"></i>Install RawBT dari Play Store
-                    </a>
+                    <p>Untuk mencetak struk via Bluetooth, pastikan printer Anda sudah siap dan ikuti langkah-langkah berikut:</p>
                     
                     <ol class="list-decimal list-inside space-y-3">
                         <li>
-                            <strong class="font-semibold">Install Aplikasi RawBT.</strong>
-                            <p class="pl-2 text-xs text-gray-600">Unduh dan install aplikasi "RawBT print service" dari Google Play Store.</p>
+                            <strong class="font-semibold">Nyalakan Printer & Bluetooth HP Anda.</strong>
+                            <p class="pl-2 text-xs text-gray-600">Pastikan printer thermal Bluetooth Anda dalam keadaan menyala dan mode pairing aktif. Aktifkan juga Bluetooth di ponsel/tablet Anda.</p>
                         </li>
                         <li>
-                            <strong class="font-semibold">Nyalakan Printer & Pasangkan (Pairing).</strong>
-                            <p class="pl-2 text-xs text-gray-600">Nyalakan printer thermal Anda. Buka Pengaturan Bluetooth di perangkat Android Anda, cari nama printer (misal: RPP02N, MPT-II), dan pasangkan. Jika diminta PIN, biasanya adalah "0000" atau "1234".</p>
+                            <strong class="font-semibold">Pasangkan (Pairing) Printer di Pengaturan Bluetooth.</strong>
+                            <p class="pl-2 text-xs text-gray-600">Buka Pengaturan Bluetooth di perangkat Anda, cari nama printer (misal: RPP02N, MPT-II), dan pasangkan. Jika diminta PIN, biasanya adalah "0000" atau "1234".</p>
                         </li>
                         <li>
-                            <strong class="font-semibold">Konfigurasi Printer di RawBT.</strong>
-                            <p class="pl-2 text-xs text-gray-600">Buka aplikasi RawBT, masuk ke pengaturan, dan pilih printer Bluetooth yang sudah Anda pasangkan tadi.</p>
+                            <strong class="font-semibold">Mulai Mencetak di Aplikasi.</strong>
+                            <p class="pl-2 text-xs text-gray-600">Tekan tombol cetak di aplikasi (misalnya "Test Cetak" atau "Cetak Struk").</p>
                         </li>
                         <li>
-                            <strong class="font-semibold">Mulai Mencetak.</strong>
-                            <p class="pl-2 text-xs text-gray-600">Saat Anda menekan tombol cetak di aplikasi POS ini, sistem akan meminta Anda untuk membuka tautan dengan RawBT. Pilih RawBT dan struk akan tercetak.</p>
+                            <strong class="font-semibold">Pilih Printer Anda dari Daftar.</strong>
+                            <p class="pl-2 text-xs text-gray-600">Akan muncul jendela pop-up dari browser/sistem Anda berisi daftar perangkat Bluetooth. Pilih nama printer yang sudah Anda pasangkan tadi.</p>
+                        </li>
+                         <li>
+                            <strong class="font-semibold">Selesai!</strong>
+                            <p class="pl-2 text-xs text-gray-600">Printer akan langsung mencetak. Anda perlu memilih printer dari daftar ini setiap kali akan mencetak.</p>
                         </li>
                     </ol>
 
                     <div class="border-t pt-4 mt-4">
                         <h3 class="font-semibold mb-2">Troubleshooting:</h3>
                         <ul class="list-disc list-inside space-y-1 text-xs text-gray-600">
-                            <li>Pastikan printer sudah terpasang dengan benar di pengaturan Bluetooth Android.</li>
-                            <li>Pastikan printer yang benar sudah dipilih di dalam aplikasi RawBT.</li>
+                            <li>Pastikan tidak ada aplikasi lain yang terhubung ke printer.</li>
                             <li>Coba matikan dan nyalakan kembali printer dan Bluetooth HP Anda.</li>
-                            <li>Fitur ini hanya berfungsi di Android dengan RawBT terinstall.</li>
+                            <li>Pastikan jarak HP dan printer tidak lebih dari 5 meter.</li>
+                            <li>Browser yang didukung: Chrome di Android. Fitur ini mungkin tidak berfungsi di iOS atau browser lain karena keterbatasan Web Bluetooth API.</li>
                         </ul>
                     </div>
                 </div>
@@ -1193,6 +1193,7 @@
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/printhub@1.3.1/dist/index.global.min.js"></script>
     <script type="module" src="index.js"></script>
 </body>
 </html>
