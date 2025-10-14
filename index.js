@@ -3259,14 +3259,19 @@ async function _generateReceiptHTML(data, isPreview) {
     // --- Items ---
     let itemsHtml = '';
     data.items.forEach(item => {
-        const leftPart = `${item.name} x${item.quantity}`;
-        const rightPart = `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`;
-        itemsHtml += `<div>${escapeHtml(formatLine(leftPart, rightPart, paperWidthChars))}</div>`;
-        
+        // Line 1: Item name and quantity, left-aligned, to match ESC/POS output.
+        itemsHtml += `<div>${escapeHtml(`${item.name} x${item.quantity}`)}</div>`;
+
+        // Line 2: Price details, justified, to match ESC/POS output.
+        const totalItemPriceText = `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`;
+        let priceDetailText;
         if (item.discountPercentage > 0) {
-            const priceDetailText = `  @ Rp.${formatCurrency(item.price)} Disc ${item.discountPercentage}%`;
-            itemsHtml += `<div style="font-size: 0.8rem;">${escapeHtml(priceDetailText)}</div>`;
+            priceDetailText = `@ Rp.${formatCurrency(item.price)} Disc ${item.discountPercentage}%`;
+        } else {
+             priceDetailText = `@ Rp.${formatCurrency(item.price)}`;
         }
+        
+        itemsHtml += `<div>${escapeHtml(formatLine(priceDetailText, totalItemPriceText, paperWidthChars))}</div>`;
     });
 
     // --- Summary ---
