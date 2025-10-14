@@ -1,12 +1,9 @@
 {
-  "name": "(OK) POS Mobile + Allow Camera, Bluetooth, Location, Hutang Piutang",
+  "name": "(OK) POS Mobile RawBT",
   "description": "A mobile-first Point of Sale application with barcode scanning for small businesses.",
   "requestFramePermissions": [
     "camera",
-    "bluetooth",
     "geolocation"
   ],
-  "enabledApis": [
-    "bluetooth"
-  ]
+  "enabledApis": []
 }

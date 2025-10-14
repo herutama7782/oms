@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -436,19 +437,16 @@
                         </div>
 
                         <div class="border-t my-4"></div>
-                        <h3 class="text-md font-semibold mb-2">Pengaturan Cetak Bluetooth</h3>
+                        <h3 class="text-md font-semibold mb-2">Pengaturan Cetak RawBT</h3>
                         
-                        <div id="bluetoothStatus" class="text-sm text-center text-gray-500 mb-2 p-2 bg-gray-100 rounded-lg">Status: Belum Terhubung</div>
-                        <div class="flex gap-2">
-                            <button id="connectBluetoothBtn" onclick="connectToBluetoothPrinter()" class="btn bg-blue-500 text-white flex-1 py-2">
-                                <i class="fas fa-bluetooth-b"></i> Hubungkan
-                            </button>
-                            <button id="disconnectBluetoothBtn" onclick="disconnectBluetoothPrinter()" class="btn bg-red-500 text-white flex-1 py-2 hidden">
-                                <i class="fas fa-power-off"></i> Putuskan
-                            </button>
-                        </div>
-                         <button id="testPrintBtn" onclick="testPrint()" class="btn bg-gray-600 text-white w-full py-2 mt-3 disabled:bg-gray-400" disabled>
-                            <i class="fas fa-print"></i> Test Cetak
+                        <p class="text-xs text-gray-500 text-center mb-3">
+                            Fitur ini memerlukan aplikasi 
+                            <a href="https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter" target="_blank" class="text-blue-600 underline font-semibold">RawBT</a> 
+                            ter-install dari Play Store.
+                        </p>
+                        
+                         <button id="testPrintBtn" onclick="testPrint()" class="btn bg-gray-600 text-white w-full py-2">
+                            <i class="fas fa-print"></i> Test Cetak (RawBT)
                         </button>
                         
                         <div id="autoPrintContainer" class="flex justify-between items-center mt-3">
@@ -466,10 +464,6 @@
                                 <option value="58mm">58mm (Kecil)</option>
                             </select>
                         </div>
-
-                        <button onclick="showPrintHelpModal()" class="text-sm text-blue-600 hover:underline text-center w-full mt-3">
-                            <i class="fas fa-question-circle mr-1"></i> Bantuan Cetak Bluetooth
-                        </button>
                         
                         <div class="border-t my-4"></div>
                         
@@ -1042,59 +1036,6 @@
             <button onclick="closeScanModal()" class="btn bg-red-500 text-white mt-8 px-6 py-3">
                 Tutup
             </button>
-        </div>
-    </div>
-
-    <!-- Print Help Modal -->
-    <div id="printHelpModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
-        <div class="flex items-center justify-center h-full p-4">
-            <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-bold">Bantuan Cetak Bluetooth</h2>
-                    <button onclick="closePrintHelpModal()" class="text-gray-500 text-2xl">&times;</button>
-                </div>
-                <div class="text-gray-700 space-y-4 text-sm">
-                    <p>Untuk mencetak struk via Bluetooth, pastikan printer Anda sudah siap dan ikuti langkah-langkah berikut:</p>
-                    
-                    <ol class="list-decimal list-inside space-y-3">
-                        <li>
-                            <strong class="font-semibold">Nyalakan Printer & Bluetooth HP Anda.</strong>
-                            <p class="pl-2 text-xs text-gray-600">Pastikan printer thermal Bluetooth Anda dalam keadaan menyala dan mode pairing aktif. Aktifkan juga Bluetooth di ponsel/tablet Anda.</p>
-                        </li>
-                        <li>
-                            <strong class="font-semibold">Pasangkan (Pairing) Printer di Pengaturan Bluetooth.</strong>
-                            <p class="pl-2 text-xs text-gray-600">Buka Pengaturan Bluetooth di perangkat Anda, cari nama printer (misal: RPP02N, MPT-II), dan pasangkan. Jika diminta PIN, biasanya adalah "0000" atau "1234".</p>
-                        </li>
-                        <li>
-                            <strong class="font-semibold">Hubungkan di Aplikasi.</strong>
-                            <p class="pl-2 text-xs text-gray-600">Kembali ke halaman <strong class="text-blue-600">Pengaturan</strong> di aplikasi ini, lalu tekan tombol <strong class="text-blue-600">"Hubungkan"</strong> pada bagian Cetak Bluetooth.</p>
-                        </li>
-                        <li>
-                            <strong class="font-semibold">Pilih Printer Anda dari Daftar.</strong>
-                            <p class="pl-2 text-xs text-gray-600">Akan muncul jendela pop-up berisi daftar perangkat Bluetooth. Pilih nama printer yang sudah Anda pasangkan tadi.</p>
-                        </li>
-                         <li>
-                            <strong class="font-semibold">Lakukan Tes Cetak.</strong>
-                            <p class="pl-2 text-xs text-gray-600">Setelah terhubung, tombol "Test Cetak" akan aktif. Tekan untuk memastikan koneksi berhasil.</p>
-                        </li>
-                    </ol>
-
-                    <div class="border-t pt-4 mt-4">
-                        <h3 class="font-semibold mb-2">Troubleshooting:</h3>
-                        <ul class="list-disc list-inside space-y-1 text-xs text-gray-600">
-                            <li>Pastikan tidak ada aplikasi lain yang terhubung ke printer.</li>
-                            <li>Coba matikan dan nyalakan kembali printer dan Bluetooth HP Anda.</li>
-                            <li>Pastikan jarak HP dan printer tidak lebih dari 5 meter.</li>
-                            <li>Browser yang didukung: Chrome di Android. Fitur ini mungkin tidak berfungsi di iOS atau browser lain.</li>
-                        </ul>
-                    </div>
-                </div>
-                <div class="flex mt-6">
-                    <button onclick="closePrintHelpModal()" class="btn bg-blue-500 text-white flex-1 py-2">
-                        Mengerti
-                    </button>
-                </div>
-            </div>
         </div>
     </div>
 

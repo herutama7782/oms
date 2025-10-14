@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -36,10 +35,6 @@ let currentContactId = null; // For tracking which contact's ledger is open
 let dueItemsList = []; // For due date notifications
 let activePopover = null; // For the ledger actions popover
 let cameraStream = null; // For camera capture stream
-
-// Bluetooth printing state
-let bluetoothDevice = null;
-let bluetoothCharacteristic = null;
 
 // --- AUDIO FUNCTIONS ---
 /**
@@ -3450,20 +3445,17 @@ window.showAddLedgerEntryModal = function(entryId = null, type = 'credit') {
             dueDateContainer.style.display = 'none';
         } else {
             const contactType = document.getElementById('ledgerContactType').textContent.toLowerCase();
-            titleEl.textContent = contactType === 'pelanggan' ? 'Tambah Piutang' : 'Tambah Utang';
+            titleEl.textContent = contactType === 'pelanggan' ? 'Tambah Piutang' : 'Tambah Hutang';
             dueDateContainer.style.display = 'block';
         }
     }
-    
-    hideLedgerActions();
     modal.classList.remove('hidden');
-}
+};
+
 
 window.closeAddLedgerEntryModal = function() {
     document.getElementById('addLedgerEntryModal').classList.add('hidden');
-    window.currentLedgerEntryId = null;
-    window.currentLedgerEntryType = null;
-}
+};
 
 window.saveLedgerEntry = async function() {
     const amount = parseFloat(document.getElementById('ledgerAmount').value);
@@ -3471,7 +3463,7 @@ window.saveLedgerEntry = async function() {
     const dueDate = document.getElementById('ledgerDueDate').value;
 
     if (isNaN(amount) || amount <= 0 || !description) {
-        showToast('Jumlah dan keterangan harus diisi.');
+        showToast('Jumlah dan Keterangan harus diisi dengan benar.');
         return;
     }
 
@@ -3488,499 +3480,433 @@ window.saveLedgerEntry = async function() {
     }
 
     let action = '';
-    if (window.currentLedgerEntryId) {
+    if (window.currentLedgerEntryId) { // Editing
         entryData.id = window.currentLedgerEntryId;
-        action = 'UPDATE_LEDGER';
-    } else {
+        const existingEntry = await getFromDB('ledgers', window.currentLedgerEntryId);
+        entryData.createdAt = existingEntry.createdAt; // preserve original creation date
+        action = 'UPDATE_LEDGER_ENTRY';
+    } else { // Creating
         entryData.createdAt = new Date().toISOString();
-        action = 'CREATE_LEDGER';
+        action = 'CREATE_LEDGER_ENTRY';
     }
     
     try {
         const savedId = await putToDB('ledgers', entryData);
         const syncPayload = window.currentLedgerEntryId ? entryData : { ...entryData, id: savedId };
         await queueSyncAction(action, syncPayload);
-        showToast('Catatan berhasil disimpan.');
+        showToast(`Catatan berhasil ${window.currentLedgerEntryId ? 'diperbarui' : 'disimpan'}.`);
         closeAddLedgerEntryModal();
         await renderLedgerHistory(currentContactId);
-        await updateDashboardSummaries();
+        await updateDashboardSummaries(); // Refresh dashboard
+        await checkDueDateNotifications(); // Refresh notifications
     } catch(error) {
         console.error('Failed to save ledger entry:', error);
         showToast('Gagal menyimpan catatan.');
     }
-}
+};
 
-// Ledger Actions Popover
-window.showLedgerActions = async function(event, entryId) {
+window.showLedgerActions = function(event, entryId) {
     event.stopPropagation();
     const popover = document.getElementById('ledgerActionsPopover');
     
-    if (activePopover === entryId) {
-        hideLedgerActions();
-        return;
+    // Close any other open popover
+    if (activePopover && activePopover !== popover) {
+        activePopover.classList.add('hidden');
     }
 
-    const entry = await getFromDB('ledgers', entryId);
-    if (!entry) return;
+    // Populate actions
+    popover.innerHTML = `
+        <a onclick="editLedgerEntry(${entryId})"><i class="fas fa-edit fa-fw mr-2"></i>Edit</a>
+        <a onclick="showEditDueDateModal(${entryId})" id="editDueDateAction"><i class="fas fa-calendar-alt fa-fw mr-2"></i>Ubah Jatuh Tempo</a>
+        <a onclick="deleteLedgerEntry(${entryId})" class="text-red-600"><i class="fas fa-trash fa-fw mr-2"></i>Hapus</a>
+    `;
 
-    let actionsHtml = `<a onclick="showAddLedgerEntryModal(${entryId})"><i class="fas fa-edit fa-fw mr-2"></i>Edit</a>`;
-    if (entry.type === 'debit') {
-        actionsHtml += `<a onclick="showEditDueDateModal(${entryId})"><i class="fas fa-calendar-alt fa-fw mr-2"></i>Ubah Jatuh Tempo</a>`;
-    }
-    actionsHtml += `<a onclick="deleteLedgerEntry(${entryId})" class="text-red-600"><i class="fas fa-trash fa-fw mr-2"></i>Hapus</a>`;
-    
-    popover.innerHTML = actionsHtml;
-    
+    // Show/hide due date action based on entry type
+    getFromDB('ledgers', entryId).then(entry => {
+        const editDueDateAction = document.getElementById('editDueDateAction');
+        if (entry && entry.type === 'debit') {
+            editDueDateAction.style.display = 'block';
+        } else {
+            editDueDateAction.style.display = 'none';
+        }
+    });
+
+    // Position popover
     const button = event.currentTarget;
     const rect = button.getBoundingClientRect();
-    
-    popover.style.display = 'block';
     popover.style.top = `${rect.bottom + window.scrollY}px`;
-    popover.style.left = `${rect.right + window.scrollX - popover.offsetWidth}px`;
-    
-    activePopover = entryId;
+    popover.style.right = `${window.innerWidth - rect.right}px`;
+    popover.classList.toggle('hidden');
+    activePopover = popover;
 }
 
-function hideLedgerActions() {
-    const popover = document.getElementById('ledgerActionsPopover');
-    if (popover) {
-        popover.style.display = 'none';
+function closeLedgerActions() {
+    if (activePopover) {
+        activePopover.classList.add('hidden');
+        activePopover = null;
     }
-    activePopover = null;
 }
-window.hideLedgerActions = hideLedgerActions;
+window.closeLedgerActions = closeLedgerActions;
 
+window.editLedgerEntry = function(entryId) {
+    closeLedgerActions();
+    showAddLedgerEntryModal(entryId);
+};
 
 window.deleteLedgerEntry = function(entryId) {
-    hideLedgerActions();
+    closeLedgerActions();
     showConfirmationModal('Hapus Catatan', 'Yakin ingin menghapus catatan ini?', async () => {
         try {
             const entryToDelete = await getFromDB('ledgers', entryId);
             const tx = db.transaction('ledgers', 'readwrite');
             tx.objectStore('ledgers').delete(entryId);
             tx.oncomplete = async () => {
-                await queueSyncAction('DELETE_LEDGER', entryToDelete);
+                await queueSyncAction('DELETE_LEDGER_ENTRY', entryToDelete);
                 showToast('Catatan berhasil dihapus.');
                 await renderLedgerHistory(currentContactId);
                 await updateDashboardSummaries();
+                await checkDueDateNotifications();
             };
-        } catch(error) {
+        } catch (error) {
             console.error('Failed to delete ledger entry:', error);
             showToast('Gagal menghapus catatan.');
         }
     }, 'Ya, Hapus', 'bg-red-500');
-}
+};
 
-window.showEditDueDateModal = async function(entryId) {
-    hideLedgerActions();
+
+window.showEditDueDateModal = function(entryId) {
+    closeLedgerActions();
     const modal = document.getElementById('editDueDateModal');
-    const entry = await getFromDB('ledgers', entryId);
-    if(entry) {
-        document.getElementById('editDueDateEntryId').value = entryId;
-        document.getElementById('newDueDate').value = entry.dueDate || '';
-        modal.classList.remove('hidden');
-    }
-}
+    const entryIdInput = document.getElementById('editDueDateEntryId');
+    const newDateInput = document.getElementById('newDueDate');
+
+    getFromDB('ledgers', entryId).then(entry => {
+        if (entry && entry.type === 'debit') {
+            entryIdInput.value = entryId;
+            newDateInput.value = entry.dueDate || '';
+            modal.classList.remove('hidden');
+        } else {
+            showToast('Hanya piutang/hutang yang bisa diubah tanggal jatuh temponya.');
+        }
+    });
+};
 
 window.closeEditDueDateModal = function() {
     document.getElementById('editDueDateModal').classList.add('hidden');
-}
+};
 
 window.saveDueDate = async function() {
     const entryId = parseInt(document.getElementById('editDueDateEntryId').value);
     const newDueDate = document.getElementById('newDueDate').value;
-    
-    const entry = await getFromDB('ledgers', entryId);
-    if(entry) {
-        entry.dueDate = newDueDate;
-        entry.updatedAt = new Date().toISOString();
-        
-        await putToDB('ledgers', entry);
-        await queueSyncAction('UPDATE_LEDGER', entry);
-        
-        showToast('Tanggal jatuh tempo berhasil diubah.');
-        closeEditDueDateModal();
-        await renderLedgerHistory(currentContactId);
-        await checkDueDateNotifications();
+
+    if (!newDueDate) {
+        showToast('Tanggal jatuh tempo tidak boleh kosong.');
+        return;
     }
-}
 
-
-// --- BLUETOOTH PRINTING ---
+    try {
+        const entry = await getFromDB('ledgers', entryId);
+        if (entry) {
+            entry.dueDate = newDueDate;
+            entry.updatedAt = new Date().toISOString();
+            await putToDB('ledgers', entry);
+            await queueSyncAction('UPDATE_LEDGER_ENTRY', entry);
+            showToast('Tanggal jatuh tempo berhasil diubah.');
+            closeEditDueDateModal();
+            await renderLedgerHistory(currentContactId);
+            await checkDueDateNotifications();
+        }
+    } catch (error) {
+        console.error('Failed to save due date:', error);
+        showToast('Gagal menyimpan tanggal jatuh tempo.');
+    }
+};
 
 /**
- * Sends data to the connected Bluetooth printer, chunking it to avoid MTU limits.
- * @param {Uint8Array} data The data to send.
+ * Sends receipt data to the RawBT print service via a URL scheme.
+ * @param {Uint8Array} data The ESC/POS command data to print.
  */
-async function sendDataToPrinter(data) {
-    if (!bluetoothCharacteristic) {
-        throw new Error('Printer not connected.');
-    }
-
-    // A conservative chunk size that should work for most BLE devices.
-    // The actual limit is device-dependent (MTU - 3), but this is a safe value.
-    const CHUNK_SIZE = 100;
-
-    for (let i = 0; i < data.length; i += CHUNK_SIZE) {
-        const chunk = data.slice(i, i + CHUNK_SIZE);
-        await bluetoothCharacteristic.writeValue(chunk);
-    }
+function sendToRawBT(data) {
+    // Convert Uint8Array to a Base64 string
+    const base64Data = btoa(String.fromCharCode.apply(null, data));
+    // Create the RawBT intent URL
+    const intentUrl = `rawbt:${base64Data}`;
+    // Open the URL
+    window.location.href = intentUrl;
 }
 
-window.connectToBluetoothPrinter = async function() {
-    if (!navigator.bluetooth) {
-        showToast('Web Bluetooth API tidak didukung di browser ini.');
+window.printReceipt = async function(isAutoPrint = false) {
+    if (!currentReceiptTransaction) {
+        showToast('Tidak ada data struk untuk dicetak.');
         return;
     }
-    const statusEl = document.getElementById('bluetoothStatus');
-    statusEl.textContent = 'Status: Mencari perangkat...';
     try {
-        // We use acceptAllDevices to allow the user to select any Bluetooth device,
-        // but we also list optionalServices. This is crucial to get permission
-        // to access the printer's services after connecting, solving the
-        // "No Services found" error for many non-standard printers.
-        bluetoothDevice = await navigator.bluetooth.requestDevice({
-            acceptAllDevices: true,
-            optionalServices: [
-                '00001101-0000-1000-8000-00805f9b34fb', // Standard Serial Port Service
-                '49535343-fe7d-4ae5-8fa9-9fafd205e455', // Common BLE module service
-                '000018f0-0000-1000-8000-00805f9b34fb'  // Another common thermal printer service
-            ]
-        });
-
-        statusEl.textContent = `Status: Menghubungkan ke ${bluetoothDevice.name}...`;
-        const server = await bluetoothDevice.gatt.connect();
-        
-        statusEl.textContent = `Status: Mencari layanan cetak...`;
-
-        const services = await server.getPrimaryServices();
-        if (services.length === 0) {
-            server.disconnect();
-            throw new Error('No Services found in device.');
+        const escposData = await generateReceiptEscPos(currentReceiptTransaction);
+        sendToRawBT(escposData);
+        if (!isAutoPrint) {
+            showToast('Mencetak struk...');
         }
-
-        let foundCharacteristic = null;
-
-        // Loop through services to find a writable characteristic
-        for (const service of services) {
-            const characteristics = await service.getCharacteristics();
-            for (const characteristic of characteristics) {
-                // Check if the characteristic is writable
-                if (characteristic.properties.write || characteristic.properties.writeWithoutResponse) {
-                    foundCharacteristic = characteristic;
-                    break; // Found a writable characteristic, stop searching in this service
-                }
-            }
-            if (foundCharacteristic) {
-                break; // Found a characteristic, stop searching in other services
-            }
-        }
-
-        if (foundCharacteristic) {
-            bluetoothCharacteristic = foundCharacteristic;
-            updateBluetoothUI(true);
-            showToast(`Terhubung ke printer: ${bluetoothDevice.name}`);
-            bluetoothDevice.addEventListener('gattserverdisconnected', onBluetoothDisconnected);
-        } else {
-            // If no writable characteristic is found, disconnect and show an error.
-            server.disconnect();
-            throw new Error('No writable characteristic found.');
-        }
-
     } catch (error) {
-        console.error('Bluetooth connection failed:', error);
-        let errorMessage = 'Gagal terhubung.';
-        if (error.name === 'NotFoundError' || error.message.includes('User cancelled')) {
-            errorMessage = 'Pemilihan perangkat dibatalkan.';
-        } else if (error.message.includes('No Services found')) {
-            errorMessage = 'Tidak ada layanan ditemukan. Pastikan printer sudah dipasangkan (paired) di pengaturan Bluetooth HP Anda.';
-        } else if (error.message.includes('No writable characteristic')) {
-            errorMessage = 'Tidak dapat menemukan layanan cetak pada perangkat ini. Coba pasangkan ulang printer.';
-        } else if (error.name === 'NotSupportedError') {
-             errorMessage = 'Web Bluetooth tidak didukung di browser ini.';
-        } else if (error.message.includes('GATT Server is disconnected')) {
-            errorMessage = 'Koneksi ke printer terputus saat proses penyiapan.';
-        }
-        showToast(`Koneksi Bluetooth gagal: ${errorMessage}`);
-        updateBluetoothUI(false);
+        console.error('RawBT print failed:', error);
+        showToast('Gagal mengirim ke RawBT. Pastikan aplikasi ter-install.');
     }
 };
-
-function onBluetoothDisconnected() {
-    showToast('Koneksi printer terputus.');
-    updateBluetoothUI(false);
-    if (bluetoothDevice) {
-        bluetoothDevice.removeEventListener('gattserverdisconnected', onBluetoothDisconnected);
-    }
-    bluetoothDevice = null;
-    bluetoothCharacteristic = null;
-}
-
-window.disconnectBluetoothPrinter = function() {
-    if (bluetoothDevice && bluetoothDevice.gatt.connected) {
-        bluetoothDevice.gatt.disconnect();
-    } else {
-        onBluetoothDisconnected(); // Manually trigger UI update if already disconnected
-    }
-};
-
-function updateBluetoothUI(isConnected) {
-    const statusEl = document.getElementById('bluetoothStatus');
-    const connectBtn = document.getElementById('connectBluetoothBtn');
-    const disconnectBtn = document.getElementById('disconnectBluetoothBtn');
-    const testPrintBtn = document.getElementById('testPrintBtn');
-
-    if (isConnected) {
-        statusEl.textContent = `Status: Terhubung ke ${bluetoothDevice.name}`;
-        connectBtn.classList.add('hidden');
-        disconnectBtn.classList.remove('hidden');
-        testPrintBtn.disabled = false;
-        testPrintBtn.classList.remove('disabled:bg-gray-400');
-    } else {
-        statusEl.textContent = 'Status: Belum Terhubung';
-        connectBtn.classList.remove('hidden');
-        disconnectBtn.classList.add('hidden');
-        testPrintBtn.disabled = true;
-        testPrintBtn.classList.add('disabled:bg-gray-400');
-    }
-}
 
 window.testPrint = async function() {
-    if (!bluetoothCharacteristic) {
-        showToast('Printer tidak terhubung.');
-        return;
-    }
-
     try {
-        const paperSize = document.getElementById('printerPaperSize').value || '80mm';
-        const paperWidthChars = paperSize === '58mm' ? 32 : 42;
-        
         const encoder = new EscPosEncoder.default();
-        const encodedData = encoder
+        const paperWidth = await _getPrinterPaperWidthChars();
+        
+        const encoded = encoder
+            .initialize()
             .align('center')
-            .size(2, 2)
-            .line('Test Cetak')
-            .size(1, 1)
-            .line('Koneksi Berhasil!')
-            .line(receiptLine('-', paperWidthChars))
-            .text('POS Mobile v1.3')
+            .line('Test Cetak Berhasil!')
+            .line('POS Mobile')
+            .line(receiptLine('-', paperWidth))
+            .newline()
+            .align('left')
+            .line('Ini adalah tes cetak dari aplikasi POS Mobile.')
+            .line('Jika Anda dapat membaca ini, printer Anda terhubung dengan benar melalui RawBT.')
+            .newline()
+            .align('center')
+            .qrcode('https://github.com/wahyu-winoto/pos-mobile', 1, 'h', 6)
             .feed(3)
             .cut()
             .encode();
-
-        await sendDataToPrinter(encodedData);
-        showToast('Perintah tes cetak dikirim.');
+            
+        sendToRawBT(encoded);
+        showToast('Mengirim tes cetak ke RawBT...');
     } catch (error) {
         console.error('Test print failed:', error);
-        showToast('Gagal melakukan tes cetak.');
+        showToast('Gagal mengirim tes cetak.');
     }
 };
 
-window.printReceipt = async function(isAutoPrint = false) {
-    if (!bluetoothCharacteristic) {
-        if (!isAutoPrint) showToast('Printer tidak terhubung.');
-        return;
-    }
-    if (!currentReceiptTransaction) {
-         if (!isAutoPrint) showToast('Tidak ada data struk untuk dicetak.');
-        return;
-    }
-    
-    showToast('Mencetak struk...');
-
-    try {
-        const settings = await getAllFromDB('settings');
-        const settingsMap = new Map(settings.map(s => [s.key, s.value]));
-        const paperSize = settingsMap.get('printerPaperSize') || '80mm';
-        const paperWidthChars = paperSize === '58mm' ? 32 : 42;
-        const data = currentReceiptTransaction;
-        
-        const encoder = new EscPosEncoder.default();
-        
-        // Header
-        encoder.align('center');
-        if (settingsMap.get('showLogoOnReceipt') && settingsMap.get('storeLogo')) {
-             // Image printing is complex and library-dependent. Skipping for simplicity.
-        }
-        encoder
-            .size(1, 2)
-            .line(settingsMap.get('storeName') || 'Toko Anda')
-            .size(1, 1)
-            .line(settingsMap.get('storeAddress') || '')
-            .line(receiptLine('=', paperWidthChars))
-            .align('left')
-            .line(`No: ${data.id}`)
-            .line(`Tgl: ${formatReceiptDate(data.date)}`)
-            .line(receiptLine('-', paperWidthChars));
-
-        // Items
-        data.items.forEach(item => {
-            const totalItemPrice = formatCurrency(item.effectivePrice * item.quantity);
-            const line = `${item.name} x${item.quantity}`;
-            const spaces = paperWidthChars - line.length - totalItemPrice.length;
-            encoder.line(line + ' '.repeat(Math.max(0, spaces)) + totalItemPrice);
-             if (item.discountPercentage > 0) {
-                 const priceDetailText = `  @${formatCurrency(item.price)} Disc ${item.discountPercentage}%`;
-                 encoder.line(priceDetailText);
-             }
-        });
-        
-        // Summary
-        encoder.line(receiptLine('-', paperWidthChars));
-        const subtotalAfterDiscount = data.subtotal - data.totalDiscount;
-        const subtotalText = "Subtotal";
-        const subtotalValue = formatCurrency(subtotalAfterDiscount);
-        encoder.line(subtotalText + ' '.repeat(paperWidthChars - subtotalText.length - subtotalValue.length) + subtotalValue);
-        
-        (data.fees || []).forEach(fee => {
-            const feeName = `${fee.name} ${fee.type === 'percentage' ? fee.value + '%' : ''}`;
-            const feeValue = formatCurrency(fee.amount);
-            encoder.line(feeName + ' '.repeat(paperWidthChars - feeName.length - feeValue.length) + feeValue);
-        });
-
-        encoder.line(receiptLine('-', paperWidthChars));
-        const totalText = "TOTAL";
-        const totalValue = formatCurrency(data.total);
-        encoder.bold(true).line(totalText + ' '.repeat(paperWidthChars - totalText.length - totalValue.length) + totalValue).bold(false);
-        
-        const cashText = "TUNAI";
-        const cashValue = formatCurrency(data.cashPaid);
-        encoder.line(cashText + ' '.repeat(paperWidthChars - cashText.length - cashValue.length) + cashValue);
-        
-        const changeText = "KEMBALI";
-        const changeValue = formatCurrency(data.change);
-        encoder.line(changeText + ' '.repeat(paperWidthChars - changeText.length - changeValue.length) + changeValue);
-
-        // Footer
-        encoder.line(receiptLine('=', paperWidthChars));
-        encoder.align('center');
-        const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
-        footerText.split('\n').forEach(line => encoder.line(line));
-        
-        const feedbackPhone = settingsMap.get('storeFeedbackPhone');
-        if (feedbackPhone) {
-            encoder.line(`Kritik/Saran: ${feedbackPhone}`);
-        }
-        
-        encoder.feed(3).cut();
-        
-        const dataToSend = encoder.encode();
-        await sendDataToPrinter(dataToSend);
-        
-    } catch (error) {
-        console.error('Printing failed:', error);
-        showToast('Gagal mencetak struk.');
-    }
-};
-
-window.showPrintHelpModal = () => document.getElementById('printHelpModal').classList.remove('hidden');
-window.closePrintHelpModal = () => document.getElementById('printHelpModal').classList.add('hidden');
-
-// --- BARCODE/LABEL GENERATOR ---
-function setupBarcodeGenerator() {
-    const generateBtn = document.getElementById('generateBarcodeLabelBtn');
-    const downloadPngBtn = document.getElementById('downloadPngBtn');
-    const printLabelBtn = document.getElementById('printLabelBtn');
-
-    generateBtn.addEventListener('click', () => {
-        const productName = document.getElementById('product-name').value;
-        const productPrice = document.getElementById('product-price').value;
-        const barcodeCode = document.getElementById('barcode-code').value.trim();
-
-        if (!barcodeCode) {
-            showToast('Teks/Angka untuk barcode wajib diisi.');
-            return;
-        }
-
-        document.getElementById('output-product-name').textContent = productName;
-        const priceEl = document.getElementById('output-product-price');
-        priceEl.textContent = productPrice ? `Rp ${formatCurrency(parseFloat(productPrice))}` : '';
-        
-        try {
-            JsBarcode("#barcode", barcodeCode, {
-                format: "CODE128",
-                displayValue: false, // We display it manually
-                margin: 0,
-                height: 40,
-                width: 1.5,
-            });
-            document.getElementById('output-barcode-text').textContent = barcodeCode;
-            document.getElementById('barcodeLabelOutput').classList.remove('hidden');
-            document.getElementById('download-buttons').classList.remove('hidden');
-        } catch(e) {
-            showToast('Gagal membuat barcode. Kode tidak valid.');
-            console.error(e);
-        }
-    });
-
-    downloadPngBtn.addEventListener('click', () => {
-        // Use a library or custom function to convert div to image if needed
-        // For simplicity, we'll just show an alert.
-        showToast('Fungsi download PNG belum diimplementasikan.');
-    });
-
-    printLabelBtn.addEventListener('click', () => {
-        const labelContent = document.getElementById('labelContent').innerHTML;
-        const style = `
-            @media print {
-                body * { visibility: hidden; }
-                #print-area, #print-area * { visibility: visible; }
-                #print-area {
-                    position: absolute;
-                    left: 0;
-                    top: 0;
-                    width: auto;
-                    text-align: center;
-                }
-            }
-        `;
-        document.getElementById('print-style-overrides').innerHTML = style;
-        
-        let printArea = document.getElementById('print-area');
-        if (!printArea) {
-            printArea = document.createElement('div');
-            printArea.id = 'print-area';
-            document.body.appendChild(printArea);
-        }
-        
-        printArea.innerHTML = labelContent;
-        window.print();
-        printArea.innerHTML = '';
-        document.getElementById('print-style-overrides').innerHTML = '';
-    });
+async function _getPrinterPaperWidthChars() {
+    const paperSize = await getSettingFromDB('printerPaperSize') || '80mm';
+    return paperSize === '58mm' ? 32 : 42;
 }
 
+
+async function generateReceiptEscPos(data) {
+    const encoder = new EscPosEncoder.default();
+    const settings = await getAllFromDB('settings');
+    const settingsMap = new Map(settings.map(s => [s.key, s.value]));
+
+    const storeName = settingsMap.get('storeName') || 'Toko Anda';
+    const storeAddress = settingsMap.get('storeAddress') || '';
+    const feedbackPhone = settingsMap.get('storeFeedbackPhone') || '';
+    const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
+    const paperWidth = await _getPrinterPaperWidthChars();
+    
+    let result = encoder.initialize();
+
+    result.align('center').bold(true).size(2, 2).line(storeName).bold(false).size(1, 1).line(storeAddress);
+    result.line(receiptLine('=', paperWidth));
+    result.align('left');
+    result.line(`No: ${data.id}`);
+    result.line(`Tgl: ${formatReceiptDate(data.date)}`);
+    result.line(receiptLine('-', paperWidth));
+    
+    // Items
+    data.items.forEach(item => {
+        const left = `${item.name} x${item.quantity}`;
+        const right = formatCurrency(item.effectivePrice * item.quantity);
+        const line = left + ' '.repeat(Math.max(1, paperWidth - left.length - right.length)) + right;
+        result.line(line);
+         if (item.discountPercentage > 0) {
+            result.line(`  @${formatCurrency(item.price)} Disc ${item.discountPercentage}%`);
+        }
+    });
+    result.line(receiptLine('-', paperWidth));
+
+    // Summary
+    const subtotalAfterDiscount = data.subtotal - data.totalDiscount;
+    const subtotalText = `Subtotal`;
+    const subtotalValue = formatCurrency(subtotalAfterDiscount);
+    result.line(subtotalText + ' '.repeat(paperWidth - subtotalText.length - subtotalValue.length) + subtotalValue);
+    
+    (data.fees || []).forEach(fee => {
+        let feeName = fee.name;
+        if (fee.type === 'percentage') feeName += ` ${fee.value}%`;
+        const feeValue = formatCurrency(fee.amount);
+        result.line(feeName + ' '.repeat(paperWidth - feeName.length - feeValue.length) + feeValue);
+    });
+
+    result.line(receiptLine('-', paperWidth));
+    
+    const totalText = `TOTAL`;
+    const totalValue = formatCurrency(data.total);
+    result.bold(true).line(totalText + ' '.repeat(paperWidth - totalText.length - totalValue.length) + totalValue).bold(false);
+
+    const cashText = `TUNAI`;
+    const cashValue = formatCurrency(data.cashPaid);
+    result.line(cashText + ' '.repeat(paperWidth - cashText.length - cashValue.length) + cashValue);
+    
+    const changeText = `KEMBALI`;
+    const changeValue = formatCurrency(data.change);
+    result.line(changeText + ' '.repeat(paperWidth - changeText.length - changeValue.length) + changeValue);
+
+    result.line(receiptLine('=', paperWidth));
+    result.align('center');
+    
+    const footerLines = footerText.split('\n');
+    footerLines.forEach(line => result.line(line));
+
+    if (feedbackPhone) {
+        result.line(`Kritik/Saran: ${feedbackPhone}`);
+    }
+
+    result.feed(3).cut();
+    
+    return result.encode();
+}
+
+
+async function generateLabelEscPos(productName, productPrice, barcodeText) {
+    const encoder = new EscPosEncoder.default();
+    let result = encoder.initialize();
+
+    // Reset and set alignment to center
+    result.align('center');
+
+    // Add product name if available
+    if (productName) {
+        result.bold(true).size(1, 2).line(productName).bold(false).size(1, 1);
+    }
+    
+    // Add product price if available
+    if (productPrice) {
+        result.bold(true).size(2, 2).line(`Rp ${formatCurrency(productPrice)}`).bold(false).size(1, 1);
+    }
+    
+    // Add barcode
+    result.barcode(barcodeText, 'code128', {
+        height: 60,
+        width: 'large',
+        hri: 'below'
+    });
+    
+    // Add some space and cut the paper
+    result.feed(2).cut();
+
+    return result.encode();
+}
+
+window.printLabel = async function() {
+    const productName = document.getElementById('output-product-name').textContent;
+    const productPrice = parseFloat(document.getElementById('product-price').value) || 0;
+    const barcodeText = document.getElementById('output-barcode-text').textContent;
+
+    if (!barcodeText) {
+        showToast('Tidak ada barcode untuk dicetak.');
+        return;
+    }
+
+    try {
+        const escposData = await generateLabelEscPos(productName, productPrice, barcodeText);
+        sendToRawBT(escposData);
+        showToast('Mengirim label ke RawBT...');
+    } catch (error) {
+        console.error('Print label failed:', error);
+        showToast('Gagal mengirim label ke RawBT.');
+    }
+};
+
+window.generateBarcodeLabel = function() {
+    const productName = document.getElementById('product-name').value;
+    const productPrice = document.getElementById('product-price').value;
+    const barcodeCode = document.getElementById('barcode-code').value.trim();
+
+    if (!barcodeCode) {
+        showToast('Teks/Angka untuk Barcode wajib diisi.');
+        return;
+    }
+
+    // Update text outputs
+    document.getElementById('output-product-name').textContent = productName;
+    document.getElementById('output-product-price').textContent = productPrice ? `Rp ${formatCurrency(parseFloat(productPrice))}` : '';
+    document.getElementById('output-barcode-text').textContent = barcodeCode;
+
+    // Generate barcode
+    try {
+        JsBarcode("#barcode", barcodeCode, {
+            format: "CODE128",
+            displayValue: false, // We display the text manually
+            margin: 10,
+            height: 50,
+        });
+
+        // Show output and buttons
+        document.getElementById('barcodeLabelOutput').classList.remove('hidden');
+        document.getElementById('download-buttons').classList.remove('hidden');
+    } catch (e) {
+        showToast('Kode barcode tidak valid. Coba kode lain.');
+        console.error("JsBarcode error:", e);
+    }
+};
+
+
+window.downloadLabelAsPng = function() {
+    const labelContent = document.getElementById('labelContent');
+
+    // Temporarily apply styles for rendering, then remove them.
+    labelContent.style.backgroundColor = 'white';
+    labelContent.style.padding = '10px';
+
+    // Use html2canvas if available, otherwise show error.
+    if (typeof html2canvas === 'function') {
+        html2canvas(labelContent).then(canvas => {
+            // Reset styles after rendering
+            labelContent.style.backgroundColor = '';
+            labelContent.style.padding = '';
+
+            const link = document.createElement('a');
+            link.download = `label-${document.getElementById('barcode-code').value}.png`;
+            link.href = canvas.toDataURL("image/png");
+            link.click();
+        });
+    } else {
+        showToast('Gagal mengunduh. Library html2canvas tidak ditemukan.');
+        // Reset styles
+        labelContent.style.backgroundColor = '';
+        labelContent.style.padding = '';
+    }
+};
+
 // --- KIOSK MODE ---
-async function handleKioskModeToggle(isEnabled) {
-    if (isEnabled) {
-        // Check if PIN is set
-        const kioskPin = await getSettingFromDB('kioskPin');
-        if (kioskPin) {
+
+window.handleKioskModeToggle = async function(isChecked) {
+    if (isChecked) {
+        const existingPin = await getSettingFromDB('kioskPin');
+        if (existingPin) {
+            isKioskModeActive = true;
+            await putSettingToDB({ key: 'kioskModeEnabled', value: true });
             enterKioskMode();
         } else {
-            // Prompt to set a new PIN
             showSetKioskPinModal();
         }
     } else {
-        // Requires PIN to disable
+        // Deactivation requires PIN, which is handled by the exit button logic
         showEnterKioskPinModal();
     }
-}
-window.handleKioskModeToggle = handleKioskModeToggle;
+};
 
-function showSetKioskPinModal() {
+window.showSetKioskPinModal = function() {
+    document.getElementById('setKioskPinModal').classList.remove('hidden');
     document.getElementById('newKioskPin').value = '';
     document.getElementById('confirmKioskPin').value = '';
-    document.getElementById('setKioskPinModal').classList.remove('hidden');
-}
+};
 
-function closeSetKioskPinModal() {
+window.closeSetKioskPinModal = function() {
     document.getElementById('setKioskPinModal').classList.add('hidden');
-    // If user cancels setting PIN, revert the toggle
-    document.getElementById('kioskModeToggle').checked = false;
-}
+    // If user cancels setting a PIN, uncheck the toggle
+    const kioskToggle = document.getElementById('kioskModeToggle');
+    if (kioskToggle) kioskToggle.checked = false;
+};
 
-async function saveKioskPinAndActivate() {
+window.saveKioskPinAndActivate = async function() {
     const newPin = document.getElementById('newKioskPin').value;
     const confirmPin = document.getElementById('confirmKioskPin').value;
 
@@ -3993,207 +3919,202 @@ async function saveKioskPinAndActivate() {
         return;
     }
 
-    // In a real app, hash the PIN. For this local app, storing it directly is a simplification.
     await putSettingToDB({ key: 'kioskPin', value: newPin });
-    document.getElementById('setKioskPinModal').classList.add('hidden');
-    enterKioskMode();
-}
-
-function showEnterKioskPinModal() {
-    currentPinInput = "";
-    updatePinDisplay();
-    document.getElementById('kioskPinError').textContent = '';
-    document.getElementById('enterKioskPinModal').classList.remove('hidden');
-}
-window.showEnterKioskPinModal = showEnterKioskPinModal;
-
-function closeEnterKioskPinModal() {
-    document.getElementById('enterKioskPinModal').classList.add('hidden');
-    // If exiting Kiosk is cancelled, ensure toggle is still checked
-    if (isKioskModeActive) {
-        document.getElementById('kioskModeToggle').checked = true;
-    }
-}
-
-async function handlePinKeyPress(key) {
-    if (key === 'clear') {
-        currentPinInput = "";
-    } else if (key === 'backspace') {
-        currentPinInput = currentPinInput.slice(0, -1);
-    } else if (currentPinInput.length < 4) {
-        currentPinInput += key;
-    }
-    
-    updatePinDisplay();
-
-    if (currentPinInput.length === 4) {
-        const storedPin = await getSettingFromDB('kioskPin');
-        if (currentPinInput === storedPin) {
-            // Correct PIN
-            pinAttemptCount = 0;
-            closeEnterKioskPinModal();
-            exitKioskMode();
-        } else {
-            // Incorrect PIN
-            pinAttemptCount++;
-            document.getElementById('kioskPinDisplay').classList.add('animate-shake');
-            document.getElementById('kioskPinError').textContent = `PIN Salah (${pinAttemptCount}/5)`;
-            setTimeout(() => {
-                document.getElementById('kioskPinDisplay').classList.remove('animate-shake');
-                currentPinInput = "";
-                updatePinDisplay();
-            }, 500);
-
-            if (pinAttemptCount >= 5) {
-                // Catastrophic failure - reset app
-                closeEnterKioskPinModal();
-                showConfirmationModal(
-                    'Terlalu Banyak Percobaan',
-                    'Anda telah 5x salah memasukkan PIN. Sesuai kebijakan keamanan, semua data aplikasi akan dihapus.',
-                    async () => {
-                        await clearAllStores();
-                        location.reload();
-                    },
-                    'Mengerti',
-                    'bg-red-500'
-                );
-            }
-        }
-    }
-}
-window.handlePinKeyPress = handlePinKeyPress;
-
-
-function updatePinDisplay() {
-    const dots = document.querySelectorAll('#kioskPinDisplay div');
-    dots.forEach((dot, index) => {
-        if (index < currentPinInput.length) {
-            dot.classList.add('bg-blue-500');
-            dot.classList.remove('bg-gray-300');
-        } else {
-            dot.classList.add('bg-gray-300');
-            dot.classList.remove('bg-blue-500');
-        }
-    });
-}
-
-async function enterKioskMode() {
-    isKioskModeActive = true;
     await putSettingToDB({ key: 'kioskModeEnabled', value: true });
-    
+    isKioskModeActive = true;
+    closeSetKioskPinModal();
+    enterKioskMode();
+};
+
+function enterKioskMode() {
+    showToast('Mode Kios diaktifkan.', 2000);
     document.getElementById('bottomNav').classList.add('hidden');
     document.getElementById('exitKioskBtn').classList.remove('hidden');
-    if (currentPage !== 'kasir') {
-        showPage('kasir', { force: true });
-    }
-    
-    showToast('Mode Kios Diaktifkan.');
+    showPage('kasir', { force: true });
 }
 
 async function exitKioskMode() {
     isKioskModeActive = false;
     await putSettingToDB({ key: 'kioskModeEnabled', value: false });
-    document.getElementById('kioskModeToggle').checked = false;
-
+    showToast('Mode Kios dinonaktifkan.', 2000);
     document.getElementById('bottomNav').classList.remove('hidden');
     document.getElementById('exitKioskBtn').classList.add('hidden');
+    const kioskToggle = document.getElementById('kioskModeToggle');
+    if (kioskToggle) kioskToggle.checked = false;
     showPage('dashboard');
-    
-    showToast('Mode Kios Dinonaktifkan.');
 }
 
+
+window.showEnterKioskPinModal = function() {
+    currentPinInput = "";
+    pinAttemptCount = 0;
+    document.getElementById('kioskPinError').textContent = '';
+    updatePinDisplay();
+    document.getElementById('enterKioskPinModal').classList.remove('hidden');
+};
+
+window.closeEnterKioskPinModal = function() {
+    // If kiosk mode is active, closing the modal should not change the toggle state.
+    // If kiosk mode is NOT active (i.e., user was trying to disable it), we need to re-check the toggle.
+    if (!isKioskModeActive) {
+        const kioskToggle = document.getElementById('kioskModeToggle');
+        if (kioskToggle) kioskToggle.checked = false;
+    }
+    document.getElementById('enterKioskPinModal').classList.add('hidden');
+};
+
+function updatePinDisplay() {
+    const dots = document.querySelectorAll('#kioskPinDisplay div');
+    dots.forEach((dot, index) => {
+        dot.style.backgroundColor = index < currentPinInput.length ? '#3b82f6' : '#d1d5db';
+    });
+}
+
+window.handlePinKeyPress = function(key) {
+    if (key === 'backspace') {
+        currentPinInput = currentPinInput.slice(0, -1);
+    } else if (key === 'clear') {
+        currentPinInput = "";
+    } else if (currentPinInput.length < 4) {
+        currentPinInput += key;
+    }
+    updatePinDisplay();
+
+    if (currentPinInput.length === 4) {
+        checkKioskPin();
+    }
+};
+
+async function checkKioskPin() {
+    const correctPin = await getSettingFromDB('kioskPin');
+    const errorEl = document.getElementById('kioskPinError');
+    const pinDisplay = document.getElementById('kioskPinDisplay');
+    
+    if (currentPinInput === correctPin) {
+        errorEl.textContent = 'PIN Benar!';
+        errorEl.classList.remove('text-red-500');
+        errorEl.classList.add('text-green-500');
+        setTimeout(() => {
+            closeEnterKioskPinModal();
+            exitKioskMode();
+        }, 500);
+    } else {
+        pinAttemptCount++;
+        errorEl.textContent = `PIN Salah! (${pinAttemptCount}/5)`;
+        errorEl.classList.add('text-red-500');
+        errorEl.classList.remove('text-green-500');
+        
+        pinDisplay.classList.add('animate-shake');
+        setTimeout(() => pinDisplay.classList.remove('animate-shake'), 500);
+
+        currentPinInput = "";
+        updatePinDisplay();
+        
+        if (pinAttemptCount >= 5) {
+             showToast('Terlalu banyak percobaan PIN. Data akan dihapus!', 5000);
+             setTimeout(async () => {
+                await clearAllStores();
+                location.reload();
+             }, 3000);
+        }
+    }
+}
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
+    // Show loading overlay immediately
     const loadingOverlay = document.getElementById('loadingOverlay');
+    const appContainer = document.getElementById('appContainer');
+
     try {
         await initDB();
         
-        // Load libraries and check availability
+        // Load libraries that might fail and update UI accordingly
         isScannerReady = typeof Html5Qrcode !== 'undefined';
         isPrinterReady = typeof EscPosEncoder !== 'undefined';
         isChartJsReady = typeof Chart !== 'undefined';
 
-        await loadSettings(); // Load settings early
-        await applyDefaultFees(); // Initialize cart with default fees
-
-        // Load initial page content
+        // Initialize features
+        await loadSettings();
         loadDashboard();
+        updateFeatureAvailability();
+        await applyDefaultFees(); // Set up default fees on startup
+        
+        // Setup scanner object
+        if (isScannerReady) {
+            html5QrCode = new Html5Qrcode("qr-reader");
+        } else {
+            console.error("Html5Qrcode library failed to load.");
+        }
 
         // Setup event listeners
         document.getElementById('searchProduct')?.addEventListener('input', (e) => {
             const searchTerm = e.target.value.toLowerCase();
-            document.querySelectorAll('.product-item').forEach(item => {
-                const name = item.dataset.name || '';
-                const barcode = item.dataset.barcode || '';
-                item.style.display = name.includes(searchTerm) || barcode.includes(searchTerm) ? 'block' : 'none';
+            const products = document.querySelectorAll('.product-item');
+            products.forEach(p => {
+                const name = p.dataset.name || '';
+                const barcode = p.dataset.barcode || '';
+                const isVisible = name.includes(searchTerm) || barcode.includes(searchTerm);
+                p.style.display = isVisible ? 'block' : 'none';
             });
         });
-        
+
         document.getElementById('confirmButton')?.addEventListener('click', () => {
-            if (confirmCallback) {
+            if (typeof confirmCallback === 'function') {
                 confirmCallback();
             }
             closeConfirmationModal();
         });
-
         document.getElementById('cancelButton')?.addEventListener('click', closeConfirmationModal);
         
-        if (isScannerReady) {
-            html5QrCode = new Html5Qrcode("qr-reader");
-        }
-        if (isChartJsReady) {
-            setupChartViewToggle();
-        }
+        // Barcode label generator listeners
+        document.getElementById('generateBarcodeLabelBtn')?.addEventListener('click', generateBarcodeLabel);
+        document.getElementById('downloadPngBtn')?.addEventListener('click', downloadLabelAsPng);
+        document.getElementById('printLabelBtn')?.addEventListener('click', printLabel);
 
-        setupBarcodeGenerator();
-        updateFeatureAvailability();
+        // Chart toggle
+        setupChartViewToggle();
+
+        // Popover listener
+        document.addEventListener('click', (event) => {
+            const popover = document.getElementById('ledgerActionsPopover');
+            if (activePopover && !popover.contains(event.target) && !event.target.closest('[onclick^="showLedgerActions"]')) {
+                closeLedgerActions();
+            }
+        });
         
-        // Kiosk Mode check
+        // Kiosk mode check on startup
         const kioskEnabled = await getSettingFromDB('kioskModeEnabled');
         if (kioskEnabled) {
             isKioskModeActive = true;
-            document.getElementById('bottomNav').classList.add('hidden');
-            document.getElementById('exitKioskBtn').classList.remove('hidden');
-            showPage('kasir', { force: true });
-        } else {
-            showPage('dashboard');
+            enterKioskMode();
         }
-        
-        // Offline/Online handling
+
+        // Offline/Online detection
         window.addEventListener('online', checkOnlineStatus);
         window.addEventListener('offline', checkOnlineStatus);
-        checkOnlineStatus().then(() => syncWithServer()); // Initial check and sync
-
-        // Popover closing logic
-        document.addEventListener('click', (event) => {
-            const popover = document.getElementById('ledgerActionsPopover');
-            if (activePopover && popover && !popover.contains(event.target) && !event.target.closest('button[onclick^="showLedgerActions"]')) {
-                hideLedgerActions();
-            }
-        });
-
-        // Set up an interval to refresh the dashboard if the user stays on it and the date changes
+        checkOnlineStatus(); // Initial check
+        
+        // Auto-refresh dashboard if it was opened on a different day
         setInterval(() => {
             const today = new Date().toISOString().split('T')[0];
             if (currentPage === 'dashboard' && lastDashboardLoadDate !== today) {
-                console.log('Date changed, auto-refreshing dashboard.');
+                console.log('New day detected, auto-refreshing dashboard.');
                 loadDashboard();
             }
         }, 60 * 1000); // Check every minute
 
-
-    } catch (error) {
-        console.error("Initialization failed:", error);
-        loadingOverlay.innerHTML = '<p class="text-red-500">Gagal memuat aplikasi.</p>';
-    } finally {
-        // Must be called on first user interaction for some browsers
+        // Initialize audio context after first user interaction
         document.body.addEventListener('click', initAudioContext, { once: true });
-        document.body.addEventListener('touchstart', initAudioContext, { once: true });
+        
         // Hide loading overlay and show app
         loadingOverlay.classList.add('opacity-0');
         setTimeout(() => {
             loadingOverlay.style.display = 'none';
-            document.getElementById('appContainer').classList.remove('hidden');
+            appContainer.classList.remove('hidden');
         }, 300);
+
+    } catch (error) {
+        console.error("Initialization failed:", error);
+        loadingOverlay.innerHTML = '<p class="text-red-500">Gagal memuat aplikasi. Coba muat ulang halaman.</p>';
     }
 });
