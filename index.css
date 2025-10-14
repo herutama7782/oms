@@ -424,17 +424,6 @@ body {
     word-break: break-all;
 }
 
-#receiptLogoContainer {
-    text-align: center;
-    margin-bottom: 8px;
-}
-
-#receiptLogoContainer img {
-    max-width: 150px;
-    max-height: 80px;
-    margin: 0 auto;
-}
-
 .receipt-line-justify {
     display: flex;
     justify-content: space-between;

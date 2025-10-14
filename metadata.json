@@ -1,9 +1,12 @@
 {
-  "name": "POS Mobile Connect CDNjsdelivr RawBT",
+  "name": "(OK) POS Mobile RAwBT",
   "description": "A mobile-first Point of Sale application with barcode scanning for small businesses.",
   "requestFramePermissions": [
     "camera",
+    "bluetooth",
     "geolocation"
   ],
-  "enabledApis": []
+  "enabledApis": [
+    "bluetooth"
+  ]
 }

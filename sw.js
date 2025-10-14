@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pos-mobile-cache-v3';
+const CACHE_NAME = 'pos-mobile-cache-v1';
 const APP_SHELL_URLS = [
   '/',
   '/index.html',
