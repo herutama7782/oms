@@ -3197,7 +3197,8 @@ async function generateReceiptEscPos(transactionData) {
     const encoder = new EscPosEncoder.default();
     encoder
         .initialize()
-        .raw([0x1b, 0x40]); // Initialize printer
+        .raw([0x1b, 0x40]) // Initialize printer
+        .codepage('cp1252'); // Set codepage to prevent unwanted characters
 
 
     // Generate the master text and process it line by line
