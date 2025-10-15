@@ -3074,11 +3074,12 @@ async function _generateReceiptText(transactionData, isPreview) {
     };
 
     let receiptText = "";
-    
+
     // Header
-    receiptText += centerText(storeName) + '\n';
+    if (storeName) receiptText += centerText(storeName) + '\n';
     if (storeAddress) receiptText += centerText(storeAddress) + '\n';
     receiptText += receiptLine('=') + '\n';
+    receiptText += '\n'; // Add extra line for logo spacing
     receiptText += `No: ${transactionData.id || (isPreview ? 'PREVIEW' : 'N/A')}\n`;
     receiptText += `Tgl: ${formatReceiptDate(transactionData.date)}\n`;
     receiptText += receiptLine('-') + '\n';
@@ -3188,7 +3189,12 @@ async function generateReceiptEscPos(transactionData) {
         .initialize()
         .raw([0x1b, 0x40]); // Initialize printer
 
-    // Handle Logo separately as it's a graphical element
+
+    // Generate the master text and process it line by line
+    const receiptText = await _generateReceiptText(transactionData, false);
+    encoder.align('left'); // Set default alignment
+
+    // Add logo if enabled
     if (showLogo && logoData) {
         try {
             const image = await new Promise((resolve, reject) => {
@@ -3200,8 +3206,9 @@ async function generateReceiptEscPos(transactionData) {
 
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
-            const maxWidth = paperSize === '58mm' ? 150 : 175;
-            const maxHeight = paperSize === '58mm' ? 60 : 65;
+            ctx.imageSmoothingEnabled = false; // Make image sharper for printing
+            const maxWidth = paperSize === '58mm' ? 200 : 300; // Adjusted for paper size
+            const maxHeight = paperSize === '58mm' ? 80 : 100; // Adjusted for paper size
             let imgWidth = image.width;
             let imgHeight = image.height;
 
@@ -3218,15 +3225,13 @@ async function generateReceiptEscPos(transactionData) {
             ctx.drawImage(image, 0, 0, imgWidth, imgHeight);
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-            encoder.align('center').image(imageData, 'd24');
+            encoder.align('center'); // Center the logo
+            encoder.image(imageData, 's8'); // Use s8 mode for better clarity
+            encoder.line(''); // Add space after logo
         } catch (e) {
             console.error('Failed to process logo for printing:', e);
         }
     }
-
-    // Generate the master text and process it line by line
-    const receiptText = await _generateReceiptText(transactionData, false);
-    encoder.align('left'); // Set default alignment
     
     receiptText.split('\n').forEach(line => {
         if (line.startsWith('TOTAL')) {
