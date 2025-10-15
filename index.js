@@ -3164,31 +3164,17 @@ async function _generateReceiptHTML(data, isPreview) {
     const settings = await getAllFromDB('settings');
     const settingsMap = new Map(settings.map(s => [s.key, s.value]));
     const logoData = settingsMap.get('storeLogo') || null;
-    const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
 
-    console.log('Logo Debug - _generateReceiptHTML:', { logoData: !!logoData, showLogo, isPreview });
+    console.log('Logo Debug - _generateReceiptHTML:', { logoData: !!logoData, isPreview });
 
     // 1. Generate the master plain text
     let receiptText = await _generateReceiptText(data, isPreview);
 
     // 2. Prepare logo HTML if needed
     let logoHtml = '';
-    if (showLogo && logoData) {
-        // Validate logo data before using it
-        try {
-            // Create a temporary image to validate the data URL
-            const img = new Image();
-            await new Promise((resolve, reject) => {
-                img.onload = resolve;
-                img.onerror = reject;
-                img.src = logoData;
-            });
-            logoHtml = `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 2px;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto;"></div>`;
-            console.log('Logo Debug - Logo validation successful');
-        } catch (error) {
-            console.error('Logo Debug - Logo validation failed:', error);
-            logoHtml = ''; // Don't include invalid logo
-        }
+    if (logoData) {
+        logoHtml = `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 2px;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto;"></div>`;
+        console.log('Logo Debug - logoHtml generated:', !!logoHtml);
     }
 
     console.log('Logo Debug - logoHtml generated:', !!logoHtml);
@@ -3243,17 +3229,9 @@ async function generateReceiptEscPos(transactionData) {
         .raw([0x1b, 0x40]); // Initialize printer
 
     // Handle Logo separately as it's a graphical element
-    if (showLogo && logoData) {
+    if (logoData) {
         console.log('Logo Debug - Processing logo for printing');
         try {
-            // Validate logo data first
-            const validationImg = new Image();
-            await new Promise((resolve, reject) => {
-                validationImg.onload = resolve;
-                validationImg.onerror = reject;
-                validationImg.src = logoData;
-            });
-
             const image = await new Promise((resolve, reject) => {
                 const img = new Image();
                 img.onload = () => {
@@ -3300,7 +3278,7 @@ async function generateReceiptEscPos(transactionData) {
             // Continue without logo instead of failing the entire print
         }
     } else {
-        console.log('Logo Debug - Logo not processed:', { showLogo, hasLogoData: !!logoData });
+        console.log('Logo Debug - Logo not processed:', { hasLogoData: !!logoData });
     }
 
     // Generate the master text and process it line by line
