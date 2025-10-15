@@ -3173,7 +3173,7 @@ async function _generateReceiptHTML(data, isPreview) {
     // 2. Prepare logo HTML if needed
     let logoHtml = '';
     if (logoData && settingsMap.get('showLogoOnReceipt') !== false) {
-        logoHtml = `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 2px;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto;"></div>`;
+        logoHtml = `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 2px;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto; display: block;"></div>`;
         console.log('Logo Debug - logoHtml generated:', !!logoHtml);
     }
 
@@ -3271,7 +3271,8 @@ async function generateReceiptEscPos(transactionData) {
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
             console.log('Logo Debug - Adding logo to encoder');
-            encoder.align('center').image(imageData, 's24'); // Use higher quality mode
+            encoder.align('center').image(imageData, 'd24'); // Use double density for better quality
+            encoder.line(''); // Add blank line after logo
             console.log('Logo Debug - Logo added to encoder successfully');
         } catch (e) {
             console.error('Logo Debug - Failed to process logo for printing:', e);
