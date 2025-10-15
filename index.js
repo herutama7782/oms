@@ -3186,8 +3186,6 @@ async function generateReceiptEscPos(transactionData) {
     const encoder = new EscPosEncoder.default();
     encoder
         .initialize()
-        .codepage('cp437')
-        .raw([0x1b, 0x74, 0x00]) // Set printer to use codepage CP437
         .raw([0x1b, 0x40]); // Initialize printer
 
     // Handle Logo separately as it's a graphical element
@@ -3335,8 +3333,6 @@ async function generateLabelEscPos() {
     const encoder = new EscPosEncoder.default();
     encoder
         .initialize()
-        .codepage('cp437')
-        .raw([0x1b, 0x74, 0x00]) // Set printer to use codepage CP437
         .raw([0x1b, 0x40]); // Initialize printer
 
     // Center align for header
@@ -3388,8 +3384,6 @@ window.testPrint = async function() {
 
         const data = encoder
             .initialize()
-            .codepage('cp437')
-            .raw([0x1b, 0x74, 0x00]) // Set printer to use codepage CP437
             .raw([0x1b, 0x40]) // Initialize printer
             .align('center')
             .width(2).height(2)
