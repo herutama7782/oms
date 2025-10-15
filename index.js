@@ -3184,7 +3184,10 @@ async function generateReceiptEscPos(transactionData) {
     const paperSize = settingsMap.get('printerPaperSize') || '80mm';
 
     const encoder = new EscPosEncoder.default();
-    encoder.initialize().codepage('cp850');
+    encoder
+        .initialize()
+        .codepage('cp850') // Set the encoder's internal mapping for characters
+        .raw([0x1b, 0x74, 0x02]); // ESC t 2: Set printer to use codepage PC850
 
     // Handle Logo separately as it's a graphical element
     if (showLogo && logoData) {
@@ -3324,7 +3327,8 @@ window.testPrint = async function() {
         
         const data = encoder
             .initialize()
-            .codepage('cp850') // Add codepage for consistency
+            .codepage('cp850') // Set encoder mapping
+            .raw([0x1b, 0x74, 0x02]) // Tell printer to use PC850 (Multilingual)
             .align('center')
             .width(2).height(2)
             .line('Test Cetak')
