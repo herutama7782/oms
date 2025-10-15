@@ -3247,8 +3247,8 @@ async function generateReceiptEscPos(transactionData) {
 
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
-            const maxWidth = paperSize === '58mm' ? 150 : 175;
-            const maxHeight = paperSize === '58mm' ? 60 : 65;
+            const maxWidth = paperSize === '58mm' ? 180 : 200;
+            const maxHeight = paperSize === '58mm' ? 70 : 100;
             let imgWidth = image.width;
             let imgHeight = image.height;
 
@@ -3258,7 +3258,7 @@ async function generateReceiptEscPos(transactionData) {
             // Calculate scaling ratio to fit within max dimensions while maintaining aspect ratio
             const widthRatio = maxWidth / imgWidth;
             const heightRatio = maxHeight / imgHeight;
-            const scaleRatio = Math.min(widthRatio, heightRatio, 1); // Don't scale up
+            const scaleRatio = Math.min(widthRatio, heightRatio); // Allow scaling up for clarity
 
             imgWidth *= scaleRatio;
             imgHeight *= scaleRatio;
@@ -3271,7 +3271,7 @@ async function generateReceiptEscPos(transactionData) {
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
             console.log('Logo Debug - Adding logo to encoder');
-            encoder.align('center').image(imageData, 'd24');
+            encoder.align('center').image(imageData, 's24'); // Use higher quality mode
             console.log('Logo Debug - Logo added to encoder successfully');
         } catch (e) {
             console.error('Logo Debug - Failed to process logo for printing:', e);
