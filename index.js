@@ -3238,8 +3238,7 @@ async function generateReceiptEscPos(transactionData) {
 
     encoder
         .feed(3)
-        .cut()
-        .raw([0x1b, 0x70, 0x00, 0x19, 0x19]); // Cash drawer pulse command: ESC p m t1 t2 (adjusted parameters)
+        .cut();
     return encoder.encode();
 }
 
@@ -3398,7 +3397,6 @@ window.testPrint = async function() {
             .line(new Date().toLocaleString('id-ID'))
             .feed(3)
             .cut()
-            .raw([0x1b, 0x70, 0x00, 0x19, 0x19]) // Cash drawer pulse command: ESC p m t1 t2 (adjusted parameters)
             .encode();
 
         sendToRawBT(data);
