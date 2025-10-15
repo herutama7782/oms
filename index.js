@@ -3173,24 +3173,31 @@ async function _generateReceiptHTML(data, isPreview) {
     // 2. Prepare logo HTML if needed
     let logoHtml = '';
     if (logoData && settingsMap.get('showLogoOnReceipt') !== false) {
-        logoHtml = `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 2px;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto; display: block;"></div>`;
-        console.log('Logo Debug - logoHtml generated:', !!logoHtml);
+        logoHtml = `<div id="receiptLogoContainer" style="text-align: center; margin: 2px 0;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto; display: block;"></div>`;
     }
 
-    console.log('Logo Debug - logoHtml generated:', !!logoHtml);
+    // 3. If logo, insert it after the header line (after =====)
+    let finalText = receiptText;
+    if (logoHtml) {
+        const lines = receiptText.split('\n');
+        const headerEndIndex = lines.findIndex(line => line.includes('=')) + 1; // after the ===== line
+        const before = lines.slice(0, headerEndIndex).join('\n');
+        const after = lines.slice(headerEndIndex).join('\n');
+        finalText = before + '\n' + logoHtml + after;
+    }
 
-    // 3. Create a <pre> element to preserve formatting
+    // 4. Create a <pre> element to preserve formatting
     const pre = document.createElement('pre');
-    pre.textContent = receiptText;
+    pre.innerHTML = finalText;
 
-    // 4. Find the TOTAL line and wrap it in <b> tags for emphasis in the preview
+    // 5. Find the TOTAL line and wrap it in <b> tags for emphasis in the preview
     pre.innerHTML = pre.innerHTML.replace(
         /^(TOTAL\s+Rp\..*)$/m, // Use ^ and m flag for multiline match
         `<b>$1</b>`
     );
 
-    // 5. Combine and return the final HTML
-    return logoHtml + pre.outerHTML;
+    // 6. Return the final HTML
+    return pre.outerHTML;
 }
 
 /**
@@ -3247,8 +3254,9 @@ async function generateReceiptEscPos(transactionData) {
 
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
-            const maxWidth = paperSize === '58mm' ? 180 : 200;
-            const maxHeight = paperSize === '58mm' ? 70 : 100;
+            // Increased max dimensions for better print resolution
+            const maxWidth = paperSize === '58mm' ? 240 : 320;
+            const maxHeight = paperSize === '58mm' ? 100 : 150;
             let imgWidth = image.width;
             let imgHeight = image.height;
 
@@ -3267,6 +3275,9 @@ async function generateReceiptEscPos(transactionData) {
 
             canvas.width = imgWidth;
             canvas.height = imgHeight;
+            // Enable high-quality image rendering
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(image, 0, 0, imgWidth, imgHeight);
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
