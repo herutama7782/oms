@@ -3186,8 +3186,8 @@ async function generateReceiptEscPos(transactionData) {
     const encoder = new EscPosEncoder.default();
     encoder
         .initialize()
-        .codepage('cp850') // Set the encoder's internal mapping for characters
-        .raw([0x1b, 0x74, 0x02]); // ESC t 2: Set printer to use codepage PC850
+        .codepage('cp437') // Set the encoder's internal mapping for characters
+        .raw([0x1b, 0x74, 0x00]); // ESC t 0: Set printer to use codepage PC437
 
     // Handle Logo separately as it's a graphical element
     if (showLogo && logoData) {
@@ -3334,8 +3334,8 @@ async function generateLabelEscPos() {
     const encoder = new EscPosEncoder.default();
     encoder
         .initialize()
-        .codepage('cp850') // Set the encoder's internal mapping for characters
-        .raw([0x1b, 0x74, 0x02]); // ESC t 2: Set printer to use codepage PC850
+        .codepage('cp437') // Set the encoder's internal mapping for characters
+        .raw([0x1b, 0x74, 0x00]); // ESC t 0: Set printer to use codepage PC437
 
     // Center align for header
     encoder.align('center');
@@ -3386,8 +3386,8 @@ window.testPrint = async function() {
 
         const data = encoder
             .initialize()
-            .codepage('cp850') // Set encoder mapping
-            .raw([0x1b, 0x74, 0x02]) // Tell printer to use PC850
+            .codepage('cp437') // Set encoder mapping
+            .raw([0x1b, 0x74, 0x00]) // Tell printer to use PC437
             .align('center')
             .width(2).height(2)
             .line('Test Cetak')
