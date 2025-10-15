@@ -931,16 +931,6 @@ function loadDashboard() {
             storeAddressEl.textContent = value || 'Pengaturan toko belum diisi';
         }
     });
-    getSettingFromDB('storeLogo').then(value => {
-        const logoContainer = document.getElementById('dashboardLogo');
-        const logoImg = document.getElementById('dashboardLogoImg');
-        if (logoContainer && logoImg && value) {
-            logoImg.src = value;
-            logoContainer.classList.remove('hidden');
-        } else if (logoContainer) {
-            logoContainer.classList.add('hidden');
-        }
-    });
 }
 
 // --- DUE DATE NOTIFICATIONS ---
@@ -3197,8 +3187,7 @@ async function generateReceiptEscPos(transactionData) {
     const encoder = new EscPosEncoder.default();
     encoder
         .initialize()
-        .raw([0x1b, 0x40]) // Initialize printer
-        .codepage('cp437'); // Set codepage to prevent unwanted characters
+        .raw([0x1b, 0x40]); // Initialize printer
 
 
     // Generate the master text and process it line by line
