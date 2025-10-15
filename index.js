@@ -3176,7 +3176,7 @@ async function generateReceiptEscPos(transactionData) {
     if (!isPrinterReady) {
         throw new Error('Printer library not loaded.');
     }
-    
+
     const settings = await getAllFromDB('settings');
     const settingsMap = new Map(settings.map(s => [s.key, s.value]));
     const logoData = settingsMap.get('storeLogo') || null;
@@ -3186,8 +3186,9 @@ async function generateReceiptEscPos(transactionData) {
     const encoder = new EscPosEncoder.default();
     encoder
         .initialize()
-        .codepage('cp437') // Set the encoder's internal mapping for characters
-        .raw([0x1b, 0x74, 0x00]); // ESC t 0: Set printer to use codepage PC437
+        .raw([0x1b, 0x40]) // Initialize printer
+        .codepage('cp1252') // Set the encoder's internal mapping for characters
+        .raw([0x1b, 0x74, 0x10]); // ESC t 16: Set printer to use codepage Windows-1252
 
     // Handle Logo separately as it's a graphical element
     if (showLogo && logoData) {
@@ -3334,8 +3335,9 @@ async function generateLabelEscPos() {
     const encoder = new EscPosEncoder.default();
     encoder
         .initialize()
-        .codepage('cp437') // Set the encoder's internal mapping for characters
-        .raw([0x1b, 0x74, 0x00]); // ESC t 0: Set printer to use codepage PC437
+        .raw([0x1b, 0x40]) // Initialize printer
+        .codepage('cp1252') // Set the encoder's internal mapping for characters
+        .raw([0x1b, 0x74, 0x10]); // ESC t 16: Set printer to use codepage Windows-1252
 
     // Center align for header
     encoder.align('center');
@@ -3386,8 +3388,9 @@ window.testPrint = async function() {
 
         const data = encoder
             .initialize()
-            .codepage('cp437') // Set encoder mapping
-            .raw([0x1b, 0x74, 0x00]) // Tell printer to use PC437
+            .raw([0x1b, 0x40]) // Initialize printer
+            .codepage('cp1252') // Set encoder mapping to Windows-1252 for better character support
+            .raw([0x1b, 0x74, 0x10]) // Tell printer to use Windows-1252
             .align('center')
             .width(2).height(2)
             .line('Test Cetak')
