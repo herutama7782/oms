@@ -3315,6 +3315,65 @@ window.shareReceipt = async function() {
     }
 };
 
+/**
+ * Generates ESC/POS commands for printing a barcode label using text and barcode.
+ * @returns {Promise<Uint8Array>} A promise that resolves with the encoded commands.
+ */
+async function generateLabelEscPos() {
+    if (!isPrinterReady) {
+        throw new Error('Printer library not loaded.');
+    }
+
+    const productName = document.getElementById('product-name').value.trim();
+    const productPrice = document.getElementById('product-price').value.trim();
+    const barcodeCode = document.getElementById('barcode-code').value.trim();
+
+    const paperSize = await getSettingFromDB('printerPaperSize') || '80mm';
+    const paperWidthChars = paperSize === '58mm' ? 32 : 42;
+
+    const encoder = new EscPosEncoder.default();
+    encoder
+        .initialize()
+        .codepage('cp850') // Set the encoder's internal mapping for characters
+        .raw([0x1b, 0x74, 0x02]); // ESC t 2: Set printer to use codepage PC850
+
+    // Center align for header
+    encoder.align('center');
+
+    // Product name if provided
+    if (productName) {
+        encoder.bold(true).line(productName).bold(false);
+    }
+
+    // Product price if provided
+    if (productPrice) {
+        const formattedPrice = `Rp ${formatCurrency(productPrice)}`;
+        encoder.line(formattedPrice);
+    }
+
+    // Add some spacing
+    encoder.line('');
+
+    // Barcode
+    if (barcodeCode) {
+        // ESC/POS barcode command for CODE128
+        encoder.raw([0x1d, 0x6b, 0x49]); // GS k I (CODE128)
+        const barcodeLength = barcodeCode.length;
+        encoder.raw([barcodeLength]); // Length of barcode data
+        encoder.raw(new TextEncoder().encode(barcodeCode)); // Barcode data
+
+        // Add human-readable text below barcode
+        encoder.align('center').line(barcodeCode);
+    }
+
+    // Feed and cut
+    encoder
+        .feed(3)
+        .cut();
+
+    return encoder.encode();
+}
+
 window.testPrint = async function() {
     if (!isPrinterReady) {
         showToast('Fitur cetak tidak tersedia.');
@@ -3324,7 +3383,7 @@ window.testPrint = async function() {
         const paperSize = await getSettingFromDB('printerPaperSize') || '80mm';
         const paperWidthChars = paperSize === '58mm' ? 32 : 42;
         const encoder = new EscPosEncoder.default();
-        
+
         const data = encoder
             .initialize()
             .codepage('cp850') // Set encoder mapping
@@ -3340,7 +3399,7 @@ window.testPrint = async function() {
             .feed(3)
             .cut()
             .encode();
-            
+
         sendToRawBT(data);
 
     } catch(e) {
@@ -4105,37 +4164,8 @@ function setupBarcodeGenerator() {
             return;
         }
         try {
-            const { default: html2canvas } = await import('https://cdn.skypack.dev/html2canvas');
-            const labelContent = document.getElementById('labelContent');
-            const canvas = await html2canvas(labelContent, { scale: 2, backgroundColor: '#ffffff' });
-            
-            const ctx = canvas.getContext('2d');
-            let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            
-            const paperSize = await getSettingFromDB('printerPaperSize') || '80mm';
-            const paperWidth = paperSize === '58mm' ? 384 : 576;
-            
-            if (canvas.width > paperWidth) {
-                 const newCanvas = document.createElement('canvas');
-                 const newCtx = newCanvas.getContext('2d');
-                 const ratio = paperWidth / canvas.width;
-                 newCanvas.width = paperWidth;
-                 newCanvas.height = canvas.height * ratio;
-                 newCtx.drawImage(canvas, 0, 0, newCanvas.width, newCanvas.height);
-                 imageData = newCtx.getImageData(0, 0, newCanvas.width, newCanvas.height);
-            }
-            
-            const encoder = new EscPosEncoder.default();
-            const encodedImage = encoder
-               .initialize()
-               .align('center')
-               .image(imageData, 'd24')
-               .feed(3)
-               .cut()
-               .encode();
-               
-            window.sendToRawBT(encodedImage);
-            
+            const data = await generateLabelEscPos();
+            window.sendToRawBT(data);
         } catch (e) {
             console.error('Print label failed:', e);
             showToast('Gagal mencetak label.');
