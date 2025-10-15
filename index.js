@@ -3080,6 +3080,7 @@ async function _generateReceiptText(transactionData, isPreview) {
     if (storeAddress) receiptText += centerText(storeAddress) + '\n';
     receiptText += receiptLine('=') + '\n';
     receiptText += `No: ${transactionData.id || (isPreview ? 'PREVIEW' : 'N/A')}\n`;
+    receiptText += `Tgl: ${formatReceiptDate(transactionData.date)}\n`;
     receiptText += receiptLine('-') + '\n';
 
     // Items
@@ -3184,7 +3185,8 @@ async function generateReceiptEscPos(transactionData) {
 
     const encoder = new EscPosEncoder.default();
     encoder
-        .initialize(); // Initialize printer
+        .initialize()
+        .raw([0x1b, 0x40]); // Initialize printer
 
     // Handle Logo separately as it's a graphical element
     if (showLogo && logoData) {
@@ -3207,13 +3209,13 @@ async function generateReceiptEscPos(transactionData) {
                 imgWidth = maxWidth;
                 imgHeight *= ratio;
             }
-
+            
             canvas.width = imgWidth;
             canvas.height = imgHeight;
             ctx.drawImage(image, 0, 0, imgWidth, imgHeight);
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-            encoder.align('center').image(imageData);
+            
+            encoder.align('center').image(imageData, 'd24');
         } catch (e) {
             console.error('Failed to process logo for printing:', e);
         }
@@ -3233,7 +3235,8 @@ async function generateReceiptEscPos(transactionData) {
 
     encoder
         .feed(3)
-        .cut();
+        .cut()
+        .raw([0x1b, 0x70, 0x00, 0x40, 0x50]); // Cash drawer pulse command: ESC p m t1 t2
     return encoder.encode();
 }
 
