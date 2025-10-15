@@ -931,6 +931,16 @@ function loadDashboard() {
             storeAddressEl.textContent = value || 'Pengaturan toko belum diisi';
         }
     });
+    getSettingFromDB('storeLogo').then(value => {
+        const logoContainer = document.getElementById('dashboardLogo');
+        const logoImg = document.getElementById('dashboardLogoImg');
+        if (logoContainer && logoImg && value) {
+            logoImg.src = value;
+            logoContainer.classList.remove('hidden');
+        } else if (logoContainer) {
+            logoContainer.classList.add('hidden');
+        }
+    });
 }
 
 // --- DUE DATE NOTIFICATIONS ---
