@@ -3172,7 +3172,7 @@ async function _generateReceiptHTML(data, isPreview) {
 
     // 2. Prepare logo HTML if needed
     let logoHtml = '';
-    if (logoData) {
+    if (logoData && settingsMap.get('showLogoOnReceipt') !== false) {
         logoHtml = `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 2px;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto;"></div>`;
         console.log('Logo Debug - logoHtml generated:', !!logoHtml);
     }
@@ -3229,7 +3229,7 @@ async function generateReceiptEscPos(transactionData) {
         .raw([0x1b, 0x40]); // Initialize printer
 
     // Handle Logo separately as it's a graphical element
-    if (logoData) {
+    if (logoData && showLogo) {
         console.log('Logo Debug - Processing logo for printing');
         try {
             const image = await new Promise((resolve, reject) => {
@@ -3278,7 +3278,7 @@ async function generateReceiptEscPos(transactionData) {
             // Continue without logo instead of failing the entire print
         }
     } else {
-        console.log('Logo Debug - Logo not processed:', { hasLogoData: !!logoData });
+        console.log('Logo Debug - Logo not processed:', { hasLogoData: !!logoData, showLogo });
     }
 
     // Generate the master text and process it line by line
