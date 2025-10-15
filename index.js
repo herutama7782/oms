@@ -2320,14 +2320,15 @@ async function saveStoreSettings() {
         { key: 'showLogoOnReceipt', value: document.getElementById('showLogoOnReceipt').checked },
         { key: 'lowStockThreshold', value: parseInt((document.getElementById('lowStockThreshold')).value) || 5 },
         { key: 'autoPrintReceipt', value: document.getElementById('autoPrintReceipt').checked },
-        { key: 'printerPaperSize', value: document.getElementById('printerPaperSize').value }
+        { key: 'printerPaperSize', value: document.getElementById('printerPaperSize').value },
+        { key: 'enableCashDrawer', value: document.getElementById('enableCashDrawer').checked }
     ];
 
     try {
         const transaction = db.transaction('settings', 'readwrite');
         const store = transaction.objectStore('settings');
         settings.forEach(setting => store.put(setting));
-        
+
         transaction.oncomplete = () => {
             lowStockThreshold = settings.find(s => s.key === 'lowStockThreshold').value;
             showToast('Pengaturan berhasil disimpan');
@@ -2355,6 +2356,7 @@ async function loadSettings() {
         // Default to true if the setting doesn't exist yet
         document.getElementById('showLogoOnReceipt').checked = settingsMap.get('showLogoOnReceipt') !== false;
         document.getElementById('printerPaperSize').value = settingsMap.get('printerPaperSize') || '80mm';
+        document.getElementById('enableCashDrawer').checked = settingsMap.get('enableCashDrawer') || false;
 
         // Set Kiosk Mode toggle state
         const kioskToggle = document.getElementById('kioskModeToggle');
@@ -2363,7 +2365,7 @@ async function loadSettings() {
         }
 
         lowStockThreshold = settingsMap.get('lowStockThreshold') || 5;
-        
+
         currentStoreLogoData = settingsMap.get('storeLogo') || null;
         if (currentStoreLogoData) {
             (document.getElementById('storeLogoPreview')).innerHTML = `<img src="${currentStoreLogoData}" alt="Logo Preview" class="image-preview">`;
@@ -3168,6 +3170,17 @@ async function _generateReceiptHTML(data, isPreview) {
 }
 
 /**
+ * Generates ESC/POS command for opening cash drawer.
+ * Uses ESC p command: ESC p m t1 t2
+ * m: drawer pin (0 or 1), t1: on time (ms), t2: off time (ms)
+ * @returns {Uint8Array} The command bytes.
+ */
+function generateCashDrawerCommand() {
+    // ESC p 0 60 120 - Open drawer 0 with 60ms on, 120ms off pulse
+    return new Uint8Array([0x1b, 0x70, 0x00, 0x3c, 0x78]);
+}
+
+/**
  * Generates raw ESC/POS commands for printing a receipt using the pre-formatted text.
  * @param {object} transactionData The transaction data object.
  * @returns {Promise<Uint8Array>} A promise that resolves with the encoded commands.
@@ -3182,6 +3195,7 @@ async function generateReceiptEscPos(transactionData) {
     const logoData = settingsMap.get('storeLogo') || null;
     const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
     const paperSize = settingsMap.get('printerPaperSize') || '80mm';
+    const enableCashDrawer = settingsMap.get('enableCashDrawer') || false;
 
     const encoder = new EscPosEncoder.default();
     encoder
@@ -3227,7 +3241,7 @@ async function generateReceiptEscPos(transactionData) {
     // Generate the master text and process it line by line
     const receiptText = await _generateReceiptText(transactionData, false);
     encoder.align('left'); // Set default alignment
-    
+
     receiptText.split('\n').forEach(line => {
         if (line.startsWith('TOTAL')) {
             encoder.bold(true).line(line).bold(false);
@@ -3237,8 +3251,14 @@ async function generateReceiptEscPos(transactionData) {
     });
 
     encoder
-        .feed(3)
-        .cut();
+        .feed(3);
+
+    // Add cash drawer command if enabled
+    if (enableCashDrawer) {
+        encoder.raw(generateCashDrawerCommand());
+    }
+
+    encoder.cut();
     return encoder.encode();
 }
 
