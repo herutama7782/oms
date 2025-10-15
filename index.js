@@ -2378,10 +2378,29 @@ async function loadSettings() {
 window.previewStoreLogo = function(event) {
     const file = event.target.files?.[0];
     if (file) {
+        // Check file size (max 2MB)
+        if (file.size > 2 * 1024 * 1024) {
+            showToast('Ukuran gambar terlalu besar. Maksimal 2MB.');
+            return;
+        }
+
         const reader = new FileReader();
         reader.onload = (e) => {
-            currentStoreLogoData = e.target?.result;
-            (document.getElementById('storeLogoPreview')).innerHTML = `<img src="${currentStoreLogoData}" alt="Logo Preview" class="image-preview">`;
+            const dataUrl = e.target?.result;
+
+            // Validate the image by trying to load it
+            const img = new Image();
+            img.onload = () => {
+                currentStoreLogoData = dataUrl;
+                (document.getElementById('storeLogoPreview')).innerHTML = `<img src="${currentStoreLogoData}" alt="Logo Preview" class="image-preview">`;
+                showToast('Logo berhasil diupload. Jangan lupa simpan pengaturan.');
+            };
+            img.onerror = () => {
+                showToast('Gambar logo tidak valid atau rusak. Silakan pilih gambar lain.');
+                currentStoreLogoData = null;
+                (document.getElementById('storeLogoPreview')).innerHTML = `<i class="fas fa-image text-3xl mb-2"></i><p>Tap untuk upload logo</p>`;
+            };
+            img.src = dataUrl;
         };
         reader.readAsDataURL(file);
     }
@@ -3147,18 +3166,37 @@ async function _generateReceiptHTML(data, isPreview) {
     const logoData = settingsMap.get('storeLogo') || null;
     const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
 
+    console.log('Logo Debug - _generateReceiptHTML:', { logoData: !!logoData, showLogo, isPreview });
+
     // 1. Generate the master plain text
     let receiptText = await _generateReceiptText(data, isPreview);
 
     // 2. Prepare logo HTML if needed
-    const logoHtml = showLogo && logoData 
-        ? `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 2px;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto;"></div>` 
-        : '';
-        
+    let logoHtml = '';
+    if (showLogo && logoData) {
+        // Validate logo data before using it
+        try {
+            // Create a temporary image to validate the data URL
+            const img = new Image();
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = reject;
+                img.src = logoData;
+            });
+            logoHtml = `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 2px;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto;"></div>`;
+            console.log('Logo Debug - Logo validation successful');
+        } catch (error) {
+            console.error('Logo Debug - Logo validation failed:', error);
+            logoHtml = ''; // Don't include invalid logo
+        }
+    }
+
+    console.log('Logo Debug - logoHtml generated:', !!logoHtml);
+
     // 3. Create a <pre> element to preserve formatting
     const pre = document.createElement('pre');
     pre.textContent = receiptText;
-    
+
     // 4. Find the TOTAL line and wrap it in <b> tags for emphasis in the preview
     pre.innerHTML = pre.innerHTML.replace(
         /^(TOTAL\s+Rp\..*)$/m, // Use ^ and m flag for multiline match
@@ -3197,6 +3235,8 @@ async function generateReceiptEscPos(transactionData) {
     const paperSize = settingsMap.get('printerPaperSize') || '80mm';
     const enableCashDrawer = settingsMap.get('enableCashDrawer') || false;
 
+    console.log('Logo Debug - generateReceiptEscPos:', { logoData: !!logoData, showLogo, paperSize });
+
     const encoder = new EscPosEncoder.default();
     encoder
         .initialize()
@@ -3204,11 +3244,26 @@ async function generateReceiptEscPos(transactionData) {
 
     // Handle Logo separately as it's a graphical element
     if (showLogo && logoData) {
+        console.log('Logo Debug - Processing logo for printing');
         try {
+            // Validate logo data first
+            const validationImg = new Image();
+            await new Promise((resolve, reject) => {
+                validationImg.onload = resolve;
+                validationImg.onerror = reject;
+                validationImg.src = logoData;
+            });
+
             const image = await new Promise((resolve, reject) => {
                 const img = new Image();
-                img.onload = () => resolve(img);
-                img.onerror = reject;
+                img.onload = () => {
+                    console.log('Logo Debug - Image loaded successfully:', img.width, 'x', img.height);
+                    resolve(img);
+                };
+                img.onerror = (e) => {
+                    console.error('Logo Debug - Image failed to load:', e);
+                    reject(e);
+                };
                 img.src = logoData;
             });
 
@@ -3219,6 +3274,9 @@ async function generateReceiptEscPos(transactionData) {
             let imgWidth = image.width;
             let imgHeight = image.height;
 
+            console.log('Logo Debug - Original image size:', imgWidth, 'x', imgHeight);
+            console.log('Logo Debug - Max dimensions:', maxWidth, 'x', maxHeight);
+
             // Calculate scaling ratio to fit within max dimensions while maintaining aspect ratio
             const widthRatio = maxWidth / imgWidth;
             const heightRatio = maxHeight / imgHeight;
@@ -3227,15 +3285,22 @@ async function generateReceiptEscPos(transactionData) {
             imgWidth *= scaleRatio;
             imgHeight *= scaleRatio;
 
+            console.log('Logo Debug - Scaled image size:', imgWidth, 'x', imgHeight);
+
             canvas.width = imgWidth;
             canvas.height = imgHeight;
             ctx.drawImage(image, 0, 0, imgWidth, imgHeight);
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
+            console.log('Logo Debug - Adding logo to encoder');
             encoder.align('center').image(imageData, 'd24');
+            console.log('Logo Debug - Logo added to encoder successfully');
         } catch (e) {
-            console.error('Failed to process logo for printing:', e);
+            console.error('Logo Debug - Failed to process logo for printing:', e);
+            // Continue without logo instead of failing the entire print
         }
+    } else {
+        console.log('Logo Debug - Logo not processed:', { showLogo, hasLogoData: !!logoData });
     }
 
     // Generate the master text and process it line by line
@@ -3283,14 +3348,17 @@ window.printReceipt = async function(isAutoPrint = false) {
         showToast('Tidak ada data struk untuk dicetak.');
         return;
     }
-    
+
+    console.log('Logo Debug - printReceipt called:', { isAutoPrint, transactionId: currentReceiptTransaction.id });
+
     try {
         if (!isAutoPrint) showToast('Menyiapkan struk...', 2000);
         // Switch to ESC/POS text-based generation for better compatibility and codepage control.
         const data = await generateReceiptEscPos(currentReceiptTransaction);
+        console.log('Logo Debug - ESC/POS data generated, length:', data.length);
         sendToRawBT(data);
     } catch (error) {
-        console.error('Print error:', error);
+        console.error('Logo Debug - Print error:', error);
         if (!isAutoPrint) {
             // Provide more specific help based on the user's issue
             showConfirmationModal(
