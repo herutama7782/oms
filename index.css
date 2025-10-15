@@ -508,6 +508,19 @@ body {
     transition: all 0.3s ease;
 }
 
+/* Dashboard Logo Styles */
+#dashboardLogo {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 0 10px;
+}
+
+#dashboardLogoImg {
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
 .cart-fab:active {
     transform: scale(0.95);
     box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
