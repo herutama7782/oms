@@ -1,5 +1,5 @@
 {
-  "name": "(OK) POS Mobile RawBT edit",
+  "name": "(OK) POS Mobile RawBT cetak",
   "description": "A mobile-first Point of Sale application with barcode scanning for small businesses.",
   "requestFramePermissions": [
     "camera",
