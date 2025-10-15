@@ -3168,6 +3168,80 @@ async function _generateReceiptHTML(data, isPreview) {
 }
 
 /**
+ * Generates a receipt as an image (bitmap) for printing, and adds cash drawer command.
+ * This method is more reliable across different thermal printers than text-based printing.
+ * @param {object} transactionData The transaction object.
+ * @returns {Promise<Uint8Array>} A promise that resolves with the encoded ESC/POS commands.
+ */
+async function generateReceiptAsImage(transactionData) {
+    if (!isPrinterReady) {
+        throw new Error('Printer library not loaded.');
+    }
+
+    try {
+        // Dynamically import html2canvas if not present
+        const { default: html2canvas } = await import('https://cdn.skypack.dev/html2canvas');
+        
+        // 1. Get settings and receipt HTML
+        const settings = await getAllFromDB('settings');
+        const settingsMap = new Map(settings.map(s => [s.key, s.value]));
+        const paperSize = settingsMap.get('printerPaperSize') || '80mm';
+        const receiptHtml = await _generateReceiptHTML(transactionData, true); // Use preview mode formatting
+        
+        // 2. Create a temporary, off-screen element for rendering
+        const printContainer = document.createElement('div');
+        printContainer.style.position = 'absolute';
+        printContainer.style.left = '-9999px'; // Move it off-screen
+        printContainer.style.fontFamily = "'Courier New', Courier, monospace";
+        printContainer.style.fontSize = '12px'; // A standard font size for rendering
+        printContainer.style.lineHeight = '1.4';
+        printContainer.style.color = '#000';
+        printContainer.style.background = '#fff';
+        printContainer.style.padding = '5px';
+
+        // Set width based on paper size. These are standard pixel widths for thermal printers.
+        // 58mm paper is typically 384px wide.
+        // 80mm paper is typically 576px wide.
+        const printWidth = paperSize === '58mm' ? 384 : 576;
+        printContainer.style.width = `${printWidth}px`;
+        
+        printContainer.innerHTML = receiptHtml;
+        document.body.appendChild(printContainer);
+
+        // 3. Render the element to a canvas
+        const canvas = await html2canvas(printContainer, {
+            scale: 1, // Use 1x scale for direct pixel mapping
+            backgroundColor: '#ffffff',
+            logging: false
+        });
+        
+        // 4. Clean up the temporary element
+        document.body.removeChild(printContainer);
+
+        // 5. Convert canvas to ESC/POS image command
+        const ctx = canvas.getContext('2d');
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        
+        const encoder = new EscPosEncoder.default();
+        const encodedData = encoder
+            .initialize()
+            .align('center')
+            .image(imageData, 'd24') // 'd24' is a common density for 24-dot printing
+            .feed(2)
+            .cut()
+            .raw([0x1b, 0x70, 0x00, 0x40, 0x50]) // Cash drawer pulse command: ESC p m t1 t2
+            .encode();
+
+        return encodedData;
+
+    } catch (e) {
+        console.error('Failed to generate receipt as image:', e);
+        throw e; // Re-throw to be caught by the caller
+    }
+}
+
+
+/**
  * Generates raw ESC/POS commands for printing a receipt using the pre-formatted text.
  * @param {object} transactionData The transaction data object.
  * @returns {Promise<Uint8Array>} A promise that resolves with the encoded commands.
@@ -3258,12 +3332,21 @@ window.printReceipt = async function(isAutoPrint = false) {
     }
     
     try {
-        const data = await generateReceiptEscPos(currentReceiptTransaction);
+        if (!isAutoPrint) showToast('Menyiapkan struk...', 2000);
+        // Use the new image-based generation function
+        const data = await generateReceiptAsImage(currentReceiptTransaction);
         sendToRawBT(data);
     } catch (error) {
         console.error('Print error:', error);
         if (!isAutoPrint) {
-            showToast('Gagal mencetak struk. Pastikan RawBT terinstall.');
+            // Provide more specific help based on the user's issue
+            showConfirmationModal(
+                'Gagal Mencetak Struk',
+                'Struk gagal dicetak. Ini bisa terjadi jika aplikasi RawBT tidak terinstall atau belum diatur.<br><br>Coba gunakan tombol "Share ke Printer" sebagai alternatif.',
+                () => {}, // Empty function makes it an info modal
+                'Mengerti',
+                'bg-blue-500'
+            );
         }
     }
 };
