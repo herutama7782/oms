@@ -3200,21 +3200,24 @@ async function generateReceiptEscPos(transactionData) {
 
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
-            const maxWidth = paperSize === '58mm' ? 384 : 576;
+            const maxWidth = paperSize === '58mm' ? 150 : 175;
+            const maxHeight = paperSize === '58mm' ? 60 : 65;
             let imgWidth = image.width;
             let imgHeight = image.height;
 
-            if (imgWidth > maxWidth) {
-                const ratio = maxWidth / imgWidth;
-                imgWidth = maxWidth;
-                imgHeight *= ratio;
-            }
-            
+            // Calculate scaling ratio to fit within max dimensions while maintaining aspect ratio
+            const widthRatio = maxWidth / imgWidth;
+            const heightRatio = maxHeight / imgHeight;
+            const scaleRatio = Math.min(widthRatio, heightRatio, 1); // Don't scale up
+
+            imgWidth *= scaleRatio;
+            imgHeight *= scaleRatio;
+
             canvas.width = imgWidth;
             canvas.height = imgHeight;
             ctx.drawImage(image, 0, 0, imgWidth, imgHeight);
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            
+
             encoder.align('center').image(imageData, 'd24');
         } catch (e) {
             console.error('Failed to process logo for printing:', e);
@@ -3395,6 +3398,7 @@ window.testPrint = async function() {
             .line(new Date().toLocaleString('id-ID'))
             .feed(3)
             .cut()
+            .raw([0x1b, 0x70, 0x00, 0x40, 0x50]) // Cash drawer pulse command: ESC p m t1 t2
             .encode();
 
         sendToRawBT(data);
