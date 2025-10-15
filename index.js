@@ -2320,15 +2320,14 @@ async function saveStoreSettings() {
         { key: 'showLogoOnReceipt', value: document.getElementById('showLogoOnReceipt').checked },
         { key: 'lowStockThreshold', value: parseInt((document.getElementById('lowStockThreshold')).value) || 5 },
         { key: 'autoPrintReceipt', value: document.getElementById('autoPrintReceipt').checked },
-        { key: 'printerPaperSize', value: document.getElementById('printerPaperSize').value },
-        { key: 'enableCashDrawer', value: document.getElementById('enableCashDrawer').checked }
+        { key: 'printerPaperSize', value: document.getElementById('printerPaperSize').value }
     ];
 
     try {
         const transaction = db.transaction('settings', 'readwrite');
         const store = transaction.objectStore('settings');
         settings.forEach(setting => store.put(setting));
-
+        
         transaction.oncomplete = () => {
             lowStockThreshold = settings.find(s => s.key === 'lowStockThreshold').value;
             showToast('Pengaturan berhasil disimpan');
@@ -2356,7 +2355,6 @@ async function loadSettings() {
         // Default to true if the setting doesn't exist yet
         document.getElementById('showLogoOnReceipt').checked = settingsMap.get('showLogoOnReceipt') !== false;
         document.getElementById('printerPaperSize').value = settingsMap.get('printerPaperSize') || '80mm';
-        document.getElementById('enableCashDrawer').checked = settingsMap.get('enableCashDrawer') || false;
 
         // Set Kiosk Mode toggle state
         const kioskToggle = document.getElementById('kioskModeToggle');
@@ -2365,7 +2363,7 @@ async function loadSettings() {
         }
 
         lowStockThreshold = settingsMap.get('lowStockThreshold') || 5;
-
+        
         currentStoreLogoData = settingsMap.get('storeLogo') || null;
         if (currentStoreLogoData) {
             (document.getElementById('storeLogoPreview')).innerHTML = `<img src="${currentStoreLogoData}" alt="Logo Preview" class="image-preview">`;
@@ -2378,29 +2376,10 @@ async function loadSettings() {
 window.previewStoreLogo = function(event) {
     const file = event.target.files?.[0];
     if (file) {
-        // Check file size (max 2MB)
-        if (file.size > 2 * 1024 * 1024) {
-            showToast('Ukuran gambar terlalu besar. Maksimal 2MB.');
-            return;
-        }
-
         const reader = new FileReader();
         reader.onload = (e) => {
-            const dataUrl = e.target?.result;
-
-            // Validate the image by trying to load it
-            const img = new Image();
-            img.onload = () => {
-                currentStoreLogoData = dataUrl;
-                (document.getElementById('storeLogoPreview')).innerHTML = `<img src="${currentStoreLogoData}" alt="Logo Preview" class="image-preview">`;
-                showToast('Logo berhasil diupload. Jangan lupa simpan pengaturan.');
-            };
-            img.onerror = () => {
-                showToast('Gambar logo tidak valid atau rusak. Silakan pilih gambar lain.');
-                currentStoreLogoData = null;
-                (document.getElementById('storeLogoPreview')).innerHTML = `<i class="fas fa-image text-3xl mb-2"></i><p>Tap untuk upload logo</p>`;
-            };
-            img.src = dataUrl;
+            currentStoreLogoData = e.target?.result;
+            (document.getElementById('storeLogoPreview')).innerHTML = `<img src="${currentStoreLogoData}" alt="Logo Preview" class="image-preview">`;
         };
         reader.readAsDataURL(file);
     }
@@ -3164,51 +3143,28 @@ async function _generateReceiptHTML(data, isPreview) {
     const settings = await getAllFromDB('settings');
     const settingsMap = new Map(settings.map(s => [s.key, s.value]));
     const logoData = settingsMap.get('storeLogo') || null;
-
-    console.log('Logo Debug - _generateReceiptHTML:', { logoData: !!logoData, isPreview });
+    const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
 
     // 1. Generate the master plain text
     let receiptText = await _generateReceiptText(data, isPreview);
 
     // 2. Prepare logo HTML if needed
-    let logoHtml = '';
-    if (logoData && settingsMap.get('showLogoOnReceipt') !== false) {
-        logoHtml = `<div id="receiptLogoContainer" style="text-align: center; margin: 2px 0;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto; display: block;"></div>`;
-    }
-
-    // 3. If logo, insert it after the header line (after =====)
-    let finalText = receiptText;
-    if (logoHtml) {
-        const lines = receiptText.split('\n');
-        const headerEndIndex = lines.findIndex(line => line.includes('=')) + 1; // after the ===== line
-        const before = lines.slice(0, headerEndIndex).join('\n');
-        const after = lines.slice(headerEndIndex).join('\n');
-        finalText = before + '\n' + logoHtml + after;
-    }
-
-    // 4. Create a <pre> element to preserve formatting
+    const logoHtml = showLogo && logoData 
+        ? `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 2px;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto;"></div>` 
+        : '';
+        
+    // 3. Create a <pre> element to preserve formatting
     const pre = document.createElement('pre');
-    pre.innerHTML = finalText;
-
-    // 5. Find the TOTAL line and wrap it in <b> tags for emphasis in the preview
+    pre.textContent = receiptText;
+    
+    // 4. Find the TOTAL line and wrap it in <b> tags for emphasis in the preview
     pre.innerHTML = pre.innerHTML.replace(
         /^(TOTAL\s+Rp\..*)$/m, // Use ^ and m flag for multiline match
         `<b>$1</b>`
     );
 
-    // 6. Return the final HTML
-    return pre.outerHTML;
-}
-
-/**
- * Generates ESC/POS command for opening cash drawer.
- * Uses ESC p command: ESC p m t1 t2
- * m: drawer pin (0 or 1), t1: on time (ms), t2: off time (ms)
- * @returns {Uint8Array} The command bytes.
- */
-function generateCashDrawerCommand() {
-    // ESC p 0 60 120 - Open drawer 0 with 60ms on, 120ms off pulse
-    return new Uint8Array([0x1b, 0x70, 0x00, 0x3c, 0x78]);
+    // 5. Combine and return the final HTML
+    return logoHtml + pre.outerHTML;
 }
 
 /**
@@ -3226,9 +3182,6 @@ async function generateReceiptEscPos(transactionData) {
     const logoData = settingsMap.get('storeLogo') || null;
     const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
     const paperSize = settingsMap.get('printerPaperSize') || '80mm';
-    const enableCashDrawer = settingsMap.get('enableCashDrawer') || false;
-
-    console.log('Logo Debug - generateReceiptEscPos:', { logoData: !!logoData, showLogo, paperSize });
 
     const encoder = new EscPosEncoder.default();
     encoder
@@ -3236,67 +3189,45 @@ async function generateReceiptEscPos(transactionData) {
         .raw([0x1b, 0x40]); // Initialize printer
 
     // Handle Logo separately as it's a graphical element
-    if (logoData && showLogo) {
-        console.log('Logo Debug - Processing logo for printing');
+    if (showLogo && logoData) {
         try {
             const image = await new Promise((resolve, reject) => {
                 const img = new Image();
-                img.onload = () => {
-                    console.log('Logo Debug - Image loaded successfully:', img.width, 'x', img.height);
-                    resolve(img);
-                };
-                img.onerror = (e) => {
-                    console.error('Logo Debug - Image failed to load:', e);
-                    reject(e);
-                };
+                img.onload = () => resolve(img);
+                img.onerror = reject;
                 img.src = logoData;
             });
 
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
-            // Increased max dimensions for better print resolution
-            const maxWidth = paperSize === '58mm' ? 240 : 320;
-            const maxHeight = paperSize === '58mm' ? 100 : 150;
+            const maxWidth = paperSize === '58mm' ? 150 : 175;
+            const maxHeight = paperSize === '58mm' ? 60 : 65;
             let imgWidth = image.width;
             let imgHeight = image.height;
-
-            console.log('Logo Debug - Original image size:', imgWidth, 'x', imgHeight);
-            console.log('Logo Debug - Max dimensions:', maxWidth, 'x', maxHeight);
 
             // Calculate scaling ratio to fit within max dimensions while maintaining aspect ratio
             const widthRatio = maxWidth / imgWidth;
             const heightRatio = maxHeight / imgHeight;
-            const scaleRatio = Math.min(widthRatio, heightRatio); // Allow scaling up for clarity
+            const scaleRatio = Math.min(widthRatio, heightRatio, 1); // Don't scale up
 
             imgWidth *= scaleRatio;
             imgHeight *= scaleRatio;
 
-            console.log('Logo Debug - Scaled image size:', imgWidth, 'x', imgHeight);
-
             canvas.width = imgWidth;
             canvas.height = imgHeight;
-            // Enable high-quality image rendering
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(image, 0, 0, imgWidth, imgHeight);
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-            console.log('Logo Debug - Adding logo to encoder');
-            encoder.align('center').image(imageData, 'd24'); // Use double density for better quality
-            encoder.line(''); // Add blank line after logo
-            console.log('Logo Debug - Logo added to encoder successfully');
+            encoder.align('center').image(imageData, 'd24');
         } catch (e) {
-            console.error('Logo Debug - Failed to process logo for printing:', e);
-            // Continue without logo instead of failing the entire print
+            console.error('Failed to process logo for printing:', e);
         }
-    } else {
-        console.log('Logo Debug - Logo not processed:', { hasLogoData: !!logoData, showLogo });
     }
 
     // Generate the master text and process it line by line
     const receiptText = await _generateReceiptText(transactionData, false);
     encoder.align('left'); // Set default alignment
-
+    
     receiptText.split('\n').forEach(line => {
         if (line.startsWith('TOTAL')) {
             encoder.bold(true).line(line).bold(false);
@@ -3306,14 +3237,8 @@ async function generateReceiptEscPos(transactionData) {
     });
 
     encoder
-        .feed(3);
-
-    // Add cash drawer command if enabled
-    if (enableCashDrawer) {
-        encoder.raw(generateCashDrawerCommand());
-    }
-
-    encoder.cut();
+        .feed(3)
+        .cut();
     return encoder.encode();
 }
 
@@ -3338,17 +3263,14 @@ window.printReceipt = async function(isAutoPrint = false) {
         showToast('Tidak ada data struk untuk dicetak.');
         return;
     }
-
-    console.log('Logo Debug - printReceipt called:', { isAutoPrint, transactionId: currentReceiptTransaction.id });
-
+    
     try {
         if (!isAutoPrint) showToast('Menyiapkan struk...', 2000);
         // Switch to ESC/POS text-based generation for better compatibility and codepage control.
         const data = await generateReceiptEscPos(currentReceiptTransaction);
-        console.log('Logo Debug - ESC/POS data generated, length:', data.length);
         sendToRawBT(data);
     } catch (error) {
-        console.error('Logo Debug - Print error:', error);
+        console.error('Print error:', error);
         if (!isAutoPrint) {
             // Provide more specific help based on the user's issue
             showConfirmationModal(
