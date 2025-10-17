@@ -1,0 +1,559 @@
+<!-- Add Product Modal -->
+<div id="addProductModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <h2 class="text-xl font-bold mb-4">Tambah Produk</h2>
+            <div class="space-y-3">
+                <!-- Image Upload -->
+                <div>
+                    <label class="text-sm text-gray-600">Gambar Produk</label>
+                    <div class="image-upload-container clickable" onclick="document.getElementById('productImage').click()">
+                        <input type="file" id="productImage" accept="image/*" style="display: none;" onchange="previewImage(event)">
+                        <div id="imagePreview" class="upload-placeholder">
+                            <i class="fas fa-camera text-3xl mb-2"></i>
+                            <p>Tap untuk upload gambar</p>
+                        </div>
+                    </div>
+                    <button type="button" onclick="openCameraModal()" class="btn bg-gray-600 text-white w-full py-2 mt-2">
+                        <i class="fas fa-camera-retro mr-2"></i>Ambil Foto
+                    </button>
+                </div>
+                
+                <div>
+                    <label class="text-sm text-gray-600">Nama Produk</label>
+                    <input type="text" id="productName" class="input-field w-full" placeholder="Nama produk">
+                </div>
+                
+                <div>
+                    <label class="text-sm text-gray-600">Barcode (Opsional)</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="productBarcode" class="input-field w-full" placeholder="Scan atau ketik barcode">
+                        <button onclick="scanBarcodeForInput('productBarcode')" class="btn bg-gray-600 text-white px-4 flex-shrink-0">
+                            <i class="fas fa-barcode"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-sm text-gray-600">Harga Beli</label>
+                        <input type="number" id="productPurchasePrice" class="input-field w-full" placeholder="0">
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-600">Harga Jual</label>
+                        <input type="number" id="productPrice" class="input-field w-full" placeholder="0">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-sm text-gray-600">Stok</label>
+                        <input type="number" id="productStock" class="input-field w-full" placeholder="0">
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-600">Diskon (%) <span class="text-gray-400">(Opsional)</span></label>
+                        <input type="number" id="productDiscount" class="input-field w-full" placeholder="0" min="0" max="100">
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="text-sm text-gray-600">Kategori</label>
+                    <select id="productCategory" class="input-field w-full">
+                       <!-- Categories populated by JS -->
+                    </select>
+                </div>
+            </div>
+            <div class="flex gap-3 mt-6">
+                <button onclick="closeAddProductModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">
+                    Batal
+                </button>
+                <button onclick="addProduct()" class="btn bg-blue-500 text-white flex-1 py-2">
+                    Simpan
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Product Modal -->
+<div id="editProductModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <h2 class="text-xl font-bold mb-4">Edit Produk</h2>
+            <input type="hidden" id="editProductId">
+            <div class="space-y-3">
+                <!-- Image Upload -->
+                <div>
+                    <label class="text-sm text-gray-600">Gambar Produk</label>
+                    <div class="image-upload-container clickable" onclick="document.getElementById('editProductImage').click()">
+                        <input type="file" id="editProductImage" accept="image/*" style="display: none;" onchange="previewEditImage(event)">
+                        <div id="editImagePreview" class="upload-placeholder">
+                            <i class="fas fa-camera text-3xl mb-2"></i>
+                            <p>Tap untuk ubah gambar</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="text-sm text-gray-600">Nama Produk</label>
+                    <input type="text" id="editProductName" class="input-field w-full" placeholder="Nama produk">
+                </div>
+                
+                <div>
+                    <label class="text-sm text-gray-600">Barcode (Opsional)</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="editProductBarcode" class="input-field w-full" placeholder="Scan atau ketik barcode">
+                         <button onclick="scanBarcodeForInput('editProductBarcode')" class="btn bg-gray-600 text-white px-4 flex-shrink-0">
+                            <i class="fas fa-barcode"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-sm text-gray-600">Harga Beli</label>
+                        <input type="number" id="editProductPurchasePrice" class="input-field w-full" placeholder="0">
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-600">Harga Jual</label>
+                        <input type="number" id="editProductPrice" class="input-field w-full" placeholder="0">
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-sm text-gray-600">Stok</label>
+                        <input type="number" id="editProductStock" class="input-field w-full" placeholder="0">
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-600">Diskon (%) <span class="text-gray-400">(Opsional)</span></label>
+                        <input type="number" id="editProductDiscount" class="input-field w-full" placeholder="0" min="0" max="100">
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="text-sm text-gray-600">Kategori</label>
+                    <select id="editProductCategory" class="input-field w-full">
+                        <!-- Categories populated by JS -->
+                    </select>
+                </div>
+            </div>
+            <div class="flex gap-3 mt-6">
+                <button onclick="closeEditProductModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">
+                    Batal
+                </button>
+                <button onclick="updateProduct()" class="btn bg-blue-500 text-white flex-1 py-2">
+                    Simpan Perubahan
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Manage Category Modal -->
+<div id="manageCategoryModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <h2 class="text-xl font-bold mb-4">Kelola Kategori</h2>
+            <div class="mb-4">
+                <div class="flex gap-2">
+                    <input type="text" id="newCategoryName" class="input-field w-full" placeholder="Nama kategori baru">
+                    <button onclick="addNewCategory()" class="btn bg-blue-500 text-white px-4 flex-shrink-0">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                </div>
+            </div>
+            <div id="categoryList" class="space-y-2 max-h-60 overflow-y-auto">
+                <!-- Category list will be populated here -->
+            </div>
+            <div class="flex mt-6">
+                <button onclick="closeManageCategoryModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">
+                    Tutup
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Fee Selection Modal -->
+<div id="feeSelectionModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <h2 class="text-xl font-bold mb-4">Pajak & Biaya Tambahan</h2>
+            <div id="feeSelectionList" class="space-y-3 max-h-60 overflow-y-auto">
+                <!-- Fee selection options will be populated here -->
+            </div>
+            <div class="flex gap-3 mt-6">
+                <button onclick="closeFeeSelectionModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">
+                    Batal
+                </button>
+                <button onclick="applySelectedFees()" class="btn bg-blue-500 text-white flex-1 py-2">
+                    Terapkan
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Contact Modal (New) -->
+<div id="contactModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <h2 id="contactModalTitle" class="text-xl font-bold mb-4">Tambah Kontak</h2>
+            <input type="hidden" id="contactId">
+            <div class="space-y-3">
+                <div>
+                    <label class="text-sm text-gray-600">Nama Kontak</label>
+                    <input type="text" id="contactName" class="input-field w-full" placeholder="Nama pelanggan/supplier">
+                </div>
+                <div>
+                    <label class="text-sm text-gray-600">No. HP/WA</label>
+                    <input type="tel" id="contactPhone" class="input-field w-full" placeholder="08123456789">
+                </div>
+                <div>
+                    <label class="text-sm text-gray-600">Alamat (Opsional)</label>
+                    <textarea id="contactAddress" class="input-field w-full" rows="2" placeholder="Alamat lengkap"></textarea>
+                </div>
+                 <div>
+                    <label class="text-sm text-gray-600">Catatan (Opsional)</label>
+                    <textarea id="contactNotes" class="input-field w-full" rows="2" placeholder="Catatan penting"></textarea>
+                </div>
+                <div>
+                    <label class="text-sm text-gray-600">Tipe Kontak</label>
+                    <select id="contactType" class="input-field w-full">
+                        <option value="customer">Pelanggan</option>
+                        <option value="supplier">Supplier</option>
+                    </select>
+                </div>
+            </div>
+            <div class="flex gap-3 mt-6">
+                <button onclick="closeContactModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">Batal</button>
+                <button onclick="saveContact()" class="btn bg-blue-500 text-white flex-1 py-2">Simpan</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Ledger Detail Modal (New) -->
+<div id="ledgerModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-start mb-4">
+                <div>
+                    <h2 id="ledgerContactName" class="text-xl font-bold"></h2>
+                    <p id="ledgerContactType" class="text-sm font-semibold"></p>
+                </div>
+                <button onclick="closeLedgerModal()" class="text-gray-500 text-2xl">&times;</button>
+            </div>
+            <div id="ledgerContactDetails" class="text-sm text-gray-600 mb-4 p-3 bg-gray-50 rounded-lg"></div>
+            <h3 class="text-lg font-semibold mb-2">Riwayat Transaksi</h3>
+            <div id="ledgerHistory" class="space-y-2 border-t pt-2 max-h-60 overflow-y-auto">
+                <!-- Ledger history rendered here -->
+            </div>
+            <div class="grid grid-cols-2 gap-3 mt-6">
+                <button onclick="showAddLedgerEntryModal(null, 'credit')" class="btn bg-green-500 text-white w-full py-2">
+                    <i class="fas fa-plus-circle"></i> Catat Pembayaran
+                </button>
+                <button onclick="showAddLedgerEntryModal(null, 'debit')" id="addDebitButton" class="btn bg-red-500 text-white w-full py-2">
+                    <i class="fas fa-minus-circle"></i> Tambah Utang/Piutang
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Ledger Entry Modal (New) -->
+<div id="addLedgerEntryModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-[1600]">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <h2 id="addLedgerEntryTitle" class="text-xl font-bold mb-4"></h2>
+            <div class="space-y-3">
+                <div>
+                    <label class="text-sm text-gray-600">Jumlah (Rp)</label>
+                    <input type="number" id="ledgerAmount" class="input-field w-full" placeholder="0">
+                </div>
+                <div>
+                    <label class="text-sm text-gray-600">Keterangan</label>
+                    <input type="text" id="ledgerDescription" class="input-field w-full" placeholder="e.g., Pembelian barang, Cicilan">
+                </div>
+                <div id="ledgerDueDateContainer">
+                    <label class="text-sm text-gray-600">Jatuh Tempo (Opsional)</label>
+                    <input type="date" id="ledgerDueDate" class="input-field w-full">
+                </div>
+            </div>
+             <div class="flex gap-3 mt-6">
+                <button onclick="closeAddLedgerEntryModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">Batal</button>
+                <button onclick="saveLedgerEntry()" class="btn bg-blue-500 text-white flex-1 py-2">Simpan</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Due Date Modal (New) -->
+<div id="editDueDateModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-[1700]">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <h2 class="text-xl font-bold mb-4">Ubah Tanggal Jatuh Tempo</h2>
+            <input type="hidden" id="editDueDateEntryId">
+            <div>
+                <label class="text-sm text-gray-600">Tanggal Jatuh Tempo Baru</label>
+                <input type="date" id="newDueDate" class="input-field w-full">
+            </div>
+             <div class="flex gap-3 mt-6">
+                <button onclick="closeEditDueDateModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">Batal</button>
+                <button onclick="saveDueDate()" class="btn bg-blue-500 text-white flex-1 py-2">Simpan</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- Confirmation Modal -->
+<div id="confirmationModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <h2 class="text-xl font-bold mb-4" id="confirmationTitle">Konfirmasi</h2>
+            <div id="confirmationMessage" class="text-gray-600 mb-6"></div>
+            <div class="flex gap-3">
+                <button id="cancelButton" class="btn bg-gray-300 text-gray-700 flex-1 py-2">
+                    Batal
+                </button>
+                <button id="confirmButton" class="btn text-white flex-1 py-2"></button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Payment Modal -->
+<div id="paymentModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <h2 class="text-xl font-bold mb-4">Pembayaran</h2>
+            <div class="space-y-4">
+                <div class="flex justify-between items-center text-lg">
+                    <span class="text-gray-600">Total Belanja:</span>
+                    <span id="paymentTotal" class="font-bold text-blue-500">Rp 0</span>
+                </div>
+                <div>
+                    <label class="text-sm text-gray-600">Uang Dibayarkan</label>
+                    <input type="number" id="cashPaidInput" class="input-field w-full text-2xl font-bold text-right text-blue-600 border-2 focus:ring-blue-500" placeholder="0">
+                </div>
+                <div class="grid grid-cols-4 gap-2">
+                    <button onclick="handleQuickCash(10000)" class="btn bg-gray-200 text-gray-700 py-2">10rb</button>
+                    <button onclick="handleQuickCash(20000)" class="btn bg-gray-200 text-gray-700 py-2">20rb</button>
+                    <button onclick="handleQuickCash(50000)" class="btn bg-gray-200 text-gray-700 py-2">50rb</button>
+                    <button onclick="handleQuickCash(100000)" class="btn bg-gray-200 text-gray-700 py-2">100rb</button>
+                </div>
+                <div class="flex justify-between items-center text-lg">
+                    <span id="paymentChangeLabel" class="text-gray-600">Kembalian:</span>
+                    <span id="paymentChange" class="font-bold text-green-500">Rp 0</span>
+                </div>
+            </div>
+            <div class="flex gap-3 mt-6">
+                <button onclick="closePaymentModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-3">
+                    Batal
+                </button>
+                <button id="completeTransactionButton" onclick="completeTransaction()" class="btn bg-blue-500 text-white flex-1 py-3 disabled:bg-blue-300 flex items-center justify-center" disabled>
+                    <span class="payment-button-text">Selesaikan Transaksi</span>
+                    <i class="fas fa-spinner fa-spin payment-button-spinner hidden"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Receipt Modal -->
+<div id="receiptModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <div id="receiptContent" class="receipt-modal-content text-black font-mono text-sm mb-6 max-h-96 overflow-y-auto">
+                <!-- Receipt content will be dynamically generated here -->
+            </div>
+            <div class="space-y-2">
+                <button id="printReceiptBtn" onclick="printReceipt()" class="btn bg-gray-700 hover:bg-gray-800 text-white w-full py-2 text-sm"><i class="fas fa-print mr-1"></i>Cetak via RawBT</button>
+                <button id="receiptActionButton" class="btn bg-blue-500 hover:bg-blue-600 text-white w-full py-3 text-base"></button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Receipt Preview Modal -->
+<div id="previewReceiptModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <h2 class="text-xl font-bold mb-4">Preview Struk</h2>
+            <div id="previewReceiptContent" class="receipt-modal-content text-black font-mono text-sm mb-6 max-h-96 overflow-y-auto border p-2 rounded-lg bg-gray-50">
+                <!-- Preview content will be dynamically generated here -->
+            </div>
+            <div class="flex flex-col gap-3">
+                <button onclick="closePreviewReceiptModal()" class="btn bg-gray-300 text-gray-700 w-full py-3">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Barcode Scanner Modal -->
+<div id="scanModal" class="fixed inset-0 bg-black bg-opacity-90 hidden">
+    <div class="flex flex-col items-center justify-center h-full p-4">
+        <div id="qr-reader" class="w-full max-w-md bg-gray-800 rounded-lg overflow-hidden"></div>
+        <p class="text-white mt-4">Posisikan barcode di dalam kamera</p>
+        <button onclick="closeScanModal()" class="btn bg-red-500 text-white mt-8 px-6 py-3">
+            Tutup
+        </button>
+    </div>
+</div>
+
+<!-- Set Kiosk PIN Modal -->
+<div id="setKioskPinModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-[2000]">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <h2 class="text-xl font-bold mb-2">Atur PIN Mode Kios</h2>
+            <p class="text-sm text-gray-600 mb-4">Buat 4 digit PIN untuk keluar dari Mode Kios.</p>
+            <div class="space-y-3">
+                <div>
+                    <label class="text-sm text-gray-600">PIN Baru (4 digit)</label>
+                    <input type="password" id="newKioskPin" class="input-field w-full text-center tracking-[1em]" maxlength="4" inputmode="numeric">
+                </div>
+                <div>
+                    <label class="text-sm text-gray-600">Konfirmasi PIN</label>
+                    <input type="password" id="confirmKioskPin" class="input-field w-full text-center tracking-[1em]" maxlength="4" inputmode="numeric">
+                </div>
+            </div>
+            <div class="flex gap-3 mt-6">
+                <button onclick="closeSetKioskPinModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">Batal</button>
+                <button onclick="saveKioskPinAndActivate()" class="btn bg-blue-500 text-white flex-1 py-2">Aktifkan</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Enter Kiosk PIN Modal -->
+<div id="enterKioskPinModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-[2000]">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-xs">
+            <h2 class="text-xl font-bold mb-4 text-center">Masukkan PIN</h2>
+            <div id="kioskPinDisplay" class="flex justify-center items-center gap-3 mb-4">
+                <div class="w-4 h-4 rounded-full bg-gray-300"></div>
+                <div class="w-4 h-4 rounded-full bg-gray-300"></div>
+                <div class="w-4 h-4 rounded-full bg-gray-300"></div>
+                <div class="w-4 h-4 rounded-full bg-gray-300"></div>
+            </div>
+            <div id="kioskPinError" class="text-red-500 text-center text-sm mb-2 min-h-[1.25rem]"></div>
+            <p class="text-yellow-600 text-center text-xs mb-3">Peringatan: 5x salah PIN akan menghapus semua data.</p>
+            <div class="grid grid-cols-3 gap-3">
+                <button onclick="handlePinKeyPress('1')" class="btn bg-gray-200 text-2xl py-4">1</button>
+                <button onclick="handlePinKeyPress('2')" class="btn bg-gray-200 text-2xl py-4">2</button>
+                <button onclick="handlePinKeyPress('3')" class="btn bg-gray-200 text-2xl py-4">3</button>
+                <button onclick="handlePinKeyPress('4')" class="btn bg-gray-200 text-2xl py-4">4</button>
+                <button onclick="handlePinKeyPress('5')" class="btn bg-gray-200 text-2xl py-4">5</button>
+                <button onclick="handlePinKeyPress('6')" class="btn bg-gray-200 text-2xl py-4">6</button>
+                <button onclick="handlePinKeyPress('7')" class="btn bg-gray-200 text-2xl py-4">7</button>
+                <button onclick="handlePinKeyPress('8')" class="btn bg-gray-200 text-2xl py-4">8</button>
+                <button onclick="handlePinKeyPress('9')" class="btn bg-gray-200 text-2xl py-4">9</button>
+                <button onclick="handlePinKeyPress('clear')" class="btn bg-gray-300 py-4"><i class="fas fa-times"></i></button>
+                <button onclick="handlePinKeyPress('0')" class="btn bg-gray-200 text-2xl py-4">0</button>
+                <button onclick="handlePinKeyPress('backspace')" class="btn bg-gray-300 py-4"><i class="fas fa-backspace"></i></button>
+            </div>
+            <button onclick="closeEnterKioskPinModal()" class="btn bg-gray-500 text-white w-full py-2 mt-4">Batal</button>
+        </div>
+    </div>
+</div>
+
+<!-- Due Date Details Modal -->
+<div id="dueDateModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-[1500]">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Detail Jatuh Tempo</h2>
+                <button onclick="closeDueDateModal()" class="text-gray-500 text-2xl">&times;</button>
+            </div>
+            <div id="dueDateList" class="space-y-3">
+                <!-- Due items will be listed here -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Camera Modal -->
+<div id="cameraModal" class="fixed inset-0 bg-black bg-opacity-90 hidden z-[1600]">
+    <div class="flex flex-col items-center justify-center h-full p-4 text-white">
+        <video id="cameraFeed" playsinline class="w-full max-w-md rounded-lg mb-4" style="display: none;"></video>
+        <canvas id="cameraCanvas" class="hidden"></canvas>
+        <img id="photoPreview" class="w-full max-w-md rounded-lg mb-4" style="display: none;"/>
+        <div id="cameraError" class="text-red-400 mb-4" style="display: none;"></div>
+        <div id="cameraControls" class="flex items-center gap-4">
+            <button id="cancelCameraBtn" onclick="closeCameraModal()" class="btn bg-gray-500 text-white px-4 py-2">Batal</button>
+            <button id="captureBtn" onclick="capturePhoto()" class="w-16 h-16 rounded-full bg-white border-4 border-gray-400 flex items-center justify-center clickable"></button>
+            <button id="retakeBtn" onclick="retakePhoto()" class="btn bg-yellow-500 text-white px-4 py-2" style="display: none;">Ulangi</button>
+            <button id="usePhotoBtn" onclick="useCapturedPhoto()" class="btn bg-blue-500 text-white px-4 py-2" style="display: none;">Gunakan Foto</button>
+        </div>
+    </div>
+</div>
+
+<!-- Ledger Actions Popover -->
+<div id="ledgerActionsPopover" class="hidden absolute bg-white rounded-lg shadow-xl border z-[1650] text-sm">
+    <!-- Actions will be injected here by JS -->
+</div>
+
+<!-- Print Help Modal (NEW) -->
+<div id="printHelpModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Bantuan Cetak Struk</h2>
+                <button onclick="closePrintHelpModal()" class="text-gray-500 text-2xl">&times;</button>
+            </div>
+            <div class="space-y-4 text-gray-700 text-sm">
+                <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <h3 class="font-semibold text-md mb-2">Cara Kerja Pencetakan</h3>
+                    <ol class="list-decimal list-inside space-y-2">
+                        <li>
+                            <strong>Aplikasi POS Menyiapkan Data:</strong> Saat Anda menekan tombol "Cetak", kode di dalam aplikasi ini akan mengubah detail transaksi (nama barang, harga, total) menjadi format perintah khusus untuk printer thermal (disebut format ESC/POS).
+                        </li>
+                        <li>
+                            <strong>Data Dikirim ke RawBT:</strong> Data yang sudah diformat ini kemudian "dikirim" ke aplikasi RawBT melalui sebuah URL khusus (<code>rawbt:</code>). Ini mirip seperti saat Anda mengklik link email (<code>mailto:</code>) yang akan membuka aplikasi email Anda.
+                        </li>
+                        <li>
+                            <strong>RawBT Mengambil Alih:</strong> Aplikasi RawBT-lah yang menerima data tersebut, mengelola koneksi Bluetooth dengan printer yang sudah Anda atur sebelumnya, dan mengirimkan perintah cetak.
+                        </li>
+                    </ol>
+                </div>
+
+                <p class="pt-2">Jika hasil cetak struk Anda keluar dalam bentuk teks acak atau tidak tercetak sama sekali, ini biasanya karena masalah konfigurasi pada ponsel Anda, bukan pada aplikasi ini.</p>
+                
+                <div class="p-3 bg-gray-50 border rounded-lg">
+                    <h3 class="font-semibold text-md mb-2">Penyebab Umum Kegagalan Cetak:</h3>
+                    <ul class="list-disc list-inside space-y-1">
+                        <li>Aplikasi <strong class="text-blue-600">RawBT</strong> tidak ter-install.</li>
+                        <li>Koneksi printer belum diatur dengan benar di dalam aplikasi RawBT.</li>
+                        <li>Ada aplikasi lain yang mencoba menangani perintah cetak.</li>
+                    </ul>
+                </div>
+
+                <div class="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <h3 class="font-semibold text-md mb-2">Solusi & Metode Cetak Alternatif:</h3>
+                    <p class="mb-2">Aplikasi ini menyediakan dua tombol untuk mencetak:</p>
+                    <p><strong>1. Cetak via RawBT (Direkomendasikan):</strong></p>
+                    <ul class="list-disc list-inside ml-4 mb-2">
+                        <li>Metode tercepat dan otomatis menggunakan cara di atas.</li>
+                        <li><strong>Jika gagal</strong>, coba metode kedua di bawah ini.</li>
+                    </ul>
+
+                    <p><strong>2. Share ke Printer (Alternatif Andal):</strong></p>
+                    <ul class="list-disc list-inside ml-4">
+                        <li>Menggunakan menu "Share" bawaan Android.</li>
+                        <li>Setelah menekan tombol ini, akan muncul pilihan aplikasi.</li>
+                        <li>Pilih <strong class="text-blue-600">RawBT</strong> dari daftar untuk mencetak. Metode ini seringkali lebih stabil.</li>
+                    </ul>
+                </div>
+                
+                <a href="https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter" target="_blank" class="btn bg-green-500 text-white w-full py-2 mt-4 block text-center">
+                    <i class="fab fa-google-play mr-2"></i>Download RawBT di Play Store
+                </a>
+            </div>
+            <div class="flex mt-6">
+                <button onclick="closePrintHelpModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>

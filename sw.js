@@ -14,7 +14,9 @@ const APP_SHELL_URLS = [
   '/src/report.js',
   '/src/settings.js',
   '/src/sync.js',
-  '/src/ui.js'
+  '/src/ui.js',
+  '/src/html/pages.html',
+  '/src/html/modals.html'
 ];
 
 self.addEventListener('install', event => {

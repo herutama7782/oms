@@ -150,15 +150,51 @@ Object.assign(window, functions);
 
 
 // --- INITIALIZATION ---
+async function loadHtmlPartials() {
+    try {
+        const [pagesRes, modalsRes] = await Promise.all([
+            fetch('src/html/pages.html'),
+            fetch('src/html/modals.html')
+        ]);
+
+        if (!pagesRes.ok || !modalsRes.ok) {
+            throw new Error(`Failed to load HTML partials. Pages: ${pagesRes.status}, Modals: ${modalsRes.status}`);
+        }
+
+        const pagesHtml = await pagesRes.text();
+        const modalsHtml = await modalsRes.text();
+
+        document.getElementById('appContainer').insertAdjacentHTML('beforeend', pagesHtml);
+        document.body.insertAdjacentHTML('beforeend', modalsHtml);
+
+    } catch (error) {
+        console.error("Error loading HTML partials:", error);
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const appContainer = document.getElementById('appContainer');
+        if(appContainer) appContainer.innerHTML = '';
+        if(loadingOverlay) loadingOverlay.innerHTML = `<div class="p-4 text-center"><p class="text-red-500 font-semibold">Gagal memuat komponen aplikasi.</p><p class="text-sm text-gray-600 mt-2">Silakan periksa koneksi internet Anda dan coba muat ulang halaman.</p></div>`;
+        
+        if(loadingOverlay) {
+             loadingOverlay.classList.remove('opacity-0');
+             loadingOverlay.style.display = 'flex';
+        }
+       
+        throw error;
+    }
+}
+
+
 document.addEventListener('DOMContentLoaded', async () => {
     const loadingOverlay = document.getElementById('loadingOverlay');
     const appContainer = document.getElementById('appContainer');
 
-    window.app.isScannerReady = typeof Html5Qrcode !== 'undefined';
-    window.app.isPrinterReady = typeof EscPosEncoder !== 'undefined';
-    window.app.isChartJsReady = typeof Chart !== 'undefined';
-
     try {
+        await loadHtmlPartials();
+
+        window.app.isScannerReady = typeof Html5Qrcode !== 'undefined';
+        window.app.isPrinterReady = typeof EscPosEncoder !== 'undefined';
+        window.app.isChartJsReady = typeof Chart !== 'undefined';
+
         await db.initDB();
         
         await settings.loadSettings();
@@ -201,7 +237,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     } catch (error) {
         console.error("Initialization failed:", error);
-        loadingOverlay.innerHTML = `<p class="text-red-500 p-4">Gagal memuat aplikasi. Silakan coba lagi.</p>`;
+        if (loadingOverlay.textContent.includes('Memuat')) {
+            loadingOverlay.innerHTML = `<p class="text-red-500 p-4">Gagal memuat aplikasi. Silakan coba lagi.</p>`;
+        }
     } finally {
         loadingOverlay.classList.add('opacity-0');
         setTimeout(() => {
