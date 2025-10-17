@@ -3,6 +3,45 @@ import { getSettingFromDB, getAllFromDB } from "./db.js";
 import { showToast, showConfirmationModal, formatCurrency, formatReceiptDate } from "./ui.js";
 import { addToCart } from "./cart.js";
 
+// --- UTILITY FUNCTIONS ---
+async function prepareLogoBW(logoDataUrl, paperWidthDots, maxHeightDots = 160, threshold = 180) {
+  const img = await new Promise((res, rej) => {
+    const i = new Image();
+    i.crossOrigin = 'anonymous';
+    i.onload = () => res(i);
+    i.onerror = rej;
+    i.src = logoDataUrl;
+  });
+
+  const ratio = paperWidthDots / img.width; // force full width
+  const w = paperWidthDots;
+  const h = Math.min(Math.round(img.height * ratio), maxHeightDots);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+
+  const imageData = ctx.getImageData(0, 0, w, h);
+  const data = imageData.data;
+
+  // convert to B&W threshold
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i], g = data[i+1], b = data[i+2];
+    const gray = 0.2126*r + 0.7152*g + 0.0722*b;
+    const v = gray > threshold ? 255 : 0;
+    data[i] = data[i+1] = data[i+2] = v;
+    data[i+3] = 255;
+  }
+  return imageData;
+}
+
+
 // --- CAMERA FUNCTIONS ---
 export async function openCameraModal() {
     const modal = document.getElementById('cameraModal');
@@ -217,20 +256,15 @@ async function _generateReceiptText(transactionData, isPreview) {
         const spaces = Math.max(0, paperWidthChars - left.length - right.length);
         return left + ' '.repeat(spaces) + right;
     };
-    const centerText = (text) => {
-        if (!text) return ''.padStart(paperWidthChars, ' ');
-        const textLines = text.split('\n');
-        return textLines.map(line => {
-            const padding = Math.max(0, paperWidthChars - line.length);
-            const leftPad = Math.floor(padding / 2);
-            return ' '.repeat(leftPad) + line;
-        }).join('\n');
-    };
+    const padRight = (text) => (text + ' '.repeat(Math.max(0, paperWidthChars - text.length))).slice(0, paperWidthChars);
+
 
     let receiptText = "";
 
-    if (storeName) receiptText += centerText(storeName) + '\n';
-    if (storeAddress) receiptText += centerText(storeAddress) + '\n';
+    if (storeName) receiptText += padRight(storeName) + '\n';
+    if (storeAddress) {
+        storeAddress.split('\n').forEach(l => { if (l.trim()) receiptText += padRight(l.trim()) + '\n'; });
+    }
     receiptText += receiptLine('=') + '\n';
     receiptText += '\n';
     receiptText += `No: ${transactionData.id || (isPreview ? 'PREVIEW' : 'N/A')}\n`;
@@ -274,6 +308,17 @@ async function _generateReceiptText(transactionData, isPreview) {
     receiptText += formatLine('KEMBALI', `Rp. ${formatCurrency(transactionData.change)}`) + '\n';
 
     receiptText += receiptLine('=') + '\n';
+    
+    // Footer is centered
+    const centerText = (text) => {
+        if (!text) return ''.padStart(paperWidthChars, ' ');
+        const textLines = text.split('\n');
+        return textLines.map(line => {
+            const padding = Math.max(0, paperWidthChars - line.length);
+            const leftPad = Math.floor(padding / 2);
+            return ' '.repeat(leftPad) + line;
+        }).join('\n');
+    };
     if (footerText) {
         receiptText += centerText(footerText) + '\n';
     }
@@ -294,139 +339,75 @@ async function _generateReceiptHTML(data, isPreview) {
 
     let receiptText = await _generateReceiptText(data, isPreview);
 
-    const wrapperStyle = `width: ${paperWidthChars}ch; margin: 0 auto; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`;
+    const wrapperStart = `<div style="width:${paperWidthChars}ch; margin:0 auto; font-family: ui-monospace, Menlo, Consolas, 'Courier New', monospace; line-height:1.2;">`;
+    const wrapperEnd = `</div>`;
 
-    const logoHtml = (showLogo && logoData)
-        ? `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 4px;">
-             <img src="${logoData}" alt="Logo" style="max-width: 100%; max-height: 75px;">
-           </div>`
-        : '';
+    const logoHtml = (showLogo && logoData) ?
+        `<div style="width:${paperWidthChars}ch; margin:0 auto; text-align:left;">
+           <img src="${logoData}" style="display:block; width:100%; max-height:120px; object-fit:contain; background:#fff" />
+         </div>` :
+        '';
 
     const pre = document.createElement('pre');
     pre.style.margin = '0';
-    pre.style.fontFamily = 'inherit';
+    pre.style.whiteSpace = 'pre-wrap';
     pre.textContent = receiptText;
+
     pre.innerHTML = pre.innerHTML.replace(/^(TOTAL\s+Rp\..*)$/m, `<b>$1</b>`);
 
-    return `<div style="${wrapperStyle}">${logoHtml}${pre.outerHTML}</div>`;
+    return wrapperStart + logoHtml + pre.outerHTML + wrapperEnd;
 }
 
 async function generateReceiptEscPos(transactionData) {
-    if (!window.app.isPrinterReady) {
-        throw new Error('Printer library not loaded.');
-    }
+    if (!window.app.isPrinterReady) throw new Error('Printer library not loaded.');
 
     const settings = await getAllFromDB('settings');
     const settingsMap = new Map(settings.map(s => [s.key, s.value]));
     const logoData = settingsMap.get('storeLogo') || null;
     const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
     const paperSize = settingsMap.get('printerPaperSize') || '80mm';
-    const paperWidthDots = paperSize === '58mm' ? 384 : 576;
+
     const paperWidthChars = paperSize === '58mm' ? 32 : 42;
-
-    const storeName = settingsMap.get('storeName') || 'Toko Anda';
-    const storeAddress = settingsMap.get('storeAddress') || '';
-    const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
-    const feedbackPhone = settingsMap.get('storeFeedbackPhone') || '';
-
+    const paperWidthDots = paperSize === '58mm' ? 384 : 576;
+    
     const encoder = new EscPosEncoder.default();
     encoder.initialize().raw([0x1b, 0x40]);
+    encoder.raw([0x1D, 0x4C, 0x00, 0x00]); // No left margin
 
-    // Logo
     if (showLogo && logoData) {
         try {
-            const image = await new Promise((resolve, reject) => {
-                const img = new Image();
-                img.onload = () => resolve(img);
-                img.onerror = reject;
-                img.src = logoData;
-            });
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            ctx.imageSmoothingEnabled = false;
-
-            const ratio = Math.min(paperWidthDots / image.width, 1);
-            const w = Math.round(image.width * ratio);
-            const h = Math.round(image.height * ratio);
-            canvas.width = w;
-            canvas.height = h;
-            ctx.drawImage(image, 0, 0, w, h);
-            const imageData = ctx.getImageData(0, 0, w, h);
-            
-            encoder.align('center').image(imageData, 's8').line('');
-        } catch (e) {
-            console.error('Failed to process logo for printing:', e);
-        }
-    }
-
-    // Header (centered)
-    encoder.align('center');
-    if (storeName) encoder.line(storeName);
-    if (storeAddress) {
-        storeAddress.split('\n').forEach(line => {
-            if (line.trim()) encoder.line(line.trim());
-        });
-    }
-    encoder.line('');
-
-    // Body (left-aligned)
-    encoder.align('left');
-    encoder.line('='.repeat(paperWidthChars));
-    encoder.line(`No: ${transactionData.id || 'N/A'}`);
-    encoder.line(`Tgl: ${formatReceiptDate(transactionData.date)}`);
-    encoder.line('-'.repeat(paperWidthChars));
-
-    const formatLine = (left, right) => {
-        const spaces = Math.max(0, paperWidthChars - left.length - right.length);
-        return left + ' '.repeat(spaces) + right;
-    };
-
-    transactionData.items.forEach(item => {
-        encoder.line(`${item.name} x${item.quantity}`);
-        const totalItemPriceText = `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`;
-        let priceDetailText;
-        if (item.discountPercentage > 0) {
-            priceDetailText = `@ Rp.${formatCurrency(item.price)} Disc ${item.discountPercentage}%`;
-        } else {
-            priceDetailText = `@ Rp.${formatCurrency(item.price)}`;
-        }
-        encoder.line(formatLine(priceDetailText, totalItemPriceText));
-    });
-
-    const subtotalAfterDiscount = transactionData.items.reduce((sum, item) => {
-        const priceToUse = item.effectivePrice !== undefined ? item.effectivePrice : (item.price * (1 - (item.discountPercentage || 0) / 100));
-        return sum + Math.round(priceToUse * item.quantity);
-    }, 0);
-
-    encoder.line('-'.repeat(paperWidthChars));
-    encoder.line(formatLine('Subtotal', `Rp.${formatCurrency(subtotalAfterDiscount)}`));
-
-    if (transactionData.fees && transactionData.fees.length > 0) {
-        transactionData.fees.forEach(fee => {
-            let feeName = fee.name;
-            if (fee.type === 'percentage') {
-                feeName += ` ${fee.value}%`;
+            const imageData = await prepareLogoBW(logoData, paperWidthDots, 160, 185);
+            encoder.align('left');
+            try {
+                encoder.image(imageData, 'd24'); // High density
+            } catch {
+                encoder.image(imageData, 's8'); // Fallback
             }
-            const feeAmount = `Rp. ${formatCurrency(fee.amount)}`;
-            encoder.line(formatLine(feeName, feeAmount));
-        });
+            encoder.line('');
+        } catch (e) {
+            console.error('Logo processing failed:', e);
+        }
     }
 
-    encoder.line('-'.repeat(paperWidthChars));
-    encoder.bold(true).line(formatLine('TOTAL', `Rp.${formatCurrency(transactionData.total)}`)).bold(false);
-    encoder.line(formatLine('TUNAI', `Rp.${formatCurrency(transactionData.cashPaid)}`));
-    encoder.line(formatLine('KEMBALI', `Rp. ${formatCurrency(transactionData.change)}`));
-    encoder.line('='.repeat(paperWidthChars));
+    const receiptText = await _generateReceiptText(transactionData, false);
+    const lines = receiptText.split('\n');
 
-    // Footer (centered)
-    encoder.align('center');
-    if (footerText) {
-        footerText.split('\n').forEach(line => {
-            if(line.trim()) encoder.line(line.trim());
-        });
-    }
-    if (feedbackPhone) {
-        encoder.line(`Kritik/Saran: ${feedbackPhone}`);
+    for (const line of lines) {
+        if (!line) { encoder.line(''); continue; }
+        
+        const safeLine = line.length > paperWidthChars ? line.slice(0, paperWidthChars) : line;
+        encoder.align('left');
+
+        if (line.startsWith('TOTAL')) {
+            encoder.bold(true).line(safeLine.padEnd(paperWidthChars, ' ')).bold(false);
+        } else if (line.trim().startsWith('Terima kasih') || line.trim().startsWith('Kritik/Saran')) {
+             // Center footer text
+            const padding = Math.max(0, paperWidthChars - line.trim().length);
+            const leftPad = Math.floor(padding / 2);
+            encoder.line(' '.repeat(leftPad) + line.trim());
+        } else {
+            encoder.line(safeLine.padEnd(paperWidthChars, ' '));
+        }
     }
 
     encoder.feed(3).cut();
