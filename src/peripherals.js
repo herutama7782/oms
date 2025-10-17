@@ -4,41 +4,30 @@ import { showToast, showConfirmationModal, formatCurrency, formatReceiptDate } f
 import { addToCart } from "./cart.js";
 
 // --- UTILITY FUNCTIONS ---
-async function prepareLogoBW(logoDataUrl, paperWidthDots, maxHeightDots = 160, threshold = 180) {
-  const img = await new Promise((res, rej) => {
-    const i = new Image();
-    i.crossOrigin = 'anonymous';
-    i.onload = () => res(i);
-    i.onerror = rej;
-    i.src = logoDataUrl;
-  });
+function justifyLine(text, width) {
+  const t = (text || '').trim();
+  if (!t) return ''.padEnd(width, ' ');
+  if (t.length >= width) return t.slice(0, width);
 
-  const ratio = paperWidthDots / img.width; // force full width
-  const w = paperWidthDots;
-  const h = Math.min(Math.round(img.height * ratio), maxHeightDots);
+  const words = t.split(/\s+/);
+  if (words.length === 1) return t.padEnd(width, ' ');
 
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
+  const wordsLen = words.reduce((a, w) => a + w.length, 0);
+  const spacesNeeded = width - wordsLen;
+  const gaps = words.length - 1;
+  const base = Math.floor(spacesNeeded / gaps);
+  let extra = spacesNeeded % gaps;
 
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  ctx.imageSmoothingEnabled = false;
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, w, h);
-  ctx.drawImage(img, 0, 0, w, h);
-
-  const imageData = ctx.getImageData(0, 0, w, h);
-  const data = imageData.data;
-
-  // convert to B&W threshold
-  for (let i = 0; i < data.length; i += 4) {
-    const r = data[i], g = data[i+1], b = data[i+2];
-    const gray = 0.2126*r + 0.7152*g + 0.0722*b;
-    const v = gray > threshold ? 255 : 0;
-    data[i] = data[i+1] = data[i+2] = v;
-    data[i+3] = 255;
+  let out = '';
+  for (let i = 0; i < words.length; i++) {
+    out += words[i];
+    if (i < gaps) {
+      const add = base + (extra > 0 ? 1 : 0);
+      out += ' '.repeat(add);
+      if (extra > 0) extra--;
+    }
   }
-  return imageData;
+  return out;
 }
 
 
@@ -241,177 +230,198 @@ function sendToRawBT(data) {
 };
 
 async function _generateReceiptText(transactionData, isPreview) {
-    const settings = await getAllFromDB('settings');
-    const settingsMap = new Map(settings.map(s => [s.key, s.value]));
+  const settings = await getAllFromDB('settings');
+  const settingsMap = new Map(settings.map(s => [s.key, s.value]));
 
-    const storeName = settingsMap.get('storeName') || 'Toko Anda';
-    const storeAddress = settingsMap.get('storeAddress') || '';
-    const feedbackPhone = settingsMap.get('storeFeedbackPhone') || '';
-    const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
-    const paperSize = settingsMap.get('printerPaperSize') || '80mm';
-    const paperWidthChars = paperSize === '58mm' ? 32 : 42;
+  const storeName = settingsMap.get('storeName') || 'Toko Anda';
+  const storeAddress = settingsMap.get('storeAddress') || '';
+  const feedbackPhone = settingsMap.get('storeFeedbackPhone') || '';
+  const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
+  const paperSize = settingsMap.get('printerPaperSize') || '80mm';
+  const paperWidthChars = paperSize === '58mm' ? 32 : 42;
 
-    const receiptLine = (char) => char.repeat(paperWidthChars);
-    const formatLine = (left, right) => {
-        const spaces = Math.max(0, paperWidthChars - left.length - right.length);
-        return left + ' '.repeat(spaces) + right;
-    };
-    const padRight = (text) => (text + ' '.repeat(Math.max(0, paperWidthChars - text.length))).slice(0, paperWidthChars);
+  const receiptLine = (char) => char.repeat(paperWidthChars);
+  const formatLine = (left, right) => {
+    const spaces = Math.max(0, paperWidthChars - left.length - right.length);
+    return left + ' '.repeat(spaces) + right;
+  };
 
+  let receiptText = '';
 
-    let receiptText = "";
-
-    if (storeName) receiptText += padRight(storeName) + '\n';
-    if (storeAddress) {
-        storeAddress.split('\n').forEach(l => { if (l.trim()) receiptText += padRight(l.trim()) + '\n'; });
-    }
-    receiptText += receiptLine('=') + '\n';
-    receiptText += '\n';
-    receiptText += `No: ${transactionData.id || (isPreview ? 'PREVIEW' : 'N/A')}\n`;
-    receiptText += `Tgl: ${formatReceiptDate(transactionData.date)}\n`;
-    receiptText += receiptLine('-') + '\n';
-
-    transactionData.items.forEach(item => {
-        receiptText += `${item.name} x${item.quantity}\n`;
-        const totalItemPriceText = `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`;
-        let priceDetailText;
-        if (item.discountPercentage > 0) {
-            priceDetailText = `@ Rp.${formatCurrency(item.price)} Disc ${item.discountPercentage}%`;
-        } else {
-             priceDetailText = `@ Rp.${formatCurrency(item.price)}`;
-        }
-        receiptText += formatLine(priceDetailText, totalItemPriceText) + '\n';
+  // HEADER: JUSTIFY di grid karakter
+  if (storeName) {
+    receiptText += justifyLine(storeName, paperWidthChars) + '\n';
+  }
+  if (storeAddress) {
+    storeAddress.split('\n').forEach(l => {
+      const t = (l || '').trim();
+      if (t) receiptText += justifyLine(t, paperWidthChars) + '\n';
     });
-    
-    const subtotalAfterDiscount = transactionData.items.reduce((sum, item) => {
-        const priceToUse = item.effectivePrice !== undefined ? item.effectivePrice : (item.price * (1 - (item.discountPercentage || 0) / 100));
-        return sum + Math.round(priceToUse * item.quantity);
-    }, 0);
+  }
 
-    receiptText += receiptLine('-') + '\n';
-    receiptText += formatLine('Subtotal', `Rp.${formatCurrency(subtotalAfterDiscount)}`) + '\n';
-    
-    if (transactionData.fees && transactionData.fees.length > 0) {
-        transactionData.fees.forEach(fee => {
-            let feeName = fee.name;
-             if (fee.type === 'percentage') {
-                feeName += ` ${fee.value}%`;
-            }
-            const feeAmount = `Rp. ${formatCurrency(fee.amount)}`;
-            receiptText += formatLine(feeName, feeAmount) + '\n';
-        });
-    }
-    
-    receiptText += receiptLine('-') + '\n';
-    receiptText += formatLine('TOTAL', `Rp.${formatCurrency(transactionData.total)}`) + '\n';
-    receiptText += formatLine('TUNAI', `Rp.${formatCurrency(transactionData.cashPaid)}`) + '\n';
-    receiptText += formatLine('KEMBALI', `Rp. ${formatCurrency(transactionData.change)}`) + '\n';
+  receiptText += receiptLine('=') + '\n';
+  receiptText += '\n';
 
-    receiptText += receiptLine('=') + '\n';
-    
-    // Footer is centered
-    const centerText = (text) => {
-        if (!text) return ''.padStart(paperWidthChars, ' ');
-        const textLines = text.split('\n');
-        return textLines.map(line => {
-            const padding = Math.max(0, paperWidthChars - line.length);
-            const leftPad = Math.floor(padding / 2);
-            return ' '.repeat(leftPad) + line;
-        }).join('\n');
-    };
-    if (footerText) {
-        receiptText += centerText(footerText) + '\n';
-    }
-    if (feedbackPhone) {
-        receiptText += centerText(`Kritik/Saran: ${feedbackPhone}`) + '\n';
-    }
+  receiptText += `No: ${transactionData.id || (isPreview ? 'PREVIEW' : 'N/A')}\n`;
+  receiptText += `Tgl: ${formatReceiptDate(transactionData.date)}\n`;
+  receiptText += receiptLine('-') + '\n';
 
-    return receiptText;
+  transactionData.items.forEach(item => {
+    receiptText += `${item.name} x${item.quantity}\n`;
+    const totalItemPriceText = `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`;
+    let priceDetailText;
+    if (item.discountPercentage > 0) {
+      priceDetailText = `@ Rp.${formatCurrency(item.price)} Disc ${item.discountPercentage}%`;
+    } else {
+      priceDetailText = `@ Rp.${formatCurrency(item.price)}`;
+    }
+    receiptText += formatLine(priceDetailText, totalItemPriceText) + '\n';
+  });
+
+  const subtotalAfterDiscount = transactionData.items.reduce((sum, item) => {
+    const priceToUse = item.effectivePrice !== undefined
+      ? item.effectivePrice
+      : (item.price * (1 - (item.discountPercentage || 0) / 100));
+    return sum + Math.round(priceToUse * item.quantity);
+  }, 0);
+
+  receiptText += receiptLine('-') + '\n';
+  receiptText += formatLine('Subtotal', `Rp.${formatCurrency(subtotalAfterDiscount)}`) + '\n';
+
+  if (transactionData.fees && transactionData.fees.length > 0) {
+    transactionData.fees.forEach(fee => {
+      let feeName = fee.name;
+      if (fee.type === 'percentage') feeName += ` ${fee.value}%`;
+      const feeAmount = `Rp. ${formatCurrency(fee.amount)}`;
+      receiptText += formatLine(feeName, feeAmount) + '\n';
+    });
+  }
+
+  receiptText += receiptLine('-') + '\n';
+  receiptText += formatLine('TOTAL', `Rp.${formatCurrency(transactionData.total)}`) + '\n';
+  receiptText += formatLine('TUNAI', `Rp.${formatCurrency(transactionData.cashPaid)}`) + '\n';
+  receiptText += formatLine('KEMBALI', `Rp. ${formatCurrency(transactionData.change)}`) + '\n';
+
+  receiptText += receiptLine('=') + '\n';
+
+  // FOOTER: juga dibuat justify agar konsisten
+  if (footerText) {
+    receiptText += justifyLine(footerText, paperWidthChars) + '\n';
+  }
+  if (feedbackPhone) {
+    const fb = `Kritik/Saran: ${feedbackPhone}`;
+    receiptText += justifyLine(fb, paperWidthChars) + '\n';
+  }
+
+  return receiptText;
 }
 
 async function _generateReceiptHTML(data, isPreview) {
-    const settings = await getAllFromDB('settings');
-    const settingsMap = new Map(settings.map(s => [s.key, s.value]));
-    const logoData = settingsMap.get('storeLogo') || null;
-    const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
-    const paperSize = settingsMap.get('printerPaperSize') || '80mm';
-    const paperWidthChars = paperSize === '58mm' ? 32 : 42;
+  const settings = await getAllFromDB('settings');
+  const settingsMap = new Map(settings.map(s => [s.key, s.value]));
+  const logoData = settingsMap.get('storeLogo') || null;
+  const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
 
-    let receiptText = await _generateReceiptText(data, isPreview);
+  const paperSize = settingsMap.get('printerPaperSize') || '80mm';
+  const paperWidthChars = paperSize === '58mm' ? 32 : 42;
 
-    const wrapperStart = `<div style="width:${paperWidthChars}ch; margin:0 auto; font-family: ui-monospace, Menlo, Consolas, 'Courier New', monospace; line-height:1.2;">`;
-    const wrapperEnd = `</div>`;
+  let receiptText = await _generateReceiptText(data, isPreview);
 
-    const logoHtml = (showLogo && logoData) ?
-        `<div style="width:${paperWidthChars}ch; margin:0 auto; text-align:left;">
-           <img src="${logoData}" style="display:block; width:100%; max-height:120px; object-fit:contain; background:#fff" />
-         </div>` :
-        '';
+  const wrapperStart = `<div style="width:${paperWidthChars}ch; margin:0 auto; font-family: ui-monospace, Menlo, Monaco, Consolas, 'Courier New', monospace; line-height:1.2;">`;
+  const wrapperEnd = `</div>`;
 
-    const pre = document.createElement('pre');
-    pre.style.margin = '0';
-    pre.style.whiteSpace = 'pre-wrap';
-    pre.textContent = receiptText;
+  const logoHtml = (showLogo && logoData)
+    ? `<div style="width:${paperWidthChars}ch; margin:0 auto; text-align:left; margin-bottom:4px;">
+         <img src="${logoData}" alt="Logo" style="display:block; width:100%; max-height:120px; object-fit:contain; background:#fff;">
+       </div>`
+    : '';
 
-    pre.innerHTML = pre.innerHTML.replace(/^(TOTAL\s+Rp\..*)$/m, `<b>$1</b>`);
+  const pre = document.createElement('pre');
+  pre.style.margin = '0';
+  pre.style.whiteSpace = 'pre-wrap';
+  pre.textContent = receiptText;
 
-    return wrapperStart + logoHtml + pre.outerHTML + wrapperEnd;
+  pre.innerHTML = pre.innerHTML.replace(/^(TOTAL\s+Rp\..*)$/m, `<b>$1</b>`);
+
+  return wrapperStart + logoHtml + pre.outerHTML + wrapperEnd;
 }
 
 async function generateReceiptEscPos(transactionData) {
-    if (!window.app.isPrinterReady) throw new Error('Printer library not loaded.');
+  if (!window.app.isPrinterReady) throw new Error('Printer library not loaded.');
 
-    const settings = await getAllFromDB('settings');
-    const settingsMap = new Map(settings.map(s => [s.key, s.value]));
-    const logoData = settingsMap.get('storeLogo') || null;
-    const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
-    const paperSize = settingsMap.get('printerPaperSize') || '80mm';
+  const settings = await getAllFromDB('settings');
+  const settingsMap = new Map(settings.map(s => [s.key, s.value]));
+  const logoData = settingsMap.get('storeLogo') || null;
+  const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
+  const paperSize = settingsMap.get('printerPaperSize') || '80mm';
 
-    const paperWidthChars = paperSize === '58mm' ? 32 : 42;
-    const paperWidthDots = paperSize === '58mm' ? 384 : 576;
-    
-    const encoder = new EscPosEncoder.default();
-    encoder.initialize().raw([0x1b, 0x40]);
-    encoder.raw([0x1D, 0x4C, 0x00, 0x00]); // No left margin
+  const paperWidthChars = paperSize === '58mm' ? 32 : 42;
+  // NOTE: jika printer 80mm Anda 512 dots, ganti 576 -> 512
+  const paperWidthDots  = paperSize === '58mm' ? 384 : 576;
 
-    if (showLogo && logoData) {
-        try {
-            const imageData = await prepareLogoBW(logoData, paperWidthDots, 160, 185);
-            encoder.align('left');
-            try {
-                encoder.image(imageData, 'd24'); // High density
-            } catch {
-                encoder.image(imageData, 's8'); // Fallback
-            }
-            encoder.line('');
-        } catch (e) {
-            console.error('Logo processing failed:', e);
-        }
+  const encoder = new EscPosEncoder.default();
+  encoder
+    .initialize()
+    .raw([0x1b, 0x40])   // ESC @ reset
+    .raw([0x1b, 0x40])   // reset ekstra, untuk memastikan tidak ada state sisa
+    .line('')            // flush baris
+    .align('left')
+    .raw([0x1b, 0x32]);  // default line spacing
+
+  // Cetak logo: full width, BW threshold, mode 's8' (stabil)
+  if (showLogo && logoData) {
+    try {
+      const image = await new Promise((res, rej) => {
+        const img = new Image();
+        img.onload = () => res(img);
+        img.onerror = rej;
+        img.src = logoData;
+      });
+
+      const ratio = paperWidthDots / image.width;
+      const w = paperWidthDots;
+      const h = Math.min(Math.round(image.height * ratio), 180);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.imageSmoothingEnabled = false;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(image, 0, 0, w, h);
+
+      const imgData = ctx.getImageData(0, 0, w, h);
+      const d = imgData.data;
+      const threshold = 185; // sesuaikan 170–200 jika perlu
+      for (let i = 0; i < d.length; i += 4) {
+        const gray = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
+        const v = gray > threshold ? 255 : 0;
+        d[i] = d[i+1] = d[i+2] = v; d[i+3] = 255;
+      }
+
+      encoder.line('');            // flush sebelum image (hindari 'd')
+      encoder.align('left');
+      encoder.image(imgData, 's8'); // gunakan 's8' (lebih aman di banyak printer/RawBT)
+      encoder.line('');            // flush sesudah image
+    } catch (e) {
+      console.error('Failed to process logo for printing:', e);
     }
+  }
 
-    const receiptText = await _generateReceiptText(transactionData, false);
-    const lines = receiptText.split('\n');
-
-    for (const line of lines) {
-        if (!line) { encoder.line(''); continue; }
-        
-        const safeLine = line.length > paperWidthChars ? line.slice(0, paperWidthChars) : line;
-        encoder.align('left');
-
-        if (line.startsWith('TOTAL')) {
-            encoder.bold(true).line(safeLine.padEnd(paperWidthChars, ' ')).bold(false);
-        } else if (line.trim().startsWith('Terima kasih') || line.trim().startsWith('Kritik/Saran')) {
-             // Center footer text
-            const padding = Math.max(0, paperWidthChars - line.trim().length);
-            const leftPad = Math.floor(padding / 2);
-            encoder.line(' '.repeat(leftPad) + line.trim());
-        } else {
-            encoder.line(safeLine.padEnd(paperWidthChars, ' '));
-        }
+  // Cetak teks (semua rata kiri; kolom kanan via spasi)
+  const receiptText = await _generateReceiptText(transactionData, false);
+  receiptText.split('\n').forEach(line => {
+    if (!line) { encoder.line(''); return; }
+    const safe = line.length > paperWidthChars ? line.slice(0, paperWidthChars) : line;
+    if (safe.startsWith('TOTAL')) {
+      encoder.bold(true).line(safe.padEnd(paperWidthChars, ' ')).bold(false);
+    } else {
+      encoder.line(safe.padEnd(paperWidthChars, ' '));
     }
+  });
 
-    encoder.feed(3).cut();
-    return encoder.encode();
+  encoder.feed(3).cut();
+  return encoder.encode();
 }
 
 export async function generateReceiptContent(transactionData, targetElementId = 'receiptContent') {
