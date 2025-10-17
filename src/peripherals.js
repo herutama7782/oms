@@ -30,6 +30,15 @@ function justifyLine(text, width) {
   return out;
 }
 
+function centerPad(text, width) {
+  const t = (text || '').trim();
+  if (!t) return ' '.repeat(width);
+  if (t.length >= width) return t.slice(0, width);
+  const left = Math.floor((width - t.length) / 2);
+  const right = width - t.length - left;
+  return ' '.repeat(left) + t + ' '.repeat(right);
+}
+
 
 // --- CAMERA FUNCTIONS ---
 export async function openCameraModal() {
@@ -248,14 +257,14 @@ async function _generateReceiptText(transactionData, isPreview) {
 
   let receiptText = '';
 
-  // HEADER: JUSTIFY di grid karakter
+  // HEADER — CENTER
   if (storeName) {
-    receiptText += justifyLine(storeName, paperWidthChars) + '\n';
+    receiptText += centerPad(storeName, paperWidthChars) + '\n';
   }
   if (storeAddress) {
     storeAddress.split('\n').forEach(l => {
       const t = (l || '').trim();
-      if (t) receiptText += justifyLine(t, paperWidthChars) + '\n';
+      if (t) receiptText += centerPad(t, paperWidthChars) + '\n';
     });
   }
 
@@ -304,13 +313,13 @@ async function _generateReceiptText(transactionData, isPreview) {
 
   receiptText += receiptLine('=') + '\n';
 
-  // FOOTER: juga dibuat justify agar konsisten
+  // FOOTER — CENTER
   if (footerText) {
-    receiptText += justifyLine(footerText, paperWidthChars) + '\n';
+    receiptText += centerPad(footerText, paperWidthChars) + '\n';
   }
   if (feedbackPhone) {
     const fb = `Kritik/Saran: ${feedbackPhone}`;
-    receiptText += justifyLine(fb, paperWidthChars) + '\n';
+    receiptText += centerPad(fb, paperWidthChars) + '\n';
   }
 
   return receiptText;
