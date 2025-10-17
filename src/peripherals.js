@@ -413,38 +413,6 @@ export async function printReceipt(isAutoPrint = false) {
     }
 };
 
-export async function shareReceipt() {
-    if (!window.app.isPrinterReady) {
-        showToast('Fitur cetak tidak tersedia.');
-        return;
-    }
-     if (!window.app.currentReceiptTransaction) {
-        showToast('Tidak ada data struk untuk dibagikan.');
-        return;
-    }
-
-    if (!navigator.share) {
-        showToast('Fitur Share tidak didukung di browser ini.');
-        return;
-    }
-
-    try {
-        const data = await generateReceiptEscPos(window.app.currentReceiptTransaction);
-        const blob = new Blob([data], { type: 'application/vnd.rawbt' });
-        const file = new File([blob], `struk_${window.app.currentReceiptTransaction.id}.bin`, { type: 'application/vnd.rawbt' });
-
-        await navigator.share({
-            title: `Struk Transaksi #${window.app.currentReceiptTransaction.id}`,
-            files: [file]
-        });
-    } catch (error) {
-        if (error.name !== 'AbortError') {
-            console.error('Share error:', error);
-            showToast('Gagal membagikan struk.');
-        }
-    }
-};
-
 async function generateLabelEscPos() {
     if (!window.app.isPrinterReady) {
         throw new Error('Printer library not loaded.');

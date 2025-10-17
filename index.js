@@ -138,7 +138,6 @@ const functions = {
     scanBarcodeForInput: peripherals.scanBarcodeForInput,
     closeScanModal: peripherals.closeScanModal,
     printReceipt: peripherals.printReceipt,
-    shareReceipt: peripherals.shareReceipt,
     testPrint: peripherals.testPrint,
     showPrintHelpModal: peripherals.showPrintHelpModal,
     closePrintHelpModal: peripherals.closePrintHelpModal,
