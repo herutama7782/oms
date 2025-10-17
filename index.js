@@ -113,6 +113,7 @@ const functions = {
     previewStoreLogo: settings.previewStoreLogo,
     addFee: settings.addFee,
     deleteFee: settings.deleteFee,
+    loadFees: settings.loadFees,
     showFeeSelectionModal: settings.showFeeSelectionModal,
     closeFeeSelectionModal: settings.closeFeeSelectionModal,
     applySelectedFees: settings.applySelectedFees,

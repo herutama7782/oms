@@ -225,7 +225,7 @@ export async function addFee() {
     }
 }
 
-async function loadFees() {
+export async function loadFees() {
     const feesListEl = document.getElementById('feesList');
     const fees = await getAllFromDB('fees');
     
