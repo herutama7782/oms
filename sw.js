@@ -1,10 +1,20 @@
-const CACHE_NAME = 'pos-mobile-cache-v1';
+const CACHE_NAME = 'pos-mobile-cache-v2'; // Bump version to force update
 const APP_SHELL_URLS = [
   '/',
   '/index.html',
   '/index.css',
   '/index.js',
-  '/manifest.json'
+  '/manifest.json',
+  '/src/audio.js',
+  '/src/cart.js',
+  '/src/contact.js',
+  '/src/db.js',
+  '/src/peripherals.js',
+  '/src/product.js',
+  '/src/report.js',
+  '/src/settings.js',
+  '/src/sync.js',
+  '/src/ui.js'
 ];
 
 self.addEventListener('install', event => {
@@ -13,7 +23,10 @@ self.addEventListener('install', event => {
     caches.open(CACHE_NAME)
       .then(cache => {
         console.log('Precaching App Shell');
-        return cache.addAll(APP_SHELL_URLS);
+        // Use addAll with a catch to prevent install failure if one resource fails
+        return cache.addAll(APP_SHELL_URLS).catch(err => {
+          console.error('Failed to cache app shell resources:', err);
+        });
       })
   );
 });
@@ -38,23 +51,40 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  // For CDN assets, use a stale-while-revalidate strategy
+  if (event.request.url.includes('cdn.tailwindcss.com') || 
+      event.request.url.includes('cdnjs.cloudflare.com') ||
+      event.request.url.includes('unpkg.com') ||
+      event.request.url.includes('cdn.jsdelivr.net')
+     ) {
+    event.respondWith(
+      caches.open(CACHE_NAME).then(cache => {
+        return cache.match(event.request).then(response => {
+          const fetchPromise = fetch(event.request).then(networkResponse => {
+            cache.put(event.request, networkResponse.clone());
+            return networkResponse;
+          });
+          return response || fetchPromise;
+        });
+      })
+    );
+    return;
+  }
+
+  // For app shell assets, use cache-first
   event.respondWith(
     caches.match(event.request)
       .then(cachedResponse => {
-        // Cache-First strategy
         if (cachedResponse) {
           return cachedResponse;
         }
 
-        // If not in cache, fetch from the network
         return fetch(event.request).then(
           networkResponse => {
-            // Check if we received a valid response
-            if (!networkResponse || networkResponse.status !== 200) {
+            if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
               return networkResponse;
             }
 
-            // Clone the response and cache it
             const responseToCache = networkResponse.clone();
             caches.open(CACHE_NAME)
               .then(cache => {
