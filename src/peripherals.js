@@ -1,3 +1,4 @@
+
 import { getSettingFromDB, getAllFromDB } from "./db.js";
 import { showToast, showConfirmationModal, formatCurrency, formatReceiptDate } from "./ui.js";
 import { addToCart } from "./cart.js";
@@ -288,22 +289,26 @@ async function _generateReceiptHTML(data, isPreview) {
     const settingsMap = new Map(settings.map(s => [s.key, s.value]));
     const logoData = settingsMap.get('storeLogo') || null;
     const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
+    const paperSize = settingsMap.get('printerPaperSize') || '80mm';
+    const paperWidthChars = paperSize === '58mm' ? 32 : 42;
 
     let receiptText = await _generateReceiptText(data, isPreview);
 
-    const logoHtml = showLogo && logoData 
-        ? `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 2px;"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 75px; margin: 0 auto;"></div>` 
-        : '';
-        
-    const pre = document.createElement('pre');
-    pre.textContent = receiptText;
-    
-    pre.innerHTML = pre.innerHTML.replace(
-        /^(TOTAL\s+Rp\..*)$/m,
-        `<b>$1</b>`
-    );
+    const wrapperStyle = `width: ${paperWidthChars}ch; margin: 0 auto; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;`;
 
-    return logoHtml + pre.outerHTML;
+    const logoHtml = (showLogo && logoData)
+        ? `<div id="receiptLogoContainer" style="text-align: center; margin-bottom: 4px;">
+             <img src="${logoData}" alt="Logo" style="max-width: 100%; max-height: 75px;">
+           </div>`
+        : '';
+
+    const pre = document.createElement('pre');
+    pre.style.margin = '0';
+    pre.style.fontFamily = 'inherit';
+    pre.textContent = receiptText;
+    pre.innerHTML = pre.innerHTML.replace(/^(TOTAL\s+Rp\..*)$/m, `<b>$1</b>`);
+
+    return `<div style="${wrapperStyle}">${logoHtml}${pre.outerHTML}</div>`;
 }
 
 async function generateReceiptEscPos(transactionData) {
@@ -316,16 +321,18 @@ async function generateReceiptEscPos(transactionData) {
     const logoData = settingsMap.get('storeLogo') || null;
     const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
     const paperSize = settingsMap.get('printerPaperSize') || '80mm';
+    const paperWidthDots = paperSize === '58mm' ? 384 : 576;
+    const paperWidthChars = paperSize === '58mm' ? 32 : 42;
+
+    const storeName = settingsMap.get('storeName') || 'Toko Anda';
+    const storeAddress = settingsMap.get('storeAddress') || '';
+    const footerText = settingsMap.get('storeFooterText') || 'Terima kasih!';
+    const feedbackPhone = settingsMap.get('storeFeedbackPhone') || '';
 
     const encoder = new EscPosEncoder.default();
-    encoder
-        .initialize()
-        .raw([0x1b, 0x40]);
+    encoder.initialize().raw([0x1b, 0x40]);
 
-
-    const receiptText = await _generateReceiptText(transactionData, false);
-    encoder.align('left');
-
+    // Logo
     if (showLogo && logoData) {
         try {
             const image = await new Promise((resolve, reject) => {
@@ -334,46 +341,95 @@ async function generateReceiptEscPos(transactionData) {
                 img.onerror = reject;
                 img.src = logoData;
             });
-
             const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
             ctx.imageSmoothingEnabled = false;
-            const maxWidth = paperSize === '58mm' ? 200 : 300;
-            const maxHeight = paperSize === '58mm' ? 80 : 100;
-            let imgWidth = image.width;
-            let imgHeight = image.height;
 
-            const widthRatio = maxWidth / imgWidth;
-            const heightRatio = maxHeight / imgHeight;
-            const scaleRatio = Math.min(widthRatio, heightRatio, 1);
-
-            imgWidth *= scaleRatio;
-            imgHeight *= scaleRatio;
-
-            canvas.width = imgWidth;
-            canvas.height = imgHeight;
-            ctx.drawImage(image, 0, 0, imgWidth, imgHeight);
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-            encoder.align('center');
-            encoder.image(imageData, 's8');
-            encoder.line('');
+            const ratio = Math.min(paperWidthDots / image.width, 1);
+            const w = Math.round(image.width * ratio);
+            const h = Math.round(image.height * ratio);
+            canvas.width = w;
+            canvas.height = h;
+            ctx.drawImage(image, 0, 0, w, h);
+            const imageData = ctx.getImageData(0, 0, w, h);
+            
+            encoder.align('center').image(imageData, 's8').line('');
         } catch (e) {
             console.error('Failed to process logo for printing:', e);
         }
     }
-    
-    receiptText.split('\n').forEach(line => {
-        if (line.startsWith('TOTAL')) {
-            encoder.bold(true).line(line).bold(false);
+
+    // Header (centered)
+    encoder.align('center');
+    if (storeName) encoder.line(storeName);
+    if (storeAddress) {
+        storeAddress.split('\n').forEach(line => {
+            if (line.trim()) encoder.line(line.trim());
+        });
+    }
+    encoder.line('');
+
+    // Body (left-aligned)
+    encoder.align('left');
+    encoder.line('='.repeat(paperWidthChars));
+    encoder.line(`No: ${transactionData.id || 'N/A'}`);
+    encoder.line(`Tgl: ${formatReceiptDate(transactionData.date)}`);
+    encoder.line('-'.repeat(paperWidthChars));
+
+    const formatLine = (left, right) => {
+        const spaces = Math.max(0, paperWidthChars - left.length - right.length);
+        return left + ' '.repeat(spaces) + right;
+    };
+
+    transactionData.items.forEach(item => {
+        encoder.line(`${item.name} x${item.quantity}`);
+        const totalItemPriceText = `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`;
+        let priceDetailText;
+        if (item.discountPercentage > 0) {
+            priceDetailText = `@ Rp.${formatCurrency(item.price)} Disc ${item.discountPercentage}%`;
         } else {
-            encoder.line(line);
+            priceDetailText = `@ Rp.${formatCurrency(item.price)}`;
         }
+        encoder.line(formatLine(priceDetailText, totalItemPriceText));
     });
 
-    encoder
-        .feed(3)
-        .cut();
+    const subtotalAfterDiscount = transactionData.items.reduce((sum, item) => {
+        const priceToUse = item.effectivePrice !== undefined ? item.effectivePrice : (item.price * (1 - (item.discountPercentage || 0) / 100));
+        return sum + Math.round(priceToUse * item.quantity);
+    }, 0);
+
+    encoder.line('-'.repeat(paperWidthChars));
+    encoder.line(formatLine('Subtotal', `Rp.${formatCurrency(subtotalAfterDiscount)}`));
+
+    if (transactionData.fees && transactionData.fees.length > 0) {
+        transactionData.fees.forEach(fee => {
+            let feeName = fee.name;
+            if (fee.type === 'percentage') {
+                feeName += ` ${fee.value}%`;
+            }
+            const feeAmount = `Rp. ${formatCurrency(fee.amount)}`;
+            encoder.line(formatLine(feeName, feeAmount));
+        });
+    }
+
+    encoder.line('-'.repeat(paperWidthChars));
+    encoder.bold(true).line(formatLine('TOTAL', `Rp.${formatCurrency(transactionData.total)}`)).bold(false);
+    encoder.line(formatLine('TUNAI', `Rp.${formatCurrency(transactionData.cashPaid)}`));
+    encoder.line(formatLine('KEMBALI', `Rp. ${formatCurrency(transactionData.change)}`));
+    encoder.line('='.repeat(paperWidthChars));
+
+    // Footer (centered)
+    encoder.align('center');
+    if (footerText) {
+        footerText.split('\n').forEach(line => {
+            if(line.trim()) encoder.line(line.trim());
+        });
+    }
+    if (feedbackPhone) {
+        encoder.line(`Kritik/Saran: ${feedbackPhone}`);
+    }
+
+    encoder.feed(3).cut();
     return encoder.encode();
 }
 
