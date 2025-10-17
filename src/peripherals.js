@@ -1,5 +1,5 @@
 import { getSettingFromDB, getAllFromDB } from "./db.js";
-import { showToast, showConfirmationModal } from "./ui.js";
+import { showToast, showConfirmationModal, formatCurrency, formatReceiptDate } from "./ui.js";
 import { addToCart } from "./cart.js";
 
 // --- CAMERA FUNCTIONS ---
@@ -233,17 +233,17 @@ async function _generateReceiptText(transactionData, isPreview) {
     receiptText += receiptLine('=') + '\n';
     receiptText += '\n';
     receiptText += `No: ${transactionData.id || (isPreview ? 'PREVIEW' : 'N/A')}\n`;
-    receiptText += `Tgl: ${window.formatReceiptDate(transactionData.date)}\n`;
+    receiptText += `Tgl: ${formatReceiptDate(transactionData.date)}\n`;
     receiptText += receiptLine('-') + '\n';
 
     transactionData.items.forEach(item => {
         receiptText += `${item.name} x${item.quantity}\n`;
-        const totalItemPriceText = `Rp.${window.formatCurrency(item.effectivePrice * item.quantity)}`;
+        const totalItemPriceText = `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`;
         let priceDetailText;
         if (item.discountPercentage > 0) {
-            priceDetailText = `@ Rp.${window.formatCurrency(item.price)} Disc ${item.discountPercentage}%`;
+            priceDetailText = `@ Rp.${formatCurrency(item.price)} Disc ${item.discountPercentage}%`;
         } else {
-             priceDetailText = `@ Rp.${window.formatCurrency(item.price)}`;
+             priceDetailText = `@ Rp.${formatCurrency(item.price)}`;
         }
         receiptText += formatLine(priceDetailText, totalItemPriceText) + '\n';
     });
@@ -254,7 +254,7 @@ async function _generateReceiptText(transactionData, isPreview) {
     }, 0);
 
     receiptText += receiptLine('-') + '\n';
-    receiptText += formatLine('Subtotal', `Rp.${window.formatCurrency(subtotalAfterDiscount)}`) + '\n';
+    receiptText += formatLine('Subtotal', `Rp.${formatCurrency(subtotalAfterDiscount)}`) + '\n';
     
     if (transactionData.fees && transactionData.fees.length > 0) {
         transactionData.fees.forEach(fee => {
@@ -262,15 +262,15 @@ async function _generateReceiptText(transactionData, isPreview) {
              if (fee.type === 'percentage') {
                 feeName += ` ${fee.value}%`;
             }
-            const feeAmount = `Rp. ${window.formatCurrency(fee.amount)}`;
+            const feeAmount = `Rp. ${formatCurrency(fee.amount)}`;
             receiptText += formatLine(feeName, feeAmount) + '\n';
         });
     }
     
     receiptText += receiptLine('-') + '\n';
-    receiptText += formatLine('TOTAL', `Rp.${window.formatCurrency(transactionData.total)}`) + '\n';
-    receiptText += formatLine('TUNAI', `Rp.${window.formatCurrency(transactionData.cashPaid)}`) + '\n';
-    receiptText += formatLine('KEMBALI', `Rp. ${window.formatCurrency(transactionData.change)}`) + '\n';
+    receiptText += formatLine('TOTAL', `Rp.${formatCurrency(transactionData.total)}`) + '\n';
+    receiptText += formatLine('TUNAI', `Rp.${formatCurrency(transactionData.cashPaid)}`) + '\n';
+    receiptText += formatLine('KEMBALI', `Rp. ${formatCurrency(transactionData.change)}`) + '\n';
 
     receiptText += receiptLine('=') + '\n';
     if (footerText) {
@@ -468,7 +468,7 @@ async function generateLabelEscPos() {
     }
 
     if (productPrice) {
-        const formattedPrice = `Rp ${window.formatCurrency(productPrice)}`;
+        const formattedPrice = `Rp ${formatCurrency(productPrice)}`;
         encoder.line(formattedPrice);
     }
 
@@ -647,7 +647,7 @@ export function setupBarcodeGenerator() {
         const outputBarcodeText = document.getElementById('output-barcode-text');
         
         outputName.textContent = productName;
-        outputPrice.textContent = productPrice ? `Rp ${window.formatCurrency(productPrice)}` : '';
+        outputPrice.textContent = productPrice ? `Rp ${formatCurrency(productPrice)}` : '';
         outputBarcodeText.textContent = barcodeCode;
 
         try {

@@ -1,5 +1,5 @@
 import { getFromDB } from './db.js';
-import { showToast, showConfirmationModal } from './ui.js';
+import { showToast, showConfirmationModal, formatCurrency } from './ui.js';
 import { playTone } from './audio.js';
 import { printReceipt } from './peripherals.js';
 import { putToDB } from './db.js';
@@ -117,11 +117,6 @@ export function updateCartItemQuantity(productId, change) {
         updateCartDisplay();
     }
 }
-
-function formatCurrency(amount) {
-    return Math.round(amount).toLocaleString('id-ID');
-}
-
 
 export function updateCartDisplay() {
     const cartItemsEl = document.getElementById('cartItems');

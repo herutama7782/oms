@@ -1,5 +1,5 @@
 import { getAllFromDB, getFromDB, putToDB } from "./db.js";
-import { showToast, showConfirmationModal } from "./ui.js";
+import { showToast, showConfirmationModal, formatCurrency } from "./ui.js";
 import { queueSyncAction } from "./sync.js";
 import { loadDashboard } from "./ui.js";
 
@@ -166,10 +166,10 @@ export function loadProductsGrid() {
                 <h3 class="font-semibold text-sm">${p.name}</h3>
                 ${hasDiscount
                     ? `<div>
-                         <p class="text-xs text-gray-500 line-through">Rp ${window.formatCurrency(p.price)}</p>
-                         <p class="text-blue-500 font-bold">Rp ${window.formatCurrency(discountedPrice)}</p>
+                         <p class="text-xs text-gray-500 line-through">Rp ${formatCurrency(p.price)}</p>
+                         <p class="text-blue-500 font-bold">Rp ${formatCurrency(discountedPrice)}</p>
                        </div>`
-                    : `<p class="text-blue-500 font-bold">Rp ${window.formatCurrency(p.price)}</p>`
+                    : `<p class="text-blue-500 font-bold">Rp ${formatCurrency(p.price)}</p>`
                 }
                 <p class="text-xs text-gray-500">Stok: ${p.stock}${lowStockIndicator}</p>
             </div>
@@ -242,11 +242,11 @@ export async function loadProductsList() {
                             <div class="flex justify-between items-center">
                                 <div>
                                     ${hasDiscount
-                                        ? `<p class="text-xs text-gray-400 line-through">Rp ${window.formatCurrency(p.price)}</p>
-                                           <p class="text-blue-500 font-bold">Rp ${window.formatCurrency(discountedPrice)}</p>`
-                                        : `<p class="text-blue-500 font-bold">Rp ${window.formatCurrency(p.price)}</p>`
+                                        ? `<p class="text-xs text-gray-400 line-through">Rp ${formatCurrency(p.price)}</p>
+                                           <p class="text-blue-500 font-bold">Rp ${formatCurrency(discountedPrice)}</p>`
+                                        : `<p class="text-blue-500 font-bold">Rp ${formatCurrency(p.price)}</p>`
                                     }
-                                    <p class="text-xs text-gray-500">Beli: Rp ${window.formatCurrency(p.purchasePrice)}</p>
+                                    <p class="text-xs text-gray-500">Beli: Rp ${formatCurrency(p.purchasePrice)}</p>
                                 </div>
                                 <div class="text-right">
                                     <div class="flex justify-end items-center gap-2 mb-1">
