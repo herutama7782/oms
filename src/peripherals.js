@@ -1,4 +1,5 @@
 
+
 import { getSettingFromDB, getAllFromDB } from "./db.js";
 import { showToast, showConfirmationModal, formatCurrency, formatReceiptDate } from "./ui.js";
 import { addToCart } from "./cart.js";
@@ -37,6 +38,32 @@ function centerPad(text, width) {
   const left = Math.floor((width - t.length) / 2);
   const right = width - t.length - left;
   return ' '.repeat(left) + t + ' '.repeat(right);
+}
+
+function wrapWords(text, width) {
+  // bungkus per kata agar tidak motong di tengah kata
+  const raw = (text || '').toString().replace(/\s+/g, ' ').trim();
+  if (!raw) return [' '.repeat(width)];
+  const words = raw.split(' ');
+  const lines = [];
+  let line = '';
+  for (const w of words) {
+    if (!line.length) {
+      line = w;
+    } else if ((line.length + 1 + w.length) <= width) {
+      line += ' ' + w;
+    } else {
+      lines.push(line);
+      line = w;
+    }
+  }
+  if (line) lines.push(line);
+  // pastikan tidak ada baris kosong
+  return lines.map(l => l || ' '.repeat(width));
+}
+
+function wrapAndCenter(text, width) {
+  return wrapWords(text, width).map(l => centerPad(l, width));
 }
 
 
@@ -228,10 +255,16 @@ export async function closeScanModal() {
 // --- RECEIPT PRINTING ---
 
 function sendToRawBT(data) {
+    // data = Uint8Array dari encoder.encode()
+    // Prefix "ESC d 0" sebagai guard (print & feed 0 lines = no-op)
+    const guard = new Uint8Array([0x1B, 0x64, 0x00]);
+    const payload = new Uint8Array(guard.length + data.length);
+    payload.set(guard, 0);
+    payload.set(data, guard.length);
+
     let binary = '';
-    const len = data.byteLength;
-    for (let i = 0; i < len; i++) {
-        binary += String.fromCharCode(data[i]);
+    for (let i = 0; i < payload.byteLength; i++) {
+        binary += String.fromCharCode(payload[i]);
     }
     const base64 = btoa(binary);
     const intentUrl = `rawbt:base64,${base64}`;
@@ -257,14 +290,11 @@ async function _generateReceiptText(transactionData, isPreview) {
 
   let receiptText = '';
 
-  // HEADER — CENTER
-  if (storeName) {
-    receiptText += centerPad(storeName, paperWidthChars) + '\n';
-  }
+  // HEADER: center + word-wrap
+  wrapAndCenter(storeName, paperWidthChars).forEach(l => receiptText += l + '\n');
   if (storeAddress) {
-    storeAddress.split('\n').forEach(l => {
-      const t = (l || '').trim();
-      if (t) receiptText += centerPad(t, paperWidthChars) + '\n';
+    storeAddress.split('\n').forEach(row => {
+      if (row.trim()) wrapAndCenter(row, paperWidthChars).forEach(l => receiptText += l + '\n');
     });
   }
 
@@ -310,16 +340,14 @@ async function _generateReceiptText(transactionData, isPreview) {
   receiptText += formatLine('TOTAL', `Rp.${formatCurrency(transactionData.total)}`) + '\n';
   receiptText += formatLine('TUNAI', `Rp.${formatCurrency(transactionData.cashPaid)}`) + '\n';
   receiptText += formatLine('KEMBALI', `Rp. ${formatCurrency(transactionData.change)}`) + '\n';
-
   receiptText += receiptLine('=') + '\n';
 
-  // FOOTER — CENTER
+  // FOOTER: center + word-wrap (tidak akan terpotong di tengah kata)
   if (footerText) {
-    receiptText += centerPad(footerText, paperWidthChars) + '\n';
+    wrapAndCenter(footerText, paperWidthChars).forEach(l => receiptText += l + '\n');
   }
   if (feedbackPhone) {
-    const fb = `Kritik/Saran: ${feedbackPhone}`;
-    receiptText += centerPad(fb, paperWidthChars) + '\n';
+    wrapAndCenter(`Kritik/Saran: ${feedbackPhone}`, paperWidthChars).forEach(l => receiptText += l + '\n');
   }
 
   return receiptText;
