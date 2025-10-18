@@ -414,9 +414,23 @@ export async function closeScanModal() {
 }
 
 // --- RECEIPT PRINTING ---
-// Kembalikan ke versi paling sederhana. Masalah ada di perintah encoder.
+// FUNGSI YANG DIPERBAIKI (KEEMPAT KALI)
 function sendToRawBT(data) {
-  const payload = new Uint8Array(data);
+  // Perbaikan Keempat: "Paksa Reset & Buang Buffer"
+  // Masalah 'd' yang persisten kemungkinan besar disebabkan oleh keadaan printer yang tidak terduga
+  // saat menerima pekerjaan cetak. Kita mengirim serangkaian perintah sanitasi di awal
+  // untuk memaksa printer ke kondisi yang bersih dan terkenal.
+  // Urutan: ESC @ (Reset), ESC t 0 (Set Code Page PC437), 3x LF (Line Feed)
+  const initSequence = new Uint8Array([
+    0x1B, 0x40, // ESC @ : Initialize printer
+    0x1B, 0x74, 0x00, // ESC t 0 : Select character code page PC437 (standard)
+    0x0A, 0x0A, 0x0A  // 3x LF : Line feed, to clear any buffer
+  ]);
+
+  const payload = new Uint8Array(initSequence.length + data.length);
+  payload.set(initSequence, 0);
+  payload.set(data, initSequence.length);
+
   let binary = '';
   for (let i = 0; i < payload.byteLength; i++) {
     binary += String.fromCharCode(payload[i]);
@@ -537,7 +551,7 @@ async function _generateReceiptHTML(data, isPreview) {
   return wrapperStart + logoHtml + pre.outerHTML + wrapperEnd;
 }
 
-// FUNSI YANG DIPERBAIKI (KETIGA KALI)
+// KEMBALIKAN KE VERSI AWALNYA
 async function generateReceiptEscPos(transactionData) {
   if (!window.app.isPrinterReady) throw new Error('Printer library not loaded.');
 
@@ -553,9 +567,8 @@ async function generateReceiptEscPos(transactionData) {
   const encoder = new EscPosEncoder.default();
   encoder
     .initialize()
-    // PERBAIKAN: Hapus perintah reset yang berlebihan untuk menyederhanakan aliran perintah awal.
-    // .raw([0x1b, 0x40])   // <-- HAPUS BARIS INI
-    // .raw([0x1b, 0x40])   // <-- HAPUS BARIS INI
+    .raw([0x1b, 0x40])   // ESC @ reset
+    .raw([0x1b, 0x40])   // reset ekstra
     .align('left')
     .raw([0x1b, 0x33, LINE_SPACING_DOTS]);  // atur line spacing
 
@@ -708,7 +721,7 @@ async function generateLabelEscPos() {
     return encoder.encode();
 }
 
-// FUNGSI YANG DIPERBAIKI (JUGA DI testPrint)
+// KEMBALIKAN KE VERSI AWALNYA
 export async function testPrint() {
     if (!window.app.isPrinterReady) {
         showToast('Fitur cetak tidak tersedia.');
@@ -721,8 +734,7 @@ export async function testPrint() {
 
         const data = encoder
             .initialize()
-            // PERBAIKAN: Hapus perintah reset yang berlebihan di sini juga.
-            // .raw([0x1b, 0x40]) // <-- HAPUS BARIS INI
+            .raw([0x1b, 0x40])
             .align('center')
             .width(2).height(2)
             .line('Test Cetak')
