@@ -1,4 +1,3 @@
-
 import { getSettingFromDB, getAllFromDB } from "./db.js";
 import { showToast, showConfirmationModal, formatCurrency, formatReceiptDate } from "./ui.js";
 import { addToCart } from "./cart.js";
@@ -7,6 +6,14 @@ import { addToCart } from "./cart.js";
 const LINE_SPACING_DOTS = 30; // default ~30. 24 for single-spacing. 30 is ~1.25 spacing.
 const FEED_AFTER_IMAGE = 0;   // baris setelah logo
 const FEED_BEFORE_CUT = 2;    // feed sebelum cut
+
+// --- IMAGE / LOGO TUNING ---
+const LOGO_MODE = 'r8';          // raster mode lebih stabil di banyak printer ('r8' | 's8')
+const LOGO_THRESHOLD = 195;       // 170–210; makin tinggi = makin tipis
+const LOGO_MAX_HEIGHT = 180;      // batas tinggi logo saat diplot
+const LOGO_INVERT = 'auto';       // 'auto' | true | false (auto mencegah logo "negatif")
+const LOGO_DESPECKLE = true;      // bersihkan noise titik kecil
+const LOGO_EDGE_ONLY = false;     // true jika mau outline-only
 
 // --- UTILITY FUNCTIONS ---
 function justifyLine(text, width) {
@@ -103,6 +110,104 @@ function cropCanvasTopBottom(canvas, whiteThreshold = 245) {
   const octx = out.getContext('2d');
   octx.drawImage(canvas, 0, top, width, cropH, 0, 0, width, cropH);
   return out;
+}
+
+// --- IMAGE PROCESS HELPERS ---
+function binarizeImageData(imgData, threshold = 195) {
+  const d = imgData.data;
+  let blackCount = 0;
+  const total = imgData.width * imgData.height;
+  for (let i = 0; i < d.length; i += 4) {
+    const gray = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+    const v = gray < threshold ? 0 : 255; // 0 = hitam, 255 = putih
+    if (v === 0) blackCount++;
+    d[i] = d[i + 1] = d[i + 2] = v;
+    d[i + 3] = 255;
+  }
+  imgData._blackRatio = blackCount / total;
+  return imgData;
+}
+
+function invertImageData(imgData) {
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const v = d[i] < 128 ? 255 : 0; // tukar 0 <-> 255
+    d[i] = d[i + 1] = d[i + 2] = v;
+    d[i + 3] = 255;
+  }
+  imgData._blackRatio = 1 - (imgData._blackRatio || 0);
+  return imgData;
+}
+
+// Hapus titik hitam tunggal biar tidak “berpasir”
+function despeckleImageData(imgData) {
+  const { width: W, height: H, data: d } = imgData;
+  const src = new Uint8Array(W * H);
+  for (let i = 0, p = 0; i < d.length; i += 4, p++) src[p] = d[i] < 128 ? 1 : 0; // 1=hitam
+  const out = src.slice();
+
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+      if (src[i] === 1) {
+        let n = 0;
+        n += src[i - 1] + src[i + 1] + src[i - W] + src[i + W];
+        n += src[i - W - 1] + src[i - W + 1] + src[i + W - 1] + src[i + W + 1];
+        if (n <= 1) out[i] = 0; // titik hitam sendirian -> putih
+      }
+    }
+  }
+
+  for (let p = 0, i = 0; p < out.length; p++, i += 4) {
+    const v = out[p] ? 0 : 255;
+    d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
+  }
+  return imgData;
+}
+
+// Hanya garis tepi (opsional). Thickness tipis agar rapi.
+function outlineOnly(imgData, thickness = 1) {
+  const { width: W, height: H, data: d } = imgData;
+  const src = new Uint8Array(W * H);
+  for (let i = 0, p = 0; i < d.length; i += 4, p++) src[p] = d[i] < 128 ? 1 : 0; // 1=hitam
+
+  const edge = new Uint8Array(W * H);
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+      if (!src[i]) continue;
+      if (
+        src[i - 1] === 0 || src[i + 1] === 0 ||
+        src[i - W] === 0 || src[i + W] === 0 ||
+        src[i - W - 1] === 0 || src[i - W + 1] === 0 ||
+        src[i + W - 1] === 0 || src[i + W + 1] === 0
+      ) {
+        edge[i] = 1;
+      }
+    }
+  }
+
+  if (thickness > 1) {
+    const dil = edge.slice();
+    for (let y = 1; y < H - 1; y++) {
+      for (let x = 1; x < W - 1; x++) {
+        const i = y * W + x;
+        if (!edge[i]) continue;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            dil[i + dy * W + dx] = 1;
+          }
+        }
+      }
+    }
+    edge.set(dil);
+  }
+
+  for (let p = 0, i = 0; p < edge.length; p++, i += 4) {
+    const v = edge[p] ? 0 : 255; // garis hitam, sisanya putih
+    d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
+  }
+  return imgData;
 }
 
 // --- CAMERA FUNCTIONS ---
@@ -442,7 +547,7 @@ async function generateReceiptEscPos(transactionData) {
     .align('left')
     .raw([0x1b, 0x33, LINE_SPACING_DOTS]);  // set line spacing yang lebih rapat
 
-  // Cetak logo: full width, BW threshold, mode 's8' (stabil)
+  // Cetak logo: full width, raster, dengan auto-invert & despeckle
   if (showLogo && logoData) {
     try {
       const image = await new Promise((res, rej) => {
@@ -454,7 +559,7 @@ async function generateReceiptEscPos(transactionData) {
 
       const ratio = paperWidthDots / image.width;
       const w = paperWidthDots;
-      const h = Math.min(Math.round(image.height * ratio), 180);
+      const h = Math.min(Math.round(image.height * ratio), LOGO_MAX_HEIGHT);
 
       const canvas = document.createElement('canvas');
       canvas.width = w; canvas.height = h;
@@ -467,22 +572,27 @@ async function generateReceiptEscPos(transactionData) {
       // crop putih atas-bawah agar tidak ada jarak ekstra
       const cropped = cropCanvasTopBottom(canvas, 245);
 
-      // Binarize sederhana agar hasil jelas
-      const cctx = cropped.getContext('2d');
-      const imgData = cctx.getImageData(0, 0, cropped.width, cropped.height);
-      const d = imgData.data;
-      const threshold = 200;
-      for (let i = 0; i < d.length; i += 4) {
-        const gray = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
-        const a    = d[i+3];
-        const v = (a < 10 || gray > threshold) ? 255 : 0; // putih jika terang
-        d[i] = d[i+1] = d[i+2] = v;
-        d[i+3] = 255;
+      // Binarize tegas + auto-invert + despeckle + optional outline-only
+      const cctx = cropped.getContext('2d', { willReadFrequently: true });
+      let imgData = cctx.getImageData(0, 0, cropped.width, cropped.height);
+
+      imgData = binarizeImageData(imgData, LOGO_THRESHOLD);
+
+      if (LOGO_INVERT === 'auto') {
+        if ((imgData._blackRatio || 0) > 0.60) {
+          imgData = invertImageData(imgData);
+        }
+      } else if (LOGO_INVERT === true) {
+        imgData = invertImageData(imgData);
       }
 
-      encoder.align('left');
-      encoder.image(imgData, 's8');
+      if (LOGO_DESPECKLE) imgData = despeckleImageData(imgData);
+      if (LOGO_EDGE_ONLY) imgData = outlineOnly(imgData, 1);
+
+      encoder.align('center');
+      encoder.image(imgData, LOGO_MODE); // gunakan raster mode
       if (FEED_AFTER_IMAGE > 0) encoder.feed(FEED_AFTER_IMAGE);
+      encoder.align('left'); // kembali ke kiri untuk teks
     } catch (e) {
       console.error('Failed to process logo for printing:', e);
     }
