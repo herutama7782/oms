@@ -414,30 +414,20 @@ export async function closeScanModal() {
 }
 
 // --- RECEIPT PRINTING ---
-// FUNGSI YANG DIPERBAIKI (KEEMPAT KALI)
 function sendToRawBT(data) {
-  // Perbaikan Keempat: "Paksa Reset & Buang Buffer"
-  // Masalah 'd' yang persisten kemungkinan besar disebabkan oleh keadaan printer yang tidak terduga
-  // saat menerima pekerjaan cetak. Kita mengirim serangkaian perintah sanitasi di awal
-  // untuk memaksa printer ke kondisi yang bersih dan terkenal.
-  // Urutan: ESC @ (Reset), ESC t 0 (Set Code Page PC437), 3x LF (Line Feed)
-  const initSequence = new Uint8Array([
-    0x1B, 0x40, // ESC @ : Initialize printer
-    0x1B, 0x74, 0x00, // ESC t 0 : Select character code page PC437 (standard)
-    0x0A, 0x0A, 0x0A  // 3x LF : Line feed, to clear any buffer
-  ]);
+    // Prefix "ESC d 0" sebagai guard (print & feed 0 lines = no-op)
+    const guard = new Uint8Array([0x1B, 0x64, 0x00]);
+    const payload = new Uint8Array(guard.length + data.length);
+    payload.set(guard, 0);
+    payload.set(data, guard.length);
 
-  const payload = new Uint8Array(initSequence.length + data.length);
-  payload.set(initSequence, 0);
-  payload.set(data, initSequence.length);
-
-  let binary = '';
-  for (let i = 0; i < payload.byteLength; i++) {
-    binary += String.fromCharCode(payload[i]);
-  }
-  const base64 = btoa(binary);
-  const intentUrl = `rawbt:base64,${base64}`;
-  window.location.href = intentUrl;
+    let binary = '';
+    for (let i = 0; i < payload.byteLength; i++) {
+        binary += String.fromCharCode(payload[i]);
+    }
+    const base64 = btoa(binary);
+    const intentUrl = `rawbt:base64,${base64}`;
+    window.location.href = intentUrl;
 };
 
 async function _generateReceiptText(transactionData, isPreview) {
@@ -551,7 +541,6 @@ async function _generateReceiptHTML(data, isPreview) {
   return wrapperStart + logoHtml + pre.outerHTML + wrapperEnd;
 }
 
-// KEMBALIKAN KE VERSI AWALNYA
 async function generateReceiptEscPos(transactionData) {
   if (!window.app.isPrinterReady) throw new Error('Printer library not loaded.');
 
@@ -562,6 +551,7 @@ async function generateReceiptEscPos(transactionData) {
   const paperSize = settingsMap.get('printerPaperSize') || '80mm';
 
   const paperWidthChars = paperSize === '58mm' ? 32 : 42;
+  // NOTE: jika printer 80mm Anda 512 dots, ganti 576 -> 512
   const paperWidthDots  = paperSize === '58mm' ? 384 : 576;
 
   const encoder = new EscPosEncoder.default();
@@ -721,7 +711,6 @@ async function generateLabelEscPos() {
     return encoder.encode();
 }
 
-// KEMBALIKAN KE VERSI AWALNYA
 export async function testPrint() {
     if (!window.app.isPrinterReady) {
         showToast('Fitur cetak tidak tersedia.');
