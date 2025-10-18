@@ -17,6 +17,9 @@ const LOGO_ENSURE_WHITE_BG = true;     // paksa background putih (auto-invert ji
 const LOGO_DESPECKLE = true;           // bersihkan noise titik kecil
 const LOGO_OUTLINE_THICKNESS = 1;      // ketebalan outline jika mode 'outline'
 
+// Optional debug
+const DEBUG_RAW_HEAD = false;          // true untuk log 64 byte awal stream
+
 // --- TEXT UTILS ---
 function justifyLine(text, width) {
   const t = (text || '').trim();
@@ -230,6 +233,17 @@ function buildRasterGSv0(mask, W, H) {
   return { header, payload };
 }
 
+// Sacrificial blank raster (menyerap drop byte awal)
+function sendBlankRaster(encoder, widthDots, heightDots = 8) {
+  const rowBytes = Math.ceil(widthDots / 8);
+  const xL = rowBytes & 0xFF, xH = (rowBytes >> 8) & 0xFF;
+  const yL = heightDots & 0xFF, yH = (heightDots >> 8) & 0xFF;
+  const header = new Uint8Array([0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH]);
+  const payload = new Uint8Array(rowBytes * heightDots); // putih semua
+  encoder.raw(Array.from(header));
+  encoder.raw(Array.from(payload));
+}
+
 // --- CAMERA FUNCTIONS ---
 export async function openCameraModal() {
     const modal = document.getElementById('cameraModal');
@@ -414,12 +428,20 @@ export async function closeScanModal() {
 }
 
 // --- RECEIPT PRINTING ---
-// Versi aman: prefix beberapa NUL + ESC @ dua kali, konversi base64 chunked
+// Versi aman: prefix 32 NUL + 3x ESC @, konversi base64 chunked
 function sendToRawBT(data) {
-    const SAFE_PREFIX = new Uint8Array([0x00, 0x00, 0x00, 0x1B, 0x40, 0x1B, 0x40]);
-    const payload = new Uint8Array(SAFE_PREFIX.length + data.length);
-    payload.set(SAFE_PREFIX, 0);
-    payload.set(data, SAFE_PREFIX.length);
+    const N = 32;
+    const nul = new Uint8Array(N).fill(0x00);
+    const resets = new Uint8Array([0x1B,0x40, 0x1B,0x40, 0x1B,0x40]);
+    const payload = new Uint8Array(nul.length + resets.length + data.length);
+    payload.set(nul, 0);
+    payload.set(resets, nul.length);
+    payload.set(data, nul.length + resets.length);
+
+    if (DEBUG_RAW_HEAD) {
+      const head = [...payload.slice(0, 64)].map(b => b.toString(16).padStart(2,'0')).join(' ');
+      console.log('RAW HEAD:', head);
+    }
 
     const base64 = u8ToBase64(payload);
     window.location.href = `rawbt:base64,${base64}`;
@@ -567,7 +589,7 @@ async function generateReceiptEscPos(transactionData) {
     .align('left')
     .raw([0x1b, 0x33, LINE_SPACING_DOTS]);  // atur line spacing
 
-  // Cetak logo: pure black line-art 1-bit (GS v 0)
+  // Cetak logo: pure black line-art 1-bit (GS v 0), dengan sacrificial blank raster
   if (showLogo && logoData) {
     try {
       const image = await new Promise((res, rej) => {
@@ -609,12 +631,17 @@ async function generateReceiptEscPos(transactionData) {
         mask = ensureWhiteBackground(mask, cropped.width, cropped.height);
       }
 
-      // Build raster dan kirim sebagai raw ESC/POS (GS v 0)
       const { header, payload } = buildRasterGSv0(mask, cropped.width, cropped.height);
 
       encoder.align('center');
+
+      // Sacrificial blank 8-dot supaya jika bagian awal stream drop, byte yang “tercetak” tidak terlihat
+      sendBlankRaster(encoder, paperWidthDots, 8);
+
+      // Logo utama
       encoder.raw(Array.from(header));
       encoder.raw(Array.from(payload));
+
       if (FEED_AFTER_IMAGE > 0) encoder.feed(FEED_AFTER_IMAGE);
       encoder.align('left');
     } catch (e) {
