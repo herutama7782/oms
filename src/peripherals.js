@@ -364,7 +364,7 @@ async function _generateReceiptHTML(data, isPreview) {
 
   let receiptText = await _generateReceiptText(data, isPreview);
 
-  const wrapperStart = `<div style="width:${paperWidthChars}ch; margin:0 auto; font-family: ui-monospace, Menlo, Monaco, Consolas, 'Courier New', monospace; line-height:1.1;">`;
+  const wrapperStart = `<div style="width:${paperWidthChars}ch; margin:0 auto; font-family: ui-monospace, Menlo, Monaco, Consolas, 'Courier New', monospace; line-height:1.2;">`;
   const wrapperEnd = `</div>`;
 
   const logoHtml = (showLogo && logoData)
@@ -403,7 +403,7 @@ async function generateReceiptEscPos(transactionData) {
     .raw([0x1b, 0x40])   // reset ekstra, untuk memastikan tidak ada state sisa
     .line('')            // flush baris
     .align('left')
-    .raw([0x1b, 0x33, 24]); // set line spacing to 24 dots for tighter lines
+    .raw([0x1b, 0x32]);  // default line spacing
 
   // Cetak logo: full width, BW threshold, mode 's8' (stabil)
   if (showLogo && logoData) {
