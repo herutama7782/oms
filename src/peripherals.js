@@ -591,7 +591,7 @@ async function generateReceiptEscPos(transactionData) {
 
       const thr = (LOGO_THRESHOLD === 'auto')
         ? otsuThresholdFromImageData(src)
-        : (typeof LOGO_THRESHOLD === 'number' ? LOGO_THRESHOLD : 195);
+        : (typeof LOGO_THRESHOLD === 'number' ? LOGO_THRESHOLD : 215);
 
       let mask = toMonoMask(src, thr);
       if (LOGO_DESPECKLE) mask = despeckleMask(mask, cropped.width, cropped.height);
