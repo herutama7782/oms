@@ -18,7 +18,7 @@ const LOGO_DESPECKLE = true;           // bersihkan noise titik kecil
 const LOGO_OUTLINE_THICKNESS = 1;      // ketebalan outline jika mode 'outline'
 
 // Optional debug
-const DEBUG_RAW_HEAD = false;          // true untuk log 64 byte awal stream
+const DEBUG_RAW_HEAD = true;          // true untuk log 64 byte awal stream
 
 // --- TEXT UTILS ---
 function justifyLine(text, width) {
