@@ -414,19 +414,9 @@ export async function closeScanModal() {
 }
 
 // --- RECEIPT PRINTING ---
-// FUNGSI YANG TELAH DIPERBAIKI (KEDUA KALI)
+// Kembalikan ke versi paling sederhana. Masalah ada di perintah encoder.
 function sendToRawBT(data) {
-  // Perbaikan Kedua: Tambahkan perintah reset printer (ESC @) di awal data.
-  // Ini bertujuan untuk memastikan printer dalam kondisi yang bersih dan siap
-  // menerima perintah, untuk menghindari kesalahan interpretasi yang bisa
-  // menyebabkan karakter tak diinginkan (seperti 'd') tercetak.
-  
-  const resetCommand = new Uint8Array([0x1B, 0x40]); // ESC @ = Initialize printer
-  
-  const payload = new Uint8Array(resetCommand.length + data.length);
-  payload.set(resetCommand, 0);         // Tambahkan reset command di awal
-  payload.set(data, resetCommand.length); // Tambahkan data asli setelahnya
-
+  const payload = new Uint8Array(data);
   let binary = '';
   for (let i = 0; i < payload.byteLength; i++) {
     binary += String.fromCharCode(payload[i]);
@@ -547,6 +537,7 @@ async function _generateReceiptHTML(data, isPreview) {
   return wrapperStart + logoHtml + pre.outerHTML + wrapperEnd;
 }
 
+// FUNSI YANG DIPERBAIKI (KETIGA KALI)
 async function generateReceiptEscPos(transactionData) {
   if (!window.app.isPrinterReady) throw new Error('Printer library not loaded.');
 
@@ -557,14 +548,14 @@ async function generateReceiptEscPos(transactionData) {
   const paperSize = settingsMap.get('printerPaperSize') || '80mm';
 
   const paperWidthChars = paperSize === '58mm' ? 32 : 42;
-  // NOTE: jika printer 80mm Anda 512 dots, ganti 576 -> 512
   const paperWidthDots  = paperSize === '58mm' ? 384 : 576;
 
   const encoder = new EscPosEncoder.default();
   encoder
     .initialize()
-    .raw([0x1b, 0x40])   // ESC @ reset
-    .raw([0x1b, 0x40])   // reset ekstra
+    // PERBAIKAN: Hapus perintah reset yang berlebihan untuk menyederhanakan aliran perintah awal.
+    // .raw([0x1b, 0x40])   // <-- HAPUS BARIS INI
+    // .raw([0x1b, 0x40])   // <-- HAPUS BARIS INI
     .align('left')
     .raw([0x1b, 0x33, LINE_SPACING_DOTS]);  // atur line spacing
 
@@ -717,6 +708,7 @@ async function generateLabelEscPos() {
     return encoder.encode();
 }
 
+// FUNGSI YANG DIPERBAIKI (JUGA DI testPrint)
 export async function testPrint() {
     if (!window.app.isPrinterReady) {
         showToast('Fitur cetak tidak tersedia.');
@@ -729,7 +721,8 @@ export async function testPrint() {
 
         const data = encoder
             .initialize()
-            .raw([0x1b, 0x40])
+            // PERBAIKAN: Hapus perintah reset yang berlebihan di sini juga.
+            // .raw([0x1b, 0x40]) // <-- HAPUS BARIS INI
             .align('center')
             .width(2).height(2)
             .line('Test Cetak')
