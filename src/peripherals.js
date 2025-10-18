@@ -1,5 +1,3 @@
-
-
 import { getSettingFromDB, getAllFromDB } from "./db.js";
 import { showToast, showConfirmationModal, formatCurrency, formatReceiptDate } from "./ui.js";
 import { addToCart } from "./cart.js";
@@ -417,7 +415,12 @@ export async function closeScanModal() {
 
 // --- RECEIPT PRINTING ---
 function sendToRawBT(data) {
-    const payload = data; 
+    // Prefix "ESC d 0" sebagai guard (print & feed 0 lines = no-op)
+    const guard = new Uint8Array([0x1B, 0x64, 0x00]);
+    const payload = new Uint8Array(guard.length + data.length);
+    payload.set(guard, 0);
+    payload.set(data, guard.length);
+
     let binary = '';
     for (let i = 0; i < payload.byteLength; i++) {
         binary += String.fromCharCode(payload[i]);
@@ -553,6 +556,9 @@ async function generateReceiptEscPos(transactionData) {
 
   const encoder = new EscPosEncoder.default();
   encoder
+    .initialize()
+    .raw([0x1b, 0x40])   // ESC @ reset
+    .raw([0x1b, 0x40])   // reset ekstra
     .align('left')
     .raw([0x1b, 0x33, LINE_SPACING_DOTS]);  // atur line spacing
 
@@ -675,7 +681,10 @@ async function generateLabelEscPos() {
     await getSettingFromDB('printerPaperSize'); // kept for parity
 
     const encoder = new EscPosEncoder.default();
-    
+    encoder
+        .initialize()
+        .raw([0x1b, 0x40]);
+
     encoder.align('center');
 
     if (productName) {
@@ -713,6 +722,8 @@ export async function testPrint() {
         const encoder = new EscPosEncoder.default();
 
         const data = encoder
+            .initialize()
+            .raw([0x1b, 0x40])
             .align('center')
             .width(2).height(2)
             .line('Test Cetak')
