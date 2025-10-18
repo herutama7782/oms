@@ -1,8 +1,12 @@
 
-
 import { getSettingFromDB, getAllFromDB } from "./db.js";
 import { showToast, showConfirmationModal, formatCurrency, formatReceiptDate } from "./ui.js";
 import { addToCart } from "./cart.js";
+
+// Tuning (bisa disesuaikan sesuai printer)
+const LINE_SPACING_DOTS = 24; // default ~30; lebih kecil = lebih rapat
+const FEED_AFTER_IMAGE = 0;   // baris setelah logo
+const FEED_BEFORE_CUT = 2;    // feed sebelum cut
 
 // --- UTILITY FUNCTIONS ---
 function justifyLine(text, width) {
@@ -66,6 +70,40 @@ function wrapAndCenter(text, width) {
   return wrapWords(text, width).map(l => centerPad(l, width));
 }
 
+// Crop putih atas-bawah di kanvas logo (mengurangi gap vertikal)
+function cropCanvasTopBottom(canvas, whiteThreshold = 245) {
+  const ctx = canvas.getContext('2d');
+  const { width, height } = canvas;
+  const data = ctx.getImageData(0, 0, width, height).data;
+
+  const isRowWhite = (y) => {
+    let offset = y * width * 4;
+    for (let x = 0; x < width; x++) {
+      const i = offset + x * 4;
+      const a = data[i + 3];
+      if (a > 5) {
+        const gray = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+        if (gray < whiteThreshold) return false;
+      }
+    }
+    return true;
+  };
+
+  let top = 0;
+  while (top < height && isRowWhite(top)) top++;
+  let bottom = height - 1;
+  while (bottom > top && isRowWhite(bottom)) bottom--;
+
+  const cropH = Math.max(1, bottom - top + 1);
+  if (cropH === height && top === 0) return canvas;
+
+  const out = document.createElement('canvas');
+  out.width = width;
+  out.height = cropH;
+  const octx = out.getContext('2d');
+  octx.drawImage(canvas, 0, top, width, cropH, 0, 0, width, cropH);
+  return out;
+}
 
 // --- CAMERA FUNCTIONS ---
 export async function openCameraModal() {
@@ -175,14 +213,15 @@ export function useCapturedPhoto() {
 // --- BARCODE SCANNING ---
 
 function startScanner() {
-    if (!window.app.isScannerReady || !Html5Qrcode) {
+    if (!window.app?.isScannerReady || typeof Html5Qrcode === 'undefined') {
         console.warn('Scanner library not ready.');
+        showToast('Pemindai belum siap. Muat ulang halaman atau periksa koneksi.');
         return;
     }
     
     const onScanSuccess = async (decodedText, decodedResult) => {
         if (window.app.html5QrCode.isScanning) {
-            await window.app.html5QrCode.stop();
+            await window.app.html5QrCode.stop().catch(() => {});
         }
 
         if (window.app.scanCallback) {
@@ -200,7 +239,7 @@ function startScanner() {
             showToast(`Produk dengan barcode ${decodedText} tidak ditemukan.`);
             setTimeout(() => {
                 if (document.getElementById('scanModal').classList.contains('hidden') === false) {
-                     window.app.html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } }, onScanSuccess, (errorMessage) => {});
+                     window.app.html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } }, onScanSuccess, (errorMessage) => {}).catch((e)=>console.warn('Re-start scanner failed', e));
                 }
             }, 2000);
         }
@@ -216,7 +255,7 @@ function startScanner() {
 }
 
 export function showScanModal() {
-    if (!window.app.isScannerReady) {
+    if (!window.app?.isScannerReady || typeof Html5Qrcode === 'undefined') {
         showToast('Pemindai barcode gagal dimuat.');
         return;
     }
@@ -299,8 +338,7 @@ async function _generateReceiptText(transactionData, isPreview) {
   }
 
   receiptText += receiptLine('=') + '\n';
-  receiptText += '\n';
-
+  
   receiptText += `No: ${transactionData.id || (isPreview ? 'PREVIEW' : 'N/A')}\n`;
   receiptText += `Tgl: ${formatReceiptDate(transactionData.date)}\n`;
   receiptText += receiptLine('-') + '\n';
@@ -364,11 +402,11 @@ async function _generateReceiptHTML(data, isPreview) {
 
   let receiptText = await _generateReceiptText(data, isPreview);
 
-  const wrapperStart = `<div style="width:${paperWidthChars}ch; margin:0 auto; font-family: ui-monospace, Menlo, Monaco, Consolas, 'Courier New', monospace; line-height:1.2;">`;
+  const wrapperStart = `<div style="width:${paperWidthChars}ch; margin:0 auto; font-family: ui-monospace, Menlo, Monaco, Consolas, 'Courier New', monospace; line-height:1.1;">`;
   const wrapperEnd = `</div>`;
 
   const logoHtml = (showLogo && logoData)
-    ? `<div style="width:${paperWidthChars}ch; margin:0 auto; text-align:left; margin-bottom:4px;">
+    ? `<div style="width:${paperWidthChars}ch; margin:0 auto; text-align:left; margin-bottom:2px;">
          <img src="${logoData}" alt="Logo" style="display:block; width:100%; max-height:120px; object-fit:contain; background:#fff;">
        </div>`
     : '';
@@ -401,9 +439,8 @@ async function generateReceiptEscPos(transactionData) {
     .initialize()
     .raw([0x1b, 0x40])   // ESC @ reset
     .raw([0x1b, 0x40])   // reset ekstra, untuk memastikan tidak ada state sisa
-    .line('')            // flush baris
     .align('left')
-    .raw([0x1b, 0x32]);  // default line spacing
+    .raw([0x1b, 0x33, LINE_SPACING_DOTS]);  // set line spacing yang lebih rapat
 
   // Cetak logo: full width, BW threshold, mode 's8' (stabil)
   if (showLogo && logoData) {
@@ -427,31 +464,25 @@ async function generateReceiptEscPos(transactionData) {
       ctx.fillRect(0, 0, w, h);
       ctx.drawImage(image, 0, 0, w, h);
 
-      const imgData = ctx.getImageData(0, 0, w, h);
+      // crop putih atas-bawah agar tidak ada jarak ekstra
+      const cropped = cropCanvasTopBottom(canvas, 245);
+
+      // Binarize sederhana agar hasil jelas
+      const cctx = cropped.getContext('2d');
+      const imgData = cctx.getImageData(0, 0, cropped.width, cropped.height);
       const d = imgData.data;
-      const threshold = 128; // Standard threshold, good for high-contrast B&W
+      const threshold = 200;
       for (let i = 0; i < d.length; i += 4) {
-        // If pixel is mostly transparent, treat it as white on the receipt (don't print).
-        // To not print, the canvas pixel value must be < 127 for the encoder. So, we make it black (0).
-        if (d[i+3] < threshold) {
-            d[i] = d[i+1] = d[i+2] = 0;
-        } else {
-            // Convert to grayscale and apply threshold.
-            const gray = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
-            // If the original pixel is light (gray > threshold), we want it white on the receipt (don't print).
-            // So we make the canvas pixel black (0).
-            // If the original pixel is dark (gray <= threshold), we want it black on the receipt (print).
-            // So we make the canvas pixel white (255).
-            const v = gray > threshold ? 0 : 255;
-            d[i] = d[i+1] = d[i+2] = v;
-        }
-        d[i+3] = 255; // Set alpha to fully opaque
+        const gray = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
+        const a    = d[i+3];
+        const v = (a < 10 || gray > threshold) ? 255 : 0; // putih jika terang
+        d[i] = d[i+1] = d[i+2] = v;
+        d[i+3] = 255;
       }
 
-      encoder.line('');            // flush sebelum image (hindari 'd')
       encoder.align('left');
-      encoder.image(imgData, 's8'); // gunakan 's8' (lebih aman di banyak printer/RawBT)
-      encoder.line('');            // flush sesudah image
+      encoder.image(imgData, 's8');
+      if (FEED_AFTER_IMAGE > 0) encoder.feed(FEED_AFTER_IMAGE);
     } catch (e) {
       console.error('Failed to process logo for printing:', e);
     }
@@ -469,7 +500,7 @@ async function generateReceiptEscPos(transactionData) {
     }
   });
 
-  encoder.feed(3).cut();
+  encoder.feed(FEED_BEFORE_CUT).cut();
   return encoder.encode();
 }
 
