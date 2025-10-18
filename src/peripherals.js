@@ -416,11 +416,7 @@ export async function closeScanModal() {
 
 // --- RECEIPT PRINTING ---
 function sendToRawBT(data) {
-    // The "guard" prefix [ESC, 'd', 0] was causing an unwanted 'd' character
-    // to be printed at the start of receipts on some printers. It has been removed.
-    // The main payload from the encoder already includes initialization commands (ESC @).
-    const payload = data; // 'data' is already the Uint8Array payload.
-
+    const payload = data; 
     let binary = '';
     for (let i = 0; i < payload.byteLength; i++) {
         binary += String.fromCharCode(payload[i]);
@@ -557,8 +553,6 @@ async function generateReceiptEscPos(transactionData) {
   const encoder = new EscPosEncoder.default();
   encoder
     .initialize()
-    .raw([0x1b, 0x40])   // ESC @ reset
-    .raw([0x1b, 0x40])   // reset ekstra
     .align('left')
     .raw([0x1b, 0x33, LINE_SPACING_DOTS]);  // atur line spacing
 
@@ -681,9 +675,7 @@ async function generateLabelEscPos() {
     await getSettingFromDB('printerPaperSize'); // kept for parity
 
     const encoder = new EscPosEncoder.default();
-    encoder
-        .initialize()
-        .raw([0x1b, 0x40]);
+    encoder.initialize();
 
     encoder.align('center');
 
@@ -723,7 +715,6 @@ export async function testPrint() {
 
         const data = encoder
             .initialize()
-            .raw([0x1b, 0x40])
             .align('center')
             .width(2).height(2)
             .line('Test Cetak')
