@@ -307,12 +307,12 @@ async function _generateReceiptText(transactionData, isPreview) {
 
   transactionData.items.forEach(item => {
     receiptText += `${item.name} x${item.quantity}\n`;
-    const totalItemPriceText = `Rp.${formatCurrency(item.effectivePrice * item.quantity)}`;
+    const totalItemPriceText = `${formatCurrency(item.effectivePrice * item.quantity)}`;
     let priceDetailText;
     if (item.discountPercentage > 0) {
-      priceDetailText = `@ Rp.${formatCurrency(item.price)} Disc ${item.discountPercentage}%`;
+      priceDetailText = `@ ${formatCurrency(item.price)} Disc ${item.discountPercentage}%`;
     } else {
-      priceDetailText = `@ Rp.${formatCurrency(item.price)}`;
+      priceDetailText = `@ ${formatCurrency(item.price)}`;
     }
     receiptText += formatLine(priceDetailText, totalItemPriceText) + '\n';
   });
@@ -325,21 +325,21 @@ async function _generateReceiptText(transactionData, isPreview) {
   }, 0);
 
   receiptText += receiptLine('-') + '\n';
-  receiptText += formatLine('Subtotal', `Rp.${formatCurrency(subtotalAfterDiscount)}`) + '\n';
+  receiptText += formatLine('Subtotal', `${formatCurrency(subtotalAfterDiscount)}`) + '\n';
 
   if (transactionData.fees && transactionData.fees.length > 0) {
     transactionData.fees.forEach(fee => {
       let feeName = fee.name;
       if (fee.type === 'percentage') feeName += ` ${fee.value}%`;
-      const feeAmount = `Rp. ${formatCurrency(fee.amount)}`;
+      const feeAmount = `${formatCurrency(fee.amount)}`;
       receiptText += formatLine(feeName, feeAmount) + '\n';
     });
   }
 
   receiptText += receiptLine('-') + '\n';
-  receiptText += formatLine('TOTAL', `Rp.${formatCurrency(transactionData.total)}`) + '\n';
-  receiptText += formatLine('TUNAI', `Rp.${formatCurrency(transactionData.cashPaid)}`) + '\n';
-  receiptText += formatLine('KEMBALI', `Rp. ${formatCurrency(transactionData.change)}`) + '\n';
+  receiptText += formatLine('TOTAL', `${formatCurrency(transactionData.total)}`) + '\n';
+  receiptText += formatLine('TUNAI', `${formatCurrency(transactionData.cashPaid)}`) + '\n';
+  receiptText += formatLine('KEMBALI', `${formatCurrency(transactionData.change)}`) + '\n';
   receiptText += receiptLine('=') + '\n';
 
   // FOOTER: center + word-wrap (tidak akan terpotong di tengah kata)
@@ -378,7 +378,7 @@ async function _generateReceiptHTML(data, isPreview) {
   pre.style.whiteSpace = 'pre-wrap';
   pre.textContent = receiptText;
 
-  pre.innerHTML = pre.innerHTML.replace(/^(TOTAL\s+Rp\..*)$/m, `<b>$1</b>`);
+  pre.innerHTML = pre.innerHTML.replace(/^(TOTAL\s+.*)$/m, `<b>$1</b>`);
 
   return wrapperStart + logoHtml + pre.outerHTML + wrapperEnd;
 }
@@ -429,11 +429,18 @@ async function generateReceiptEscPos(transactionData) {
 
       const imgData = ctx.getImageData(0, 0, w, h);
       const d = imgData.data;
-      const threshold = 185; // sesuaikan 170–200 jika perlu
+      const threshold = 128; // Standard threshold, good for high-contrast B&W
       for (let i = 0; i < d.length; i += 4) {
-        const gray = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
-        const v = gray > threshold ? 255 : 0;
-        d[i] = d[i+1] = d[i+2] = v; d[i+3] = 255;
+        // If pixel is mostly transparent, treat it as white
+        if (d[i+3] < threshold) {
+            d[i] = d[i+1] = d[i+2] = 255;
+        } else {
+            // Convert to grayscale and apply threshold
+            const gray = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
+            const v = gray > threshold ? 255 : 0;
+            d[i] = d[i+1] = d[i+2] = v;
+        }
+        d[i+3] = 255; // Set alpha to fully opaque
       }
 
       encoder.line('');            // flush sebelum image (hindari 'd')
