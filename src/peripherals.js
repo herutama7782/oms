@@ -12,7 +12,7 @@ const FEED_BEFORE_CUT = 2;    // feed sebelum cut
 const LOGO_MODE = 'r8';                 // raster mode (lebih stabil di kebanyakan printer/RawBT)
 const LOGO_THRESHOLD = 'auto';          // 'auto' (Otsu) atau angka 0–255; makin tinggi -> makin tipis
 const LOGO_MAX_HEIGHT = 180;            // tinggi maksimum logo
-const LOGO_INVERT = 'auto';             // 'auto' | true | false (auto mencegah negatif)
+const LOGO_INVERT = 'true';             // 'auto' | true | false (auto mencegah negatif)
 const LOGO_INVERT_AUTO_THRESHOLD = 0.35;// jika >35% piksel hitam -> anggap negatif lalu invert
 const LOGO_DESPECKLE = true;            // bersihkan noise titik
 const LOGO_EDGE_ONLY = true;            // FORCE outline-only (ini yang kamu minta)
@@ -623,7 +623,7 @@ async function generateReceiptEscPos(transactionData) {
       imgData = binarizeImageData(imgData, thr);
 
       // Auto-invert (lebih agresif agar hindari “negatif”)
-      if (LOGO_INVERT === 'auto') {
+      if (LOGO_INVERT === 'true') {
         if ((imgData._blackRatio || 0) > LOGO_INVERT_AUTO_THRESHOLD) {
           imgData = invertImageData(imgData);
         }
