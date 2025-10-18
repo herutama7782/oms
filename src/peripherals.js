@@ -414,14 +414,25 @@ export async function closeScanModal() {
 }
 
 // --- RECEIPT PRINTING ---
+// Versi aman: prefix beberapa NUL + ESC @ dua kali, konversi base64 chunked
 function sendToRawBT(data) {
-    // Kirim apa adanya; encoder sudah mengawali dengan ESC @
-    let binary = '';
-    for (let i = 0; i < data.byteLength; i++) {
-        binary += String.fromCharCode(data[i]);
-    }
-    const base64 = btoa(binary);
+    const SAFE_PREFIX = new Uint8Array([0x00, 0x00, 0x00, 0x1B, 0x40, 0x1B, 0x40]);
+    const payload = new Uint8Array(SAFE_PREFIX.length + data.length);
+    payload.set(SAFE_PREFIX, 0);
+    payload.set(data, SAFE_PREFIX.length);
+
+    const base64 = u8ToBase64(payload);
     window.location.href = `rawbt:base64,${base64}`;
+}
+
+// Konversi Uint8Array ke base64 secara chunked (aman untuk data besar)
+function u8ToBase64(u8) {
+    const CHUNK = 0x8000; // 32KB
+    let result = '';
+    for (let i = 0; i < u8.length; i += CHUNK) {
+        result += String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK));
+    }
+    return btoa(result);
 }
 
 async function _generateReceiptText(transactionData, isPreview) {
@@ -585,7 +596,7 @@ async function generateReceiptEscPos(transactionData) {
 
       const thr = (LOGO_THRESHOLD === 'auto')
         ? otsuThresholdFromImageData(src)
-        : (typeof LOGO_THRESHOLD === 'number' ? LOGO_THRESHOLD : 215);
+        : (typeof LOGO_THRESHOLD === 'number' ? LOGO_THRESHOLD : 195);
 
       let mask = toMonoMask(src, thr);
       if (LOGO_DESPECKLE) mask = despeckleMask(mask, cropped.width, cropped.height);
@@ -858,11 +869,11 @@ export function setupBarcodeGenerator() {
         }
 
         const outputName = document.getElementById('output-product-name');
-        theOutputPrice = document.getElementById('output-product-price');
+        const outputPrice = document.getElementById('output-product-price');
         const outputBarcodeText = document.getElementById('output-barcode-text');
         
         outputName.textContent = productName;
-        theOutputPrice.textContent = productPrice ? `Rp ${formatCurrency(productPrice)}` : '';
+        outputPrice.textContent = productPrice ? `Rp ${formatCurrency(productPrice)}` : '';
         outputBarcodeText.textContent = barcodeCode;
 
         try {
