@@ -415,20 +415,14 @@ export async function closeScanModal() {
 
 // --- RECEIPT PRINTING ---
 function sendToRawBT(data) {
-    // Prefix "ESC d 0" sebagai guard (print & feed 0 lines = no-op)
-    const guard = new Uint8Array([0x1B, 0x64, 0x00]);
-    const payload = new Uint8Array(guard.length + data.length);
-    payload.set(guard, 0);
-    payload.set(data, guard.length);
-
+    // Kirim apa adanya; encoder sudah mengawali dengan ESC @
     let binary = '';
-    for (let i = 0; i < payload.byteLength; i++) {
-        binary += String.fromCharCode(payload[i]);
+    for (let i = 0; i < data.byteLength; i++) {
+        binary += String.fromCharCode(data[i]);
     }
     const base64 = btoa(binary);
-    const intentUrl = `rawbt:base64,${base64}`;
-    window.location.href = intentUrl;
-};
+    window.location.href = `rawbt:base64,${base64}`;
+}
 
 async function _generateReceiptText(transactionData, isPreview) {
   const settings = await getAllFromDB('settings');
