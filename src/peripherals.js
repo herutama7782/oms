@@ -17,9 +17,6 @@ const LOGO_ENSURE_WHITE_BG = true;     // paksa background putih (auto-invert ji
 const LOGO_DESPECKLE = true;           // bersihkan noise titik kecil
 const LOGO_OUTLINE_THICKNESS = 1;      // ketebalan outline jika mode 'outline'
 
-// Optional debug
-const DEBUG_RAW_HEAD = true;          // true untuk log 64 byte awal stream
-
 // --- TEXT UTILS ---
 function justifyLine(text, width) {
   const t = (text || '').trim();
@@ -233,17 +230,6 @@ function buildRasterGSv0(mask, W, H) {
   return { header, payload };
 }
 
-// Sacrificial blank raster (menyerap drop byte awal)
-function sendBlankRaster(encoder, widthDots, heightDots = 8) {
-  const rowBytes = Math.ceil(widthDots / 8);
-  const xL = rowBytes & 0xFF, xH = (rowBytes >> 8) & 0xFF;
-  const yL = heightDots & 0xFF, yH = (heightDots >> 8) & 0xFF;
-  const header = new Uint8Array([0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH]);
-  const payload = new Uint8Array(rowBytes * heightDots); // putih semua
-  encoder.raw(Array.from(header));
-  encoder.raw(Array.from(payload));
-}
-
 // --- CAMERA FUNCTIONS ---
 export async function openCameraModal() {
     const modal = document.getElementById('cameraModal');
@@ -428,26 +414,27 @@ export async function closeScanModal() {
 }
 
 // --- RECEIPT PRINTING ---
-// Versi aman: prefix 32 NUL + 3x ESC @, konversi base64 chunked
+// FUNGSI YANG TELAH DIPERBAIKI (KEDUA KALI)
 function sendToRawBT(data) {
-  // Perbaikan: Menghapus "guard" sequence yang menyebabkan karakter 'd' tercetak.
-  // Guard "ESC d 0" (0x1B, 0x64, 0x00) tidak lagi diperlukan karena
-  // EscPosEncoder sudah melakukan inisialisasi printer dengan benar.
+  // Perbaikan Kedua: Tambahkan perintah reset printer (ESC @) di awal data.
+  // Ini bertujuan untuk memastikan printer dalam kondisi yang bersih dan siap
+  // menerima perintah, untuk menghindari kesalahan interpretasi yang bisa
+  // menyebabkan karakter tak diinginkan (seperti 'd') tercetak.
   
-  // Langsung gunakan data asli tanpa tambahan guard
-  const payload = new Uint8Array(data);
-  // ...
-}
+  const resetCommand = new Uint8Array([0x1B, 0x40]); // ESC @ = Initialize printer
+  
+  const payload = new Uint8Array(resetCommand.length + data.length);
+  payload.set(resetCommand, 0);         // Tambahkan reset command di awal
+  payload.set(data, resetCommand.length); // Tambahkan data asli setelahnya
 
-// Konversi Uint8Array ke base64 secara chunked (aman untuk data besar)
-function u8ToBase64(u8) {
-    const CHUNK = 0x8000; // 32KB
-    let result = '';
-    for (let i = 0; i < u8.length; i += CHUNK) {
-        result += String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK));
-    }
-    return btoa(result);
-}
+  let binary = '';
+  for (let i = 0; i < payload.byteLength; i++) {
+    binary += String.fromCharCode(payload[i]);
+  }
+  const base64 = btoa(binary);
+  const intentUrl = `rawbt:base64,${base64}`;
+  window.location.href = intentUrl;
+};
 
 async function _generateReceiptText(transactionData, isPreview) {
   const settings = await getAllFromDB('settings');
@@ -581,7 +568,7 @@ async function generateReceiptEscPos(transactionData) {
     .align('left')
     .raw([0x1b, 0x33, LINE_SPACING_DOTS]);  // atur line spacing
 
-  // Cetak logo: pure black line-art 1-bit (GS v 0), dengan sacrificial blank raster
+  // Cetak logo: pure black line-art 1-bit (GS v 0)
   if (showLogo && logoData) {
     try {
       const image = await new Promise((res, rej) => {
@@ -610,7 +597,7 @@ async function generateReceiptEscPos(transactionData) {
 
       const thr = (LOGO_THRESHOLD === 'auto')
         ? otsuThresholdFromImageData(src)
-        : (typeof LOGO_THRESHOLD === 'number' ? LOGO_THRESHOLD : 195);
+        : (typeof LOGO_THRESHOLD === 'number' ? LOGO_THRESHOLD : 215);
 
       let mask = toMonoMask(src, thr);
       if (LOGO_DESPECKLE) mask = despeckleMask(mask, cropped.width, cropped.height);
@@ -623,17 +610,12 @@ async function generateReceiptEscPos(transactionData) {
         mask = ensureWhiteBackground(mask, cropped.width, cropped.height);
       }
 
+      // Build raster dan kirim sebagai raw ESC/POS (GS v 0)
       const { header, payload } = buildRasterGSv0(mask, cropped.width, cropped.height);
 
       encoder.align('center');
-
-      // Sacrificial blank 8-dot supaya jika bagian awal stream drop, byte yang “tercetak” tidak terlihat
-      sendBlankRaster(encoder, paperWidthDots, 8);
-
-      // Logo utama
       encoder.raw(Array.from(header));
       encoder.raw(Array.from(payload));
-
       if (FEED_AFTER_IMAGE > 0) encoder.feed(FEED_AFTER_IMAGE);
       encoder.align('left');
     } catch (e) {
@@ -888,11 +870,11 @@ export function setupBarcodeGenerator() {
         }
 
         const outputName = document.getElementById('output-product-name');
-        const outputPrice = document.getElementById('output-product-price');
+        theOutputPrice = document.getElementById('output-product-price');
         const outputBarcodeText = document.getElementById('output-barcode-text');
         
         outputName.textContent = productName;
-        outputPrice.textContent = productPrice ? `Rp ${formatCurrency(productPrice)}` : '';
+        theOutputPrice.textContent = productPrice ? `Rp ${formatCurrency(productPrice)}` : '';
         outputBarcodeText.textContent = barcodeCode;
 
         try {
