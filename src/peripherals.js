@@ -431,13 +431,18 @@ async function generateReceiptEscPos(transactionData) {
       const d = imgData.data;
       const threshold = 128; // Standard threshold, good for high-contrast B&W
       for (let i = 0; i < d.length; i += 4) {
-        // If pixel is mostly transparent, treat it as white
+        // If pixel is mostly transparent, treat it as white on the receipt (don't print).
+        // To not print, the canvas pixel value must be < 127 for the encoder. So, we make it black (0).
         if (d[i+3] < threshold) {
-            d[i] = d[i+1] = d[i+2] = 255;
+            d[i] = d[i+1] = d[i+2] = 0;
         } else {
-            // Convert to grayscale and apply threshold
+            // Convert to grayscale and apply threshold.
             const gray = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
-            const v = gray > threshold ? 255 : 0;
+            // If the original pixel is light (gray > threshold), we want it white on the receipt (don't print).
+            // So we make the canvas pixel black (0).
+            // If the original pixel is dark (gray <= threshold), we want it black on the receipt (print).
+            // So we make the canvas pixel white (255).
+            const v = gray > threshold ? 0 : 255;
             d[i] = d[i+1] = d[i+2] = v;
         }
         d[i+3] = 255; // Set alpha to fully opaque
