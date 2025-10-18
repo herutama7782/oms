@@ -8,12 +8,15 @@ const FEED_AFTER_IMAGE = 0;   // baris setelah logo
 const FEED_BEFORE_CUT = 2;    // feed sebelum cut
 
 // --- IMAGE / LOGO TUNING ---
-const LOGO_MODE = 'r8';          // raster mode lebih stabil di banyak printer ('r8' | 's8')
-const LOGO_THRESHOLD = 195;       // 170–210; makin tinggi = makin tipis
-const LOGO_MAX_HEIGHT = 180;      // batas tinggi logo saat diplot
-const LOGO_INVERT = 'auto';       // 'auto' | true | false (auto mencegah logo "negatif")
-const LOGO_DESPECKLE = true;      // bersihkan noise titik kecil
-const LOGO_EDGE_ONLY = false;     // true jika mau outline-only
+// Target: cetak “logo bersih / outline saja”
+const LOGO_MODE = 'r8';                 // raster mode (lebih stabil di kebanyakan printer/RawBT)
+const LOGO_THRESHOLD = 'auto';          // 'auto' (Otsu) atau angka 0–255; makin tinggi -> makin tipis
+const LOGO_MAX_HEIGHT = 180;            // tinggi maksimum logo
+const LOGO_INVERT = 'auto';             // 'auto' | true | false (auto mencegah negatif)
+const LOGO_INVERT_AUTO_THRESHOLD = 0.35;// jika >35% piksel hitam -> anggap negatif lalu invert
+const LOGO_DESPECKLE = true;            // bersihkan noise titik
+const LOGO_EDGE_ONLY = true;            // FORCE outline-only (ini yang kamu minta)
+const LOGO_EDGE_THICKNESS = 1;          // ketebalan garis outline (1–2 cukup)
 
 // --- UTILITY FUNCTIONS ---
 function justifyLine(text, width) {
@@ -52,7 +55,6 @@ function centerPad(text, width) {
 }
 
 function wrapWords(text, width) {
-  // bungkus per kata agar tidak motong di tengah kata
   const raw = (text || '').toString().replace(/\s+/g, ' ').trim();
   if (!raw) return [' '.repeat(width)];
   const words = raw.split(' ');
@@ -69,7 +71,6 @@ function wrapWords(text, width) {
     }
   }
   if (line) lines.push(line);
-  // pastikan tidak ada baris kosong
   return lines.map(l => l || ' '.repeat(width));
 }
 
@@ -113,6 +114,38 @@ function cropCanvasTopBottom(canvas, whiteThreshold = 245) {
 }
 
 // --- IMAGE PROCESS HELPERS ---
+// Otsu threshold (auto)
+function otsuThresholdFromImageData(imgData) {
+  const hist = new Array(256).fill(0);
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const gray = (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) | 0;
+    hist[gray]++;
+  }
+  const total = (imgData.width * imgData.height) | 0;
+  let sum = 0;
+  for (let t = 0; t < 256; t++) sum += t * hist[t];
+
+  let sumB = 0, wB = 0, varMax = -1, threshold = 128;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (wB === 0) continue;
+    const wF = total - wB;
+    if (wF === 0) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+    const between = wB * wF * (mB - mF) * (mB - mF);
+    if (between > varMax) {
+      varMax = between; threshold = t;
+    }
+  }
+  // Clamp agar tidak terlalu ekstrem
+  if (threshold < 150) threshold = 150;
+  if (threshold > 230) threshold = 230;
+  return threshold;
+}
+
 function binarizeImageData(imgData, threshold = 195) {
   const d = imgData.data;
   let blackCount = 0;
@@ -131,7 +164,7 @@ function binarizeImageData(imgData, threshold = 195) {
 function invertImageData(imgData) {
   const d = imgData.data;
   for (let i = 0; i < d.length; i += 4) {
-    const v = d[i] < 128 ? 255 : 0; // tukar 0 <-> 255
+    const v = d[i] < 128 ? 255 : 0;
     d[i] = d[i + 1] = d[i + 2] = v;
     d[i + 3] = 255;
   }
@@ -165,28 +198,32 @@ function despeckleImageData(imgData) {
   return imgData;
 }
 
-// Hanya garis tepi (opsional). Thickness tipis agar rapi.
+// Outline-only: boundary = mask - erode(mask)
 function outlineOnly(imgData, thickness = 1) {
   const { width: W, height: H, data: d } = imgData;
   const src = new Uint8Array(W * H);
   for (let i = 0, p = 0; i < d.length; i += 4, p++) src[p] = d[i] < 128 ? 1 : 0; // 1=hitam
 
-  const edge = new Uint8Array(W * H);
+  // Erode 1px
+  const er = new Uint8Array(W * H);
   for (let y = 1; y < H - 1; y++) {
     for (let x = 1; x < W - 1; x++) {
       const i = y * W + x;
       if (!src[i]) continue;
-      if (
-        src[i - 1] === 0 || src[i + 1] === 0 ||
-        src[i - W] === 0 || src[i + W] === 0 ||
-        src[i - W - 1] === 0 || src[i - W + 1] === 0 ||
-        src[i + W - 1] === 0 || src[i + W + 1] === 0
-      ) {
-        edge[i] = 1;
+      let all = 1;
+      for (let dy = -1; dy <= 1 && all; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (!src[i + dy * W + dx]) { all = 0; break; }
+        }
       }
+      er[i] = all ? 1 : 0;
     }
   }
 
+  const edge = new Uint8Array(W * H);
+  for (let p = 0; p < edge.length; p++) edge[p] = src[p] && !er[p] ? 1 : 0;
+
+  // Tebalkan jika perlu (dilasi tipis)
   if (thickness > 1) {
     const dil = edge.slice();
     for (let y = 1; y < H - 1; y++) {
@@ -203,10 +240,12 @@ function outlineOnly(imgData, thickness = 1) {
     edge.set(dil);
   }
 
+  // Tulis balik ke imgData
   for (let p = 0, i = 0; p < edge.length; p++, i += 4) {
-    const v = edge[p] ? 0 : 255; // garis hitam, sisanya putih
+    const v = edge[p] ? 0 : 255; // garis hitam, background putih
     d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
   }
+  imgData._blackRatio = 0; // outline ringan
   return imgData;
 }
 
@@ -399,8 +438,6 @@ export async function closeScanModal() {
 // --- RECEIPT PRINTING ---
 
 function sendToRawBT(data) {
-    // data = Uint8Array dari encoder.encode()
-    // Prefix "ESC d 0" sebagai guard (print & feed 0 lines = no-op)
     const guard = new Uint8Array([0x1B, 0x64, 0x00]);
     const payload = new Uint8Array(guard.length + data.length);
     payload.set(guard, 0);
@@ -485,7 +522,7 @@ async function _generateReceiptText(transactionData, isPreview) {
   receiptText += formatLine('KEMBALI', `${formatCurrency(transactionData.change)}`) + '\n';
   receiptText += receiptLine('=') + '\n';
 
-  // FOOTER: center + word-wrap (tidak akan terpotong di tengah kata)
+  // FOOTER: center + word-wrap
   if (footerText) {
     wrapAndCenter(footerText, paperWidthChars).forEach(l => receiptText += l + '\n');
   }
@@ -547,13 +584,14 @@ async function generateReceiptEscPos(transactionData) {
     .align('left')
     .raw([0x1b, 0x33, LINE_SPACING_DOTS]);  // set line spacing yang lebih rapat
 
-  // Cetak logo: full width, raster, dengan auto-invert & despeckle
+  // Cetak logo: outline-only + raster + auto-threshold + auto-invert
   if (showLogo && logoData) {
     try {
       const image = await new Promise((res, rej) => {
         const img = new Image();
         img.onload = () => res(img);
         img.onerror = rej;
+        img.crossOrigin = 'anonymous';
         img.src = logoData;
       });
 
@@ -572,14 +610,21 @@ async function generateReceiptEscPos(transactionData) {
       // crop putih atas-bawah agar tidak ada jarak ekstra
       const cropped = cropCanvasTopBottom(canvas, 245);
 
-      // Binarize tegas + auto-invert + despeckle + optional outline-only
+      // Ambil data mentah
       const cctx = cropped.getContext('2d', { willReadFrequently: true });
       let imgData = cctx.getImageData(0, 0, cropped.width, cropped.height);
 
-      imgData = binarizeImageData(imgData, LOGO_THRESHOLD);
+      // Tentukan threshold
+      const thr = (LOGO_THRESHOLD === 'auto')
+        ? otsuThresholdFromImageData(imgData)
+        : (typeof LOGO_THRESHOLD === 'number' ? LOGO_THRESHOLD : 195);
 
+      // Binarize
+      imgData = binarizeImageData(imgData, thr);
+
+      // Auto-invert (lebih agresif agar hindari “negatif”)
       if (LOGO_INVERT === 'auto') {
-        if ((imgData._blackRatio || 0) > 0.60) {
+        if ((imgData._blackRatio || 0) > LOGO_INVERT_AUTO_THRESHOLD) {
           imgData = invertImageData(imgData);
         }
       } else if (LOGO_INVERT === true) {
@@ -587,12 +632,14 @@ async function generateReceiptEscPos(transactionData) {
       }
 
       if (LOGO_DESPECKLE) imgData = despeckleImageData(imgData);
-      if (LOGO_EDGE_ONLY) imgData = outlineOnly(imgData, 1);
+
+      // Force outline-only
+      if (LOGO_EDGE_ONLY) imgData = outlineOnly(imgData, LOGO_EDGE_THICKNESS);
 
       encoder.align('center');
-      encoder.image(imgData, LOGO_MODE); // gunakan raster mode
+      encoder.image(imgData, LOGO_MODE); // mode raster
       if (FEED_AFTER_IMAGE > 0) encoder.feed(FEED_AFTER_IMAGE);
-      encoder.align('left'); // kembali ke kiri untuk teks
+      encoder.align('left');
     } catch (e) {
       console.error('Failed to process logo for printing:', e);
     }
