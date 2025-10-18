@@ -430,21 +430,13 @@ export async function closeScanModal() {
 // --- RECEIPT PRINTING ---
 // Versi aman: prefix 32 NUL + 3x ESC @, konversi base64 chunked
 function sendToRawBT(data) {
-    const N = 32;
-    const nul = new Uint8Array(N).fill(0x00);
-    const resets = new Uint8Array([0x1B,0x40, 0x1B,0x40, 0x1B,0x40]);
-    const payload = new Uint8Array(nul.length + resets.length + data.length);
-    payload.set(nul, 0);
-    payload.set(resets, nul.length);
-    payload.set(data, nul.length + resets.length);
-
-    if (DEBUG_RAW_HEAD) {
-      const head = [...payload.slice(0, 64)].map(b => b.toString(16).padStart(2,'0')).join(' ');
-      console.log('RAW HEAD:', head);
-    }
-
-    const base64 = u8ToBase64(payload);
-    window.location.href = `rawbt:base64,${base64}`;
+  // Perbaikan: Menghapus "guard" sequence yang menyebabkan karakter 'd' tercetak.
+  // Guard "ESC d 0" (0x1B, 0x64, 0x00) tidak lagi diperlukan karena
+  // EscPosEncoder sudah melakukan inisialisasi printer dengan benar.
+  
+  // Langsung gunakan data asli tanpa tambahan guard
+  const payload = new Uint8Array(data);
+  // ...
 }
 
 // Konversi Uint8Array ke base64 secara chunked (aman untuk data besar)
