@@ -2,23 +2,22 @@ import { getSettingFromDB, getAllFromDB } from "./db.js";
 import { showToast, showConfirmationModal, formatCurrency, formatReceiptDate } from "./ui.js";
 import { addToCart } from "./cart.js";
 
-// Tuning (bisa disesuaikan sesuai printer)
-const LINE_SPACING_DOTS = 30; // default ~30. 24 for single-spacing. 30 is ~1.25 spacing.
-const FEED_AFTER_IMAGE = 0;   // baris setelah logo
+// Tuning umum
+const LINE_SPACING_DOTS = 30; // 24=single, 30=~1.25
+const FEED_AFTER_IMAGE = 0;   // feed setelah logo
 const FEED_BEFORE_CUT = 2;    // feed sebelum cut
 
-// --- IMAGE / LOGO TUNING ---
-// Target: cetak “logo bersih / outline saja”
-const LOGO_MODE = 'r8';                 // raster mode (lebih stabil di kebanyakan printer/RawBT)
-const LOGO_THRESHOLD = 'auto';          // 'auto' (Otsu) atau angka 0–255; makin tinggi -> makin tipis
-const LOGO_MAX_HEIGHT = 180;            // tinggi maksimum logo
-const LOGO_INVERT = 'true';             // 'auto' | true | false (auto mencegah negatif)
-const LOGO_INVERT_AUTO_THRESHOLD = 0.35;// jika >35% piksel hitam -> anggap negatif lalu invert
-const LOGO_DESPECKLE = true;            // bersihkan noise titik
-const LOGO_EDGE_ONLY = true;            // FORCE outline-only (ini yang kamu minta)
-const LOGO_EDGE_THICKNESS = 1;          // ketebalan garis outline (1–2 cukup)
+// --- LOGO LINE-ART SETTINGS ---
+// Mode: 'solid' = vektor flat hitam-putih (tanpa gradasi, background putih)
+//       'outline' = hanya garis tepi (tanpa isi)
+const LOGO_LINE_ART_MODE = 'solid';    // 'solid' | 'outline'
+const LOGO_MAX_HEIGHT = 180;           // tinggi maks logo (dots)
+const LOGO_THRESHOLD = 'auto';         // 'auto' (Otsu) atau angka 0–255
+const LOGO_ENSURE_WHITE_BG = true;     // paksa background putih (auto-invert jika perlu)
+const LOGO_DESPECKLE = true;           // bersihkan noise titik kecil
+const LOGO_OUTLINE_THICKNESS = 1;      // ketebalan outline jika mode 'outline'
 
-// --- UTILITY FUNCTIONS ---
+// --- TEXT UTILS ---
 function justifyLine(text, width) {
   const t = (text || '').trim();
   if (!t) return ''.padEnd(width, ' ');
@@ -78,6 +77,7 @@ function wrapAndCenter(text, width) {
   return wrapWords(text, width).map(l => centerPad(l, width));
 }
 
+// --- IMAGE UTILS ---
 // Crop putih atas-bawah di kanvas logo (mengurangi gap vertikal)
 function cropCanvasTopBottom(canvas, whiteThreshold = 245) {
   const ctx = canvas.getContext('2d');
@@ -113,140 +113,121 @@ function cropCanvasTopBottom(canvas, whiteThreshold = 245) {
   return out;
 }
 
-// --- IMAGE PROCESS HELPERS ---
 // Otsu threshold (auto)
 function otsuThresholdFromImageData(imgData) {
   const hist = new Array(256).fill(0);
   const d = imgData.data;
   for (let i = 0; i < d.length; i += 4) {
-    const gray = (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) | 0;
-    hist[gray]++;
+    const g = (0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2]) | 0;
+    hist[g]++;
   }
-  const total = (imgData.width * imgData.height) | 0;
-  let sum = 0;
-  for (let t = 0; t < 256; t++) sum += t * hist[t];
-
-  let sumB = 0, wB = 0, varMax = -1, threshold = 128;
-  for (let t = 0; t < 256; t++) {
-    wB += hist[t];
-    if (wB === 0) continue;
-    const wF = total - wB;
-    if (wF === 0) break;
-    sumB += t * hist[t];
-    const mB = sumB / wB;
-    const mF = (sum - sumB) / wF;
-    const between = wB * wF * (mB - mF) * (mB - mF);
-    if (between > varMax) {
-      varMax = between; threshold = t;
-    }
-  }
-  // Clamp agar tidak terlalu ekstrem
-  if (threshold < 150) threshold = 150;
-  if (threshold > 230) threshold = 230;
-  return threshold;
-}
-
-function binarizeImageData(imgData, threshold = 195) {
-  const d = imgData.data;
-  let blackCount = 0;
   const total = imgData.width * imgData.height;
-  for (let i = 0; i < d.length; i += 4) {
-    const gray = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
-    const v = gray < threshold ? 0 : 255; // 0 = hitam, 255 = putih
-    if (v === 0) blackCount++;
-    d[i] = d[i + 1] = d[i + 2] = v;
-    d[i + 3] = 255;
+  let sum = 0; for (let t=0; t<256; t++) sum += t * hist[t];
+  let sumB = 0, wB = 0, varMax = -1, thr = 180;
+  for (let t=0; t<256; t++) {
+    wB += hist[t]; if (!wB) continue;
+    const wF = total - wB; if (!wF) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB, mF = (sum - sumB) / wF;
+    const between = wB * wF * (mB - mF) * (mB - mF);
+    if (between > varMax) { varMax = between; thr = t; }
   }
-  imgData._blackRatio = blackCount / total;
-  return imgData;
+  if (thr < 150) thr = 150;
+  if (thr > 230) thr = 230;
+  return thr;
 }
 
-function invertImageData(imgData) {
+// Binarize -> Uint8Array mask 0/1 (1=hitam)
+function toMonoMask(imgData, threshold) {
   const d = imgData.data;
-  for (let i = 0; i < d.length; i += 4) {
-    const v = d[i] < 128 ? 255 : 0;
-    d[i] = d[i + 1] = d[i + 2] = v;
-    d[i + 3] = 255;
+  const W = imgData.width, H = imgData.height;
+  const mask = new Uint8Array(W * H);
+  let black = 0;
+  for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+    const gray = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
+    const m = gray < threshold ? 1 : 0; // 1=hitam
+    mask[p] = m;
+    if (m) black++;
   }
-  imgData._blackRatio = 1 - (imgData._blackRatio || 0);
-  return imgData;
+  mask._blackRatio = black / (W * H);
+  return mask;
 }
 
-// Hapus titik hitam tunggal biar tidak “berpasir”
-function despeckleImageData(imgData) {
-  const { width: W, height: H, data: d } = imgData;
-  const src = new Uint8Array(W * H);
-  for (let i = 0, p = 0; i < d.length; i += 4, p++) src[p] = d[i] < 128 ? 1 : 0; // 1=hitam
-  const out = src.slice();
-
-  for (let y = 1; y < H - 1; y++) {
-    for (let x = 1; x < W - 1; x++) {
-      const i = y * W + x;
-      if (src[i] === 1) {
-        let n = 0;
-        n += src[i - 1] + src[i + 1] + src[i - W] + src[i + W];
-        n += src[i - W - 1] + src[i - W + 1] + src[i + W - 1] + src[i + W + 1];
-        if (n <= 1) out[i] = 0; // titik hitam sendirian -> putih
-      }
+// Bersihkan noise titik hitam tunggal
+function despeckleMask(mask, W, H) {
+  const out = mask.slice();
+  for (let y=1; y<H-1; y++) {
+    for (let x=1; x<W-1; x++) {
+      const i = y*W + x;
+      if (!mask[i]) continue;
+      let n = 0;
+      n += mask[i-1] + mask[i+1] + mask[i-W] + mask[i+W];
+      n += mask[i-W-1] + mask[i-W+1] + mask[i+W-1] + mask[i+W+1];
+      if (n <= 1) out[i] = 0;
     }
   }
-
-  for (let p = 0, i = 0; p < out.length; p++, i += 4) {
-    const v = out[p] ? 0 : 255;
-    d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
-  }
-  return imgData;
+  return out;
 }
 
-// Outline-only: boundary = mask - erode(mask)
-function outlineOnly(imgData, thickness = 1) {
-  const { width: W, height: H, data: d } = imgData;
-  const src = new Uint8Array(W * H);
-  for (let i = 0, p = 0; i < d.length; i += 4, p++) src[p] = d[i] < 128 ? 1 : 0; // 1=hitam
-
-  // Erode 1px
-  const er = new Uint8Array(W * H);
-  for (let y = 1; y < H - 1; y++) {
-    for (let x = 1; x < W - 1; x++) {
-      const i = y * W + x;
-      if (!src[i]) continue;
+// Outline-only dari mask (boundary = mask - erode(mask))
+function outlineFromMask(mask, W, H, thickness=1) {
+  const er = new Uint8Array(W*H);
+  for (let y=1; y<H-1; y++) {
+    for (let x=1; x<W-1; x++) {
+      const i = y*W + x;
+      if (!mask[i]) continue;
       let all = 1;
-      for (let dy = -1; dy <= 1 && all; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          if (!src[i + dy * W + dx]) { all = 0; break; }
+      for (let dy=-1; dy<=1 && all; dy++) {
+        for (let dx=-1; dx<=1; dx++) {
+          if (!mask[i + dy*W + dx]) { all = 0; break; }
         }
       }
       er[i] = all ? 1 : 0;
     }
   }
+  const edge = new Uint8Array(W*H);
+  for (let i=0; i<edge.length; i++) edge[i] = mask[i] && !er[i] ? 1 : 0;
 
-  const edge = new Uint8Array(W * H);
-  for (let p = 0; p < edge.length; p++) edge[p] = src[p] && !er[p] ? 1 : 0;
-
-  // Tebalkan jika perlu (dilasi tipis)
   if (thickness > 1) {
     const dil = edge.slice();
-    for (let y = 1; y < H - 1; y++) {
-      for (let x = 1; x < W - 1; x++) {
-        const i = y * W + x;
-        if (!edge[i]) continue;
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            dil[i + dy * W + dx] = 1;
-          }
-        }
+    for (let y=1; y<H-1; y++) for (let x=1; x<W-1; x++) {
+      const i = y*W + x;
+      if (!edge[i]) continue;
+      for (let dy=-1; dy<=1; dy++) for (let dx=-1; dx<=1; dx++) {
+        dil[i + dy*W + dx] = 1;
       }
     }
-    edge.set(dil);
+    return dil;
   }
+  return edge;
+}
 
-  // Tulis balik ke imgData
-  for (let p = 0, i = 0; p < edge.length; p++, i += 4) {
-    const v = edge[p] ? 0 : 255; // garis hitam, background putih
-    d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
+// Pastikan background putih (kalau rasio hitam terlalu besar, invert)
+function ensureWhiteBackground(mask, W, H) {
+  const sum = mask.reduce((a,b)=>a+b,0);
+  const ratio = sum / (W*H);
+  if (ratio > 0.5) {
+    for (let i=0;i<mask.length;i++) mask[i] = mask[i] ? 0 : 1;
   }
-  imgData._blackRatio = 0; // outline ringan
-  return imgData;
+  return mask;
+}
+
+// Pack mask 0/1 ke raster ESC/POS (GS v 0)
+function buildRasterGSv0(mask, W, H) {
+  const rowBytes = Math.ceil(W / 8);
+  const payload = new Uint8Array(rowBytes * H);
+  for (let y=0; y<H; y++) {
+    for (let x=0; x<W; x++) {
+      const bit = mask[y*W + x] ? 1 : 0; // 1=hitam
+      const byteIndex = y*rowBytes + (x >> 3);
+      const bitIndex = 7 - (x & 7);
+      if (bit) payload[byteIndex] |= (1 << bitIndex);
+    }
+  }
+  const xL = rowBytes & 0xFF, xH = (rowBytes >> 8) & 0xFF;
+  const yL = H & 0xFF, yH = (H >> 8) & 0xFF;
+  const header = new Uint8Array([0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH]);
+  return { header, payload };
 }
 
 // --- CAMERA FUNCTIONS ---
@@ -355,7 +336,6 @@ export function useCapturedPhoto() {
 }
 
 // --- BARCODE SCANNING ---
-
 function startScanner() {
     if (!window.app?.isScannerReady || typeof Html5Qrcode === 'undefined') {
         console.warn('Scanner library not ready.');
@@ -418,7 +398,6 @@ export function scanBarcodeForInput(targetInputId) {
     showScanModal();
 };
 
-
 export async function closeScanModal() {
     const modal = document.getElementById('scanModal');
     if (modal && !modal.classList.contains('hidden')) {
@@ -434,10 +413,9 @@ export async function closeScanModal() {
     window.app.scanCallback = null;
 }
 
-
 // --- RECEIPT PRINTING ---
-
 function sendToRawBT(data) {
+    // Prefix "ESC d 0" sebagai guard (print & feed 0 lines = no-op)
     const guard = new Uint8Array([0x1B, 0x64, 0x00]);
     const payload = new Uint8Array(guard.length + data.length);
     payload.set(guard, 0);
@@ -522,7 +500,7 @@ async function _generateReceiptText(transactionData, isPreview) {
   receiptText += formatLine('KEMBALI', `${formatCurrency(transactionData.change)}`) + '\n';
   receiptText += receiptLine('=') + '\n';
 
-  // FOOTER: center + word-wrap
+  // FOOTER
   if (footerText) {
     wrapAndCenter(footerText, paperWidthChars).forEach(l => receiptText += l + '\n');
   }
@@ -580,11 +558,11 @@ async function generateReceiptEscPos(transactionData) {
   encoder
     .initialize()
     .raw([0x1b, 0x40])   // ESC @ reset
-    .raw([0x1b, 0x40])   // reset ekstra, untuk memastikan tidak ada state sisa
+    .raw([0x1b, 0x40])   // reset ekstra
     .align('left')
-    .raw([0x1b, 0x33, LINE_SPACING_DOTS]);  // set line spacing yang lebih rapat
+    .raw([0x1b, 0x33, LINE_SPACING_DOTS]);  // atur line spacing
 
-  // Cetak logo: outline-only + raster + auto-threshold + auto-invert
+  // Cetak logo: pure black line-art 1-bit (GS v 0)
   if (showLogo && logoData) {
     try {
       const image = await new Promise((res, rej) => {
@@ -607,37 +585,31 @@ async function generateReceiptEscPos(transactionData) {
       ctx.fillRect(0, 0, w, h);
       ctx.drawImage(image, 0, 0, w, h);
 
-      // crop putih atas-bawah agar tidak ada jarak ekstra
       const cropped = cropCanvasTopBottom(canvas, 245);
-
-      // Ambil data mentah
       const cctx = cropped.getContext('2d', { willReadFrequently: true });
-      let imgData = cctx.getImageData(0, 0, cropped.width, cropped.height);
+      const src = cctx.getImageData(0, 0, cropped.width, cropped.height);
 
-      // Tentukan threshold
       const thr = (LOGO_THRESHOLD === 'auto')
-        ? otsuThresholdFromImageData(imgData)
+        ? otsuThresholdFromImageData(src)
         : (typeof LOGO_THRESHOLD === 'number' ? LOGO_THRESHOLD : 195);
 
-      // Binarize
-      imgData = binarizeImageData(imgData, thr);
+      let mask = toMonoMask(src, thr);
+      if (LOGO_DESPECKLE) mask = despeckleMask(mask, cropped.width, cropped.height);
 
-      // Auto-invert (lebih agresif agar hindari “negatif”)
-      if (LOGO_INVERT === 'true') {
-        if ((imgData._blackRatio || 0) > LOGO_INVERT_AUTO_THRESHOLD) {
-          imgData = invertImageData(imgData);
-        }
-      } else if (LOGO_INVERT === true) {
-        imgData = invertImageData(imgData);
+      if (LOGO_LINE_ART_MODE === 'outline') {
+        mask = outlineFromMask(mask, cropped.width, cropped.height, LOGO_OUTLINE_THICKNESS);
       }
 
-      if (LOGO_DESPECKLE) imgData = despeckleImageData(imgData);
+      if (LOGO_ENSURE_WHITE_BG) {
+        mask = ensureWhiteBackground(mask, cropped.width, cropped.height);
+      }
 
-      // Force outline-only
-      if (LOGO_EDGE_ONLY) imgData = outlineOnly(imgData, LOGO_EDGE_THICKNESS);
+      // Build raster dan kirim sebagai raw ESC/POS (GS v 0)
+      const { header, payload } = buildRasterGSv0(mask, cropped.width, cropped.height);
 
       encoder.align('center');
-      encoder.image(imgData, LOGO_MODE); // mode raster
+      encoder.raw(Array.from(header));
+      encoder.raw(Array.from(payload));
       if (FEED_AFTER_IMAGE > 0) encoder.feed(FEED_AFTER_IMAGE);
       encoder.align('left');
     } catch (e) {
@@ -706,7 +678,7 @@ async function generateLabelEscPos() {
     const productPrice = document.getElementById('product-price').value.trim();
     const barcodeCode = document.getElementById('barcode-code').value.trim();
 
-    const paperSize = await getSettingFromDB('printerPaperSize') || '80mm';
+    await getSettingFromDB('printerPaperSize'); // kept for parity
 
     const encoder = new EscPosEncoder.default();
     encoder
@@ -727,18 +699,15 @@ async function generateLabelEscPos() {
     encoder.line('');
 
     if (barcodeCode) {
+        // CODE128 (function 73) - raw konten
         encoder.raw([0x1d, 0x6b, 0x49]);
         const barcodeLength = barcodeCode.length;
         encoder.raw([barcodeLength]);
         encoder.raw(new TextEncoder().encode(barcodeCode));
-
         encoder.align('center').line(barcodeCode);
     }
 
-    encoder
-        .feed(3)
-        .cut();
-
+    encoder.feed(3).cut();
     return encoder.encode();
 }
 
@@ -895,11 +864,11 @@ export function setupBarcodeGenerator() {
         }
 
         const outputName = document.getElementById('output-product-name');
-        const outputPrice = document.getElementById('output-product-price');
+        theOutputPrice = document.getElementById('output-product-price');
         const outputBarcodeText = document.getElementById('output-barcode-text');
         
         outputName.textContent = productName;
-        outputPrice.textContent = productPrice ? `Rp ${formatCurrency(productPrice)}` : '';
+        theOutputPrice.textContent = productPrice ? `Rp ${formatCurrency(productPrice)}` : '';
         outputBarcodeText.textContent = barcodeCode;
 
         try {
