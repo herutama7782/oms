@@ -1,4 +1,5 @@
 
+
 import { getSettingFromDB, getAllFromDB } from "./db.js";
 import { showToast, showConfirmationModal, formatCurrency, formatReceiptDate } from "./ui.js";
 import { addToCart } from "./cart.js";
@@ -552,7 +553,6 @@ async function generateReceiptEscPos(transactionData) {
 
   const encoder = new EscPosEncoder.default();
   encoder
-    .initialize()
     .align('left')
     .raw([0x1b, 0x33, LINE_SPACING_DOTS]);  // atur line spacing
 
@@ -675,8 +675,7 @@ async function generateLabelEscPos() {
     await getSettingFromDB('printerPaperSize'); // kept for parity
 
     const encoder = new EscPosEncoder.default();
-    encoder.initialize();
-
+    
     encoder.align('center');
 
     if (productName) {
@@ -714,7 +713,6 @@ export async function testPrint() {
         const encoder = new EscPosEncoder.default();
 
         const data = encoder
-            .initialize()
             .align('center')
             .width(2).height(2)
             .line('Test Cetak')
