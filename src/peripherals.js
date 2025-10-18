@@ -1,3 +1,4 @@
+
 import { getSettingFromDB, getAllFromDB } from "./db.js";
 import { showToast, showConfirmationModal, formatCurrency, formatReceiptDate } from "./ui.js";
 import { addToCart } from "./cart.js";
@@ -415,11 +416,10 @@ export async function closeScanModal() {
 
 // --- RECEIPT PRINTING ---
 function sendToRawBT(data) {
-    // Prefix "ESC d 0" sebagai guard (print & feed 0 lines = no-op)
-    const guard = new Uint8Array([0x1B, 0x64, 0x00]);
-    const payload = new Uint8Array(guard.length + data.length);
-    payload.set(guard, 0);
-    payload.set(data, guard.length);
+    // The "guard" prefix [ESC, 'd', 0] was causing an unwanted 'd' character
+    // to be printed at the start of receipts on some printers. It has been removed.
+    // The main payload from the encoder already includes initialization commands (ESC @).
+    const payload = data; // 'data' is already the Uint8Array payload.
 
     let binary = '';
     for (let i = 0; i < payload.byteLength; i++) {
