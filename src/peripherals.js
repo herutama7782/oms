@@ -4,7 +4,7 @@ import { showToast, showConfirmationModal, formatCurrency, formatReceiptDate } f
 import { addToCart } from "./cart.js";
 
 // Tuning (bisa disesuaikan sesuai printer)
-const LINE_SPACING_DOTS = 24; // default ~30; lebih kecil = lebih rapat
+const LINE_SPACING_DOTS = 30; // default ~30. 24 for single-spacing. 30 is ~1.25 spacing.
 const FEED_AFTER_IMAGE = 0;   // baris setelah logo
 const FEED_BEFORE_CUT = 2;    // feed sebelum cut
 
@@ -402,7 +402,7 @@ async function _generateReceiptHTML(data, isPreview) {
 
   let receiptText = await _generateReceiptText(data, isPreview);
 
-  const wrapperStart = `<div style="width:${paperWidthChars}ch; margin:0 auto; font-family: ui-monospace, Menlo, Monaco, Consolas, 'Courier New', monospace; line-height:1.1;">`;
+  const wrapperStart = `<div style="width:${paperWidthChars}ch; margin:0 auto; font-family: ui-monospace, Menlo, Monaco, Consolas, 'Courier New', monospace; line-height:1.25;">`;
   const wrapperEnd = `</div>`;
 
   const logoHtml = (showLogo && logoData)
