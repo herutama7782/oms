@@ -548,8 +548,8 @@ async function generateReceiptEscPos(transactionData) {
   const logoData = settingsMap.get('storeLogo') || null;
   const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
   const paperSize = settingsMap.get('printerPaperSize') || '80mm';
+  const autoOpenCashDrawer = settingsMap.get('autoOpenCashDrawer') || false;
 
-  const paperWidthChars = paperSize === '58mm' ? 32 : 42;
   // NOTE: jika printer 80mm Anda 512 dots, ganti 576 -> 512
   const paperWidthDots  = paperSize === '58mm' ? 384 : 576;
 
@@ -617,6 +617,7 @@ async function generateReceiptEscPos(transactionData) {
   }
 
   // Cetak teks (semua rata kiri; kolom kanan via spasi)
+  const paperWidthChars = paperSize === '58mm' ? 32 : 42;
   const receiptText = await _generateReceiptText(transactionData, false);
   receiptText.split('\n').forEach(line => {
     if (!line) { encoder.line(''); return; }
@@ -628,6 +629,9 @@ async function generateReceiptEscPos(transactionData) {
     }
   });
 
+  if (autoOpenCashDrawer) {
+    encoder.pulse();
+  }
   encoder.feed(FEED_BEFORE_CUT).cut();
   return encoder.encode();
 }

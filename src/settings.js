@@ -14,7 +14,8 @@ export async function saveStoreSettings() {
         { key: 'showLogoOnReceipt', value: document.getElementById('showLogoOnReceipt').checked },
         { key: 'lowStockThreshold', value: parseInt((document.getElementById('lowStockThreshold')).value) || 5 },
         { key: 'autoPrintReceipt', value: document.getElementById('autoPrintReceipt').checked },
-        { key: 'printerPaperSize', value: document.getElementById('printerPaperSize').value }
+        { key: 'printerPaperSize', value: document.getElementById('printerPaperSize').value },
+        { key: 'autoOpenCashDrawer', value: document.getElementById('autoOpenCashDrawer').checked }
     ];
 
     try {
@@ -46,6 +47,10 @@ export async function loadSettings() {
         document.getElementById('autoPrintReceipt').checked = settingsMap.get('autoPrintReceipt') || false;
         document.getElementById('showLogoOnReceipt').checked = settingsMap.get('showLogoOnReceipt') !== false;
         document.getElementById('printerPaperSize').value = settingsMap.get('printerPaperSize') || '80mm';
+        const autoOpenCashDrawerToggle = document.getElementById('autoOpenCashDrawer');
+        if (autoOpenCashDrawerToggle) {
+            autoOpenCashDrawerToggle.checked = settingsMap.get('autoOpenCashDrawer') || false;
+        }
 
         const kioskToggle = document.getElementById('kioskModeToggle');
         if (kioskToggle) {
