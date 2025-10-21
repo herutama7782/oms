@@ -24,7 +24,7 @@ This document outlines the planned features and improvements for the POS Mobile 
     - [ ] Track customer purchase history directly from their profile.
 - **[ ] UI/UX Polish:**
     - [ ] Introduce a dark mode option.
-    - [ ] Refine page transition animations for a smoother feel.
+    - [x] Refine page transition animations for a smoother feel.
     - [ ] Improve accessibility (ARIA labels, keyboard navigation).
 
 ---
