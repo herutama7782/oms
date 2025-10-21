@@ -1,6 +1,6 @@
 {
-  "name": "(OK) POS Mobile RawBT Pisah Kode + Cash Drawer + Add Fitur",
-  "description": "A mobile-first Point of Sale application with barcode scanning for small businesses.",
+  "name": "Copy of (OK) POS Mobile RawBT Pisah Kode + Cash Drawer + add fitur + UI Login",
+  "description": "",
   "requestFramePermissions": [
     "camera",
     "geolocation"

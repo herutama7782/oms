@@ -44,7 +44,9 @@ window.app = {
     currentContactId: null,
     dueItemsList: [],
     activePopover: null,
-    cameraStream: null
+    cameraStream: null,
+    currentUser: null, // For multi-user support
+    onLoginSuccess: null,
 };
 
 // --- GLOBAL FUNCTIONS ---
@@ -128,6 +130,15 @@ const functions = {
     importData: settings.importData,
     handleImport: settings.handleImport,
     clearAllData: settings.clearAllData,
+    // Auth & User Management (from settings.js)
+    handleLoginPinKeyPress: settings.handleLoginPinKeyPress,
+    logout: settings.logout,
+    showManageUsersModal: settings.showManageUsersModal,
+    closeManageUsersModal: settings.closeManageUsersModal,
+    showUserFormModal: settings.showUserFormModal,
+    closeUserFormModal: settings.closeUserFormModal,
+    saveUser: settings.saveUser,
+    deleteUser: settings.deleteUser,
     // peripherals.js
     openCameraModal: peripherals.openCameraModal,
     closeCameraModal: peripherals.closeCameraModal,
@@ -183,10 +194,60 @@ async function loadHtmlPartials() {
     }
 }
 
+async function initializeMainApp() {
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    const appContainer = document.getElementById('appContainer');
+
+    await settings.loadSettings();
+    await product.populateCategoryDropdowns(['productCategory', 'editProductCategory', 'productCategoryFilter']);
+    await loadDashboard();
+
+    // Setup event listeners that are not onclick
+    document.getElementById('searchProduct')?.addEventListener('input', product.filterProductsInGrid);
+    document.getElementById('confirmButton')?.addEventListener('click', ui.executeConfirm);
+    document.getElementById('cancelButton')?.addEventListener('click', ui.closeConfirmationModal);
+    document.getElementById('cashPaidInput')?.addEventListener('input', cart.updatePaymentChange);
+
+    report.setupChartViewToggle();
+    peripherals.setupBarcodeGenerator();
+
+    if (window.app.isScannerReady) {
+        window.app.html5QrCode = new Html5Qrcode("qr-reader");
+    }
+
+    document.body.addEventListener('click', audio.initAudioContext, { once: true });
+
+    window.addEventListener('online', sync.checkOnlineStatus);
+    window.addEventListener('offline', sync.checkOnlineStatus);
+    await sync.checkOnlineStatus();
+
+    setInterval(checkDashboardRefresh, 60 * 1000);
+
+    document.addEventListener('click', (e) => {
+        if (window.app.activePopover && !window.app.activePopover.contains(e.target) && !e.target.closest('[onclick^="showLedgerActions"]')) {
+            contact.closeLedgerActions();
+        }
+    });
+
+    peripherals.updateFeatureAvailability();
+    
+    ui.updateUiForRole(); // Update UI based on logged in user's role
+
+    const kioskModeEnabled = await db.getSettingFromDB('kioskModeEnabled');
+    if (kioskModeEnabled) {
+        await settings.activateKioskMode();
+    }
+
+    loadingOverlay.classList.add('opacity-0');
+    setTimeout(() => {
+        loadingOverlay.style.display = 'none';
+        appContainer.classList.remove('hidden');
+    }, 300);
+}
+
 
 document.addEventListener('DOMContentLoaded', async () => {
     const loadingOverlay = document.getElementById('loadingOverlay');
-    const appContainer = document.getElementById('appContainer');
 
     try {
         await loadHtmlPartials();
@@ -197,54 +258,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         await db.initDB();
         
-        await settings.loadSettings();
-        await product.populateCategoryDropdowns(['productCategory', 'editProductCategory', 'productCategoryFilter']);
-        await loadDashboard();
-
-        // Setup event listeners that are not onclick
-        document.getElementById('searchProduct')?.addEventListener('input', product.filterProductsInGrid);
-        document.getElementById('confirmButton')?.addEventListener('click', ui.executeConfirm);
-        document.getElementById('cancelButton')?.addEventListener('click', ui.closeConfirmationModal);
-        document.getElementById('cashPaidInput')?.addEventListener('input', cart.updatePaymentChange);
-        
-        report.setupChartViewToggle();
-        peripherals.setupBarcodeGenerator();
-        
-        if (window.app.isScannerReady) {
-            window.app.html5QrCode = new Html5Qrcode("qr-reader");
-        }
-
-        document.body.addEventListener('click', audio.initAudioContext, { once: true });
-        
-        window.addEventListener('online', sync.checkOnlineStatus);
-        window.addEventListener('offline', sync.checkOnlineStatus);
-        await sync.checkOnlineStatus();
-
-        setInterval(checkDashboardRefresh, 60 * 1000);
-        
-        document.addEventListener('click', (e) => {
-            if (window.app.activePopover && !window.app.activePopover.contains(e.target) && !e.target.closest('[onclick^="showLedgerActions"]')) {
-                contact.closeLedgerActions();
-            }
-        });
-        
-        peripherals.updateFeatureAvailability();
-
-        const kioskModeEnabled = await db.getSettingFromDB('kioskModeEnabled');
-        if (kioskModeEnabled) {
-            await settings.activateKioskMode();
-        }
+        // New Login Flow
+        await settings.startAuthFlow(initializeMainApp);
 
     } catch (error) {
         console.error("Initialization failed:", error);
         if (loadingOverlay.textContent.includes('Memuat')) {
             loadingOverlay.innerHTML = `<p class="text-red-500 p-4">Gagal memuat aplikasi. Silakan coba lagi.</p>`;
         }
-    } finally {
-        loadingOverlay.classList.add('opacity-0');
-        setTimeout(() => {
-            loadingOverlay.style.display = 'none';
-            appContainer.classList.remove('hidden');
-        }, 300);
     }
 });

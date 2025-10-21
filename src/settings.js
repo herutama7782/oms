@@ -1,5 +1,5 @@
-import { putSettingToDB, getSettingFromDB, getAllFromDB, putToDB, clearAllStores } from './db.js';
-import { showToast, showConfirmationModal, loadDashboard, showPage } from './ui.js';
+import { putSettingToDB, getSettingFromDB, getAllFromDB, putToDB, clearAllStores, getFromDB } from './db.js';
+import { showToast, showConfirmationModal, loadDashboard, showPage, updateUiForRole } from './ui.js';
 import { queueSyncAction } from './sync.js';
 import { formatCurrency } from './ui.js';
 
@@ -90,6 +90,7 @@ export async function exportData() {
         const fees = await getAllFromDB('fees');
         const contacts = await getAllFromDB('contacts');
         const ledgers = await getAllFromDB('ledgers');
+        const users = await getAllFromDB('users');
         
         const data = {
             products,
@@ -99,6 +100,7 @@ export async function exportData() {
             fees,
             contacts,
             ledgers,
+            users,
             exportDate: new Date().toISOString()
         };
         
@@ -141,7 +143,7 @@ export function handleImport(event) {
                     'Import Data',
                     'Ini akan menimpa semua data saat ini. Apakah Anda yakin ingin melanjutkan?',
                     async () => {
-                        const storesToClear = ['products', 'transactions', 'settings', 'categories', 'fees', 'contacts', 'ledgers'];
+                        const storesToClear = ['products', 'transactions', 'settings', 'categories', 'fees', 'contacts', 'ledgers', 'users'];
                         const transaction = window.app.db.transaction(storesToClear, 'readwrite');
                         
                         storesToClear.forEach(storeName => {
@@ -157,6 +159,7 @@ export function handleImport(event) {
                         if (data.fees) data.fees.forEach(f => transaction.objectStore('fees').put(f));
                         if (data.contacts) data.contacts.forEach(c => transaction.objectStore('contacts').put(c));
                         if (data.ledgers) data.ledgers.forEach(l => transaction.objectStore('ledgers').put(l));
+                        if (data.users) data.users.forEach(u => transaction.objectStore('users').put(u));
                         
                         transaction.oncomplete = () => {
                             showToast('Data berhasil diimport. Aplikasi akan dimuat ulang.');
@@ -476,4 +479,303 @@ async function exitKioskMode() {
     closeEnterKioskPinModal();
     showToast('Mode Kios dinonaktifkan.');
     showPage('pengaturan');
+}
+
+
+// --- AUTH & USER MANAGEMENT ---
+
+/**
+ * Checks if the current user has access based on their role.
+ * @param {string|string[]} allowedRoles - A role or an array of roles that are allowed.
+ * @returns {boolean} - True if the user has access, false otherwise.
+ */
+export function checkAccess(allowedRoles) {
+    const currentUser = window.app.currentUser;
+    if (!currentUser) {
+        return false;
+    }
+
+    const userRole = currentUser.role;
+    if (Array.isArray(allowedRoles)) {
+        return allowedRoles.includes(userRole);
+    } else {
+        return userRole === allowedRoles;
+    }
+}
+
+async function createDefaultOwner() {
+    const owner = {
+        name: 'Pemilik',
+        pin: '1234', // Default PIN
+        role: 'owner',
+        createdAt: new Date().toISOString()
+    };
+    await putToDB('users', owner);
+    showConfirmationModal(
+        'Selamat Datang!',
+        'Akun "Pemilik" default telah dibuat dengan PIN: <strong>1234</strong>. Silakan login dan segera ganti PIN Anda di menu Manajemen Pengguna.',
+        () => {}, 'Mengerti', 'bg-blue-500'
+    );
+}
+
+export async function startAuthFlow(onSuccessCallback) {
+    const users = await getAllFromDB('users');
+    if (users.length === 0) {
+        await createDefaultOwner();
+    }
+    
+    document.getElementById('loginModal').classList.remove('hidden');
+    // Hide main app elements until login is successful
+    document.getElementById('appContainer').classList.add('hidden');
+    document.getElementById('bottomNav').classList.add('hidden');
+    document.getElementById('loadingOverlay').style.display = 'none';
+
+    window.app.onLoginSuccess = onSuccessCallback;
+}
+
+function updateLoginPinDisplay() {
+    const dots = document.querySelectorAll('#loginPinDisplay div');
+    dots.forEach((dot, index) => {
+        dot.classList.toggle('bg-gray-800', index < window.app.currentPinInput.length);
+        dot.classList.toggle('bg-gray-200', index >= window.app.currentPinInput.length);
+    });
+}
+
+async function verifyLoginPin() {
+    const pin = window.app.currentPinInput;
+    const errorEl = document.getElementById('loginPinError');
+    const pinDisplay = document.getElementById('loginPinDisplay');
+    
+    const users = await getAllFromDB('users', 'pin', pin);
+    const user = users.length > 0 ? users[0] : null;
+
+    if (user) {
+        errorEl.textContent = '';
+        login(user);
+    } else {
+        errorEl.textContent = `PIN Salah.`;
+        pinDisplay.classList.add('animate-shake');
+        setTimeout(() => {
+            pinDisplay.classList.remove('animate-shake');
+            window.app.currentPinInput = "";
+            updateLoginPinDisplay();
+        }, 500);
+    }
+}
+
+function login(user) {
+    window.app.currentUser = user;
+    document.getElementById('loginModal').classList.add('hidden');
+    
+    if (window.app.onLoginSuccess) {
+        window.app.onLoginSuccess();
+    } else {
+        location.reload();
+    }
+}
+
+export function logout() {
+    showConfirmationModal('Logout', 'Anda yakin ingin keluar?', () => {
+        window.app.currentUser = null;
+        location.reload();
+    });
+}
+
+export function handleLoginPinKeyPress(key) {
+    if (key === 'backspace') {
+        if (window.app.currentPinInput.length > 0) {
+            window.app.currentPinInput = window.app.currentPinInput.slice(0, -1);
+        }
+    } else {
+        if (window.app.currentPinInput.length < 4) {
+            window.app.currentPinInput += key;
+        }
+    }
+    updateLoginPinDisplay();
+
+    if (window.app.currentPinInput.length === 4) {
+        verifyLoginPin();
+    }
+}
+
+export async function showManageUsersModal() {
+    document.getElementById('manageUsersModal').classList.remove('hidden');
+    await loadUsersForManagement();
+}
+
+async function loadUsersForManagement() {
+    const listEl = document.getElementById('usersList');
+    const users = await getAllFromDB('users');
+    const currentUser = window.app.currentUser;
+
+    if (!users.length) {
+        listEl.innerHTML = `<p class="text-gray-500 text-center py-4">Tidak ada pengguna.</p>`;
+        return;
+    }
+
+    listEl.innerHTML = users.sort((a,b) => a.name.localeCompare(b.name)).map(user => {
+        const roleDisplay = {
+            owner: 'Pemilik',
+            manager: 'Manajer',
+            cashier: 'Kasir'
+        };
+        
+        let canEdit = false;
+        let canDelete = false;
+
+        if (currentUser.role === 'owner') {
+            canEdit = true;
+            canDelete = user.id !== currentUser.id;
+        } else if (currentUser.role === 'manager') {
+            canEdit = user.role !== 'owner';
+            canDelete = user.role === 'cashier' && user.id !== currentUser.id;
+        }
+
+        const editButton = canEdit ? `<button onclick="showUserFormModal(${user.id})" class="text-blue-500 clickable"><i class="fas fa-edit"></i></button>` : `<div class="w-6"></div>`;
+        const deleteButton = canDelete ? `<button onclick="deleteUser(${user.id})" class="text-red-500 clickable"><i class="fas fa-trash"></i></button>` : `<div class="w-6"></div>`;
+
+        return `
+            <div class="flex justify-between items-center bg-gray-100 p-3 rounded-lg">
+                <div>
+                    <p class="font-semibold">${user.name}</p>
+                    <p class="text-sm text-gray-600">${roleDisplay[user.role] || user.role}</p>
+                </div>
+                <div class="flex items-center gap-4">
+                    ${editButton}
+                    ${deleteButton}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+export function closeManageUsersModal() {
+    document.getElementById('manageUsersModal').classList.add('hidden');
+}
+
+export async function showUserFormModal(userId = null) {
+    const modal = document.getElementById('userFormModal');
+    const title = document.getElementById('userFormTitle');
+    const idInput = document.getElementById('userId');
+    const nameInput = document.getElementById('userName');
+    const pinInput = document.getElementById('userPin');
+    const roleInput = document.getElementById('userRole');
+
+    // Reset form
+    idInput.value = '';
+    nameInput.value = '';
+    pinInput.value = '';
+    pinInput.placeholder = 'Masukkan 4 digit PIN';
+    roleInput.value = 'cashier';
+
+    const currentUser = window.app.currentUser;
+    Array.from(roleInput.options).forEach(option => {
+        if (currentUser.role === 'manager' && option.value === 'owner') {
+            option.disabled = true;
+        } else {
+            option.disabled = false;
+        }
+    });
+
+    if (userId) {
+        title.textContent = 'Edit Pengguna';
+        const user = await getFromDB('users', userId);
+        if (user) {
+            idInput.value = user.id;
+            nameInput.value = user.name;
+            pinInput.placeholder = 'Kosongkan jika tidak ganti PIN';
+            roleInput.value = user.role;
+        }
+    } else {
+        title.textContent = 'Tambah Pengguna';
+    }
+
+    modal.classList.remove('hidden');
+}
+
+export function closeUserFormModal() {
+    document.getElementById('userFormModal').classList.add('hidden');
+}
+
+export async function saveUser() {
+    const id = document.getElementById('userId').value ? parseInt(document.getElementById('userId').value) : null;
+    const name = document.getElementById('userName').value.trim();
+    const pin = document.getElementById('userPin').value.trim();
+    const role = document.getElementById('userRole').value;
+
+    if (!name) {
+        showToast('Nama pengguna tidak boleh kosong.');
+        return;
+    }
+    
+    if (!id && (!pin || pin.length !== 4)) {
+        showToast('PIN wajib diisi dengan 4 digit untuk pengguna baru.');
+        return;
+    }
+
+    if (pin && pin.length !== 4) {
+        showToast('PIN harus 4 digit.');
+        return;
+    }
+
+    const userData = {
+        name,
+        role,
+        updatedAt: new Date().toISOString()
+    };
+
+    if (pin) {
+        const usersWithPin = await getAllFromDB('users', 'pin', pin);
+        if (usersWithPin.some(u => u.id !== id)) {
+            showToast('PIN ini sudah digunakan oleh pengguna lain.');
+            return;
+        }
+        userData.pin = pin;
+    }
+
+    let action = '';
+    if (id) {
+        userData.id = id;
+        const existingUser = await getFromDB('users', id);
+        if (!userData.pin) userData.pin = existingUser.pin;
+        userData.createdAt = existingUser.createdAt;
+        action = 'UPDATE_USER';
+    } else {
+        userData.createdAt = new Date().toISOString();
+        action = 'CREATE_USER';
+    }
+
+    try {
+        const savedId = await putToDB('users', userData);
+        showToast(`Pengguna berhasil ${id ? 'diperbarui' : 'disimpan'}.`);
+        closeUserFormModal();
+        await loadUsersForManagement();
+    } catch (error) {
+        console.error('Failed to save user:', error);
+        showToast('Gagal menyimpan pengguna.');
+    }
+}
+
+export async function deleteUser(userId) {
+    const currentUser = window.app.currentUser;
+    if (userId === currentUser.id) {
+        showToast('Anda tidak dapat menghapus akun sendiri.');
+        return;
+    }
+    
+    const userToDelete = await getFromDB('users', userId);
+
+    showConfirmationModal('Hapus Pengguna', `Yakin ingin menghapus pengguna "${userToDelete.name}"?`, async () => {
+        try {
+            const tx = window.app.db.transaction('users', 'readwrite');
+            tx.objectStore('users').delete(userId);
+            tx.oncomplete = async () => {
+                showToast('Pengguna berhasil dihapus.');
+                await loadUsersForManagement();
+            };
+        } catch (error) {
+            console.error('Failed to delete user:', error);
+            showToast('Gagal menghapus pengguna.');
+        }
+    }, 'Ya, Hapus', 'bg-red-500');
 }

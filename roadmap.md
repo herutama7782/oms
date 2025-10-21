@@ -14,18 +14,18 @@ This document outlines the planned features and improvements for the POS Mobile 
 
 ### Q3 2024: Core Feature Enhancements
 
-- **[ ] Advanced Inventory Management:**
-    - [ ] Add support for product variants (e.g., size, color).
-    - [ ] Implement supplier management and purchase orders.
-    - [ ] Introduce stock transfer functionality between multiple store locations.
-- **[ ] Customer Relationship Management (CRM) Improvements:**
-    - [ ] Add customer groups and tagging.
-    - [ ] Implement a simple loyalty points system.
-    - [ ] Track customer purchase history directly from their profile.
-- **[ ] UI/UX Polish:**
-    - [ ] Introduce a dark mode option.
-    - [x] Refine page transition animations for a smoother feel.
-    - [ ] Improve accessibility (ARIA labels, keyboard navigation).
+- **[x] Advanced Inventory Management:**
+    - [x] Add support for product variants (e.g., size, color). (jagan terapkan ribet user, bikin variasi di judul saja.)
+    - [x] Implement supplier management and purchase orders.
+    - [x] Introduce stock transfer functionality between multiple store locations.
+- **[x] Customer Relationship Management (CRM) Improvements:**
+    - [x] Add customer groups and tagging. (Belum perlu)
+    - [x] Implement a simple loyalty points system. (Belum perlu)
+    - [x] Track customer purchase history directly from their profile. (Belum perlu)
+- **[x] UI/UX Polish:**
+    - [x] Introduce a dark mode option.
+    - [x] Refine page transition animations for a smoother feel. (jangan terapkan, bentrok dengan fungsi KONTAK)
+    - [x] Improve accessibility (ARIA labels, keyboard navigation).
 
 ---
 
@@ -34,17 +34,17 @@ This document outlines the planned features and improvements for the POS Mobile 
 ### Q4 2024: Integrations & Reporting
 
 - **[ ] Expanded Hardware Support:**
-    - [ ] Direct integration with common Bluetooth receipt printers (bypassing RawBT for a more seamless experience where possible).
+    - [x] Direct integration with common Bluetooth receipt printers (bypassing RawBT for a more seamless experience where possible).
     - [ ] Support for external USB barcode scanners.
-    - **[x] Integration with electronic cash drawers:**
-        - [x] Automatically send a pulse to open the cash drawer after a successful receipt print (via RawBT).
-- **[ ] Advanced Reporting & Analytics:**
-    - [ ] Add more visual charts (e.g., pie charts for category sales, bar charts for daily profit).
-    - [ ] Implement "End of Day" / "Z-Report" summaries.
-    - [ ] Allow custom date range exports for all reports.
+    - **[v] Integration with electronic cash drawers:**
+        - [v] Automatically send a pulse to open the cash drawer after a successful receipt print (via RawBT).
+- **[x] Advanced Reporting & Analytics:**
+    - [x] Add more visual charts (e.g., pie charts for category sales, bar charts for daily profit).
+    - [x] Implement "End of Day" / "Z-Report" summaries.
+    - [x] Allow custom date range exports for all reports.
 - **[ ] Multi-User & Roles:**
-    - [ ] Introduce owner, manager, and cashier roles with different permissions.
-    - [ ] Track sales by employee/cashier.
+    - [v] Introduce owner, manager, and cashier roles with different permissions.
+    - [v] Track sales by employee/cashier.
 
 ---
 

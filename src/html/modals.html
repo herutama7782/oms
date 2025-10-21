@@ -315,7 +315,7 @@
             <h2 class="text-xl font-bold mb-4" id="confirmationTitle">Konfirmasi</h2>
             <div id="confirmationMessage" class="text-gray-600 mb-6"></div>
             <div class="flex gap-3">
-                <button id="cancelButton" class="btn bg-gray-300 text-gray-700 flex-1 py-2">
+                <button id="cancelButton" onclick="closeConfirmationModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">
                     Batal
                 </button>
                 <button id="confirmButton" class="btn text-white flex-1 py-2"></button>
@@ -553,6 +553,92 @@
             </div>
             <div class="flex mt-6">
                 <button onclick="closePrintHelpModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Login Modal (NEW) -->
+<div id="loginModal" class="fixed inset-0 bg-slate-100 hidden z-[9998]">
+    <div class="flex flex-col items-center justify-center h-full p-4">
+
+        <div class="text-center mb-6">
+             <img src="https://i.imgur.com/awbpnPX.png" alt="OMSETIN Logo" class="w-24 h-24 mx-auto rounded-2xl shadow-lg mb-4">
+            <h1 class="text-3xl font-bold text-gray-800">OMSETIN</h1>
+            <p class="text-gray-600 mt-1">Silakan masukkan PIN Anda</p>
+        </div>
+
+        <div class="bg-white rounded-3xl p-6 w-full max-w-xs shadow-lg">
+            <div id="loginPinDisplay" class="flex justify-center items-center gap-4 mb-6">
+                <div class="w-4 h-4 rounded-full bg-gray-200 transition-colors duration-200"></div>
+                <div class="w-4 h-4 rounded-full bg-gray-200 transition-colors duration-200"></div>
+                <div class="w-4 h-4 rounded-full bg-gray-200 transition-colors duration-200"></div>
+                <div class="w-4 h-4 rounded-full bg-gray-200 transition-colors duration-200"></div>
+            </div>
+            <div id="loginPinError" class="text-red-500 text-center text-sm mb-4 min-h-[1.25rem]"></div>
+            <div class="grid grid-cols-3 gap-3">
+                <button onclick="handleLoginPinKeyPress('1')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">1</button>
+                <button onclick="handleLoginPinKeyPress('2')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">2</button>
+                <button onclick="handleLoginPinKeyPress('3')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">3</button>
+                <button onclick="handleLoginPinKeyPress('4')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">4</button>
+                <button onclick="handleLoginPinKeyPress('5')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">5</button>
+                <button onclick="handleLoginPinKeyPress('6')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">6</button>
+                <button onclick="handleLoginPinKeyPress('7')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">7</button>
+                <button onclick="handleLoginPinKeyPress('8')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">8</button>
+                <button onclick="handleLoginPinKeyPress('9')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">9</button>
+                <div></div> <!-- Placeholder for empty cell -->
+                <button onclick="handleLoginPinKeyPress('0')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">0</button>
+                <button onclick="handleLoginPinKeyPress('backspace')" class="btn bg-gray-200 text-gray-700 text-xl py-4 rounded-2xl hover:bg-gray-300 active:scale-95 transition-all"><i class="fas fa-backspace"></i></button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Manage Users Modal (NEW) -->
+<div id="manageUsersModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Kelola Pengguna</h2>
+                <button onclick="showUserFormModal()" class="btn bg-blue-500 text-white px-3 py-1 text-sm"><i class="fas fa-plus"></i> Tambah</button>
+            </div>
+            <div id="usersList" class="space-y-2">
+                <!-- User list will be populated here -->
+            </div>
+            <div class="flex mt-6">
+                <button onclick="closeManageUsersModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- User Form Modal (NEW) -->
+<div id="userFormModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-[1600]">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <h2 id="userFormTitle" class="text-xl font-bold mb-4">Tambah Pengguna</h2>
+            <input type="hidden" id="userId">
+            <div class="space-y-3">
+                <div>
+                    <label class="text-sm text-gray-600">Nama Pengguna</label>
+                    <input type="text" id="userName" class="input-field w-full">
+                </div>
+                <div>
+                    <label class="text-sm text-gray-600">PIN (4 digit)</label>
+                    <input type="password" id="userPin" class="input-field w-full" maxlength="4" inputmode="numeric" placeholder="Masukkan 4 digit PIN">
+                </div>
+                <div>
+                    <label class="text-sm text-gray-600">Peran</label>
+                    <select id="userRole" class="input-field w-full">
+                        <option value="cashier">Kasir</option>
+                        <option value="manager">Manajer</option>
+                        <option value="owner">Pemilik</option>
+                    </select>
+                </div>
+            </div>
+             <div class="flex gap-3 mt-6">
+                <button onclick="closeUserFormModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">Batal</button>
+                <button onclick="saveUser()" class="btn bg-blue-500 text-white flex-1 py-2">Simpan</button>
             </div>
         </div>
     </div>

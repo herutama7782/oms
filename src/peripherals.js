@@ -867,7 +867,7 @@ export function setupBarcodeGenerator() {
         }
 
         const outputName = document.getElementById('output-product-name');
-        theOutputPrice = document.getElementById('output-product-price');
+        const theOutputPrice = document.getElementById('output-product-price');
         const outputBarcodeText = document.getElementById('output-barcode-text');
         
         outputName.textContent = productName;

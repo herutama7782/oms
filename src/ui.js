@@ -5,9 +5,9 @@ import { loadContactsPage, checkDueDateNotifications } from './contact.js';
 import { loadSettings } from './settings.js';
 import { getAllFromDB, getSettingFromDB } from './db.js';
 import { displaySalesReport } from './report.js';
+import { checkAccess } from './settings.js';
 
 let isNavigating = false;
-let pageZIndex = 10; // Start with a base z-index for pages
 
 export function formatCurrency(amount) {
     return Math.round(amount).toLocaleString('id-ID');
@@ -196,8 +196,55 @@ export function updateSyncStatusUI(status) {
     }
 }
 
+export function updateUiForRole() {
+    const user = window.app.currentUser;
+    if (!user) return;
+    
+    const role = user.role;
+
+    // Nav items
+    const navProduk = document.querySelector('.nav-item[data-page="produk"]');
+    if (navProduk) navProduk.style.display = (role === 'cashier') ? 'none' : 'flex';
+    const navLaporan = document.querySelector('.nav-item[data-page="laporan"]');
+    if (navLaporan) navLaporan.style.display = (role === 'cashier') ? 'none' : 'flex';
+    const navKontak = document.querySelector('.nav-item[data-page="kontak"]');
+    if (navKontak) navKontak.style.display = (role === 'cashier') ? 'none' : 'flex';
+    const navPengaturan = document.querySelector('.nav-item[data-page="pengaturan"]');
+    if (navPengaturan) navPengaturan.style.display = (role === 'cashier') ? 'none' : 'flex';
+    
+    // Settings page items
+    const userManagementCard = document.getElementById('userManagementCard');
+    if(userManagementCard) userManagementCard.style.display = checkAccess(['owner', 'manager']) ? 'block' : 'none';
+    
+    const dataManagementCard = document.getElementById('dataManagementCard');
+    if(dataManagementCard) dataManagementCard.style.display = checkAccess(['owner', 'manager']) ? 'block' : 'none';
+    
+    const sessionManagementCard = document.getElementById('sessionManagementCard');
+    if(sessionManagementCard) sessionManagementCard.style.display = 'block';
+
+    const clearDataBtn = document.getElementById('clearDataBtn');
+    if(clearDataBtn) clearDataBtn.style.display = checkAccess('owner') ? 'block' : 'none';
+    
+    const bottomNav = document.getElementById('bottomNav');
+    if(bottomNav) bottomNav.classList.remove('hidden');
+}
+
 export async function showPage(pageName, options = { force: false, initialTab: null }) {
     const { force, initialTab } = options;
+    
+    const pagePermissions = {
+        'dashboard': ['owner', 'manager', 'cashier'],
+        'kasir': ['owner', 'manager', 'cashier'],
+        'produk': ['owner', 'manager'],
+        'kontak': ['owner', 'manager'],
+        'laporan': ['owner', 'manager'],
+        'pengaturan': ['owner', 'manager']
+    };
+
+    if (!checkAccess(pagePermissions[pageName])) {
+        showToast('Akses ditolak.');
+        return;
+    }
 
     if (window.app.isKioskModeActive && pageName !== 'kasir') {
         showToast('Mode Kios aktif. Fitur lain dinonaktifkan.');
@@ -223,7 +270,7 @@ export async function showPage(pageName, options = { force: false, initialTab: n
     if (window.app.currentPage === pageName || isNavigating) return;
     isNavigating = true;
 
-    const transitionDuration = 350; // Match CSS
+    const transitionDuration = 300;
 
     const oldPage = document.querySelector('.page.active');
     const newPage = document.getElementById(pageName);
@@ -238,8 +285,6 @@ export async function showPage(pageName, options = { force: false, initialTab: n
     const navItem = document.querySelector(`.nav-item[data-page="${pageName}"]`);
     if (navItem) navItem.classList.add('active');
 
-    // Prepare new page for transition
-    newPage.style.zIndex = `${++pageZIndex}`;
     newPage.classList.add('page-enter');
     newPage.style.display = 'block';
 
@@ -266,7 +311,6 @@ export async function showPage(pageName, options = { force: false, initialTab: n
         window.loadFees();
     }
 
-    // Trigger transition
     requestAnimationFrame(() => {
         newPage.classList.remove('page-enter');
         newPage.classList.add('active');

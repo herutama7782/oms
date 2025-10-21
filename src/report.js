@@ -89,6 +89,7 @@ function displayReportDetails(transactions) {
                     <span>${formattedDate}</span>
                     <span class="font-semibold">Rp ${formatCurrency(t.total)}</span>
                 </div>
+                 <p class="text-xs text-gray-500">Kasir: ${t.userName || 'N/A'}</p>
                 <ul class="text-xs text-gray-600 pl-4 mt-1 space-y-1">
                     ${t.items.map((item, index) => `
                         <li class="flex justify-between items-center">

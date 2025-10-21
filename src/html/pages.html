@@ -495,6 +495,14 @@
             </div>
         </div>
 
+        <!-- User Management (NEW) -->
+        <div id="userManagementCard" class="card p-4 mb-4" style="display: none;">
+            <h2 class="text-lg font-semibold mb-3">Manajemen Pengguna</h2>
+            <button onclick="showManageUsersModal()" class="btn bg-gray-600 text-white w-full py-2">
+                <i class="fas fa-users-cog"></i> Kelola Pengguna
+            </button>
+        </div>
+
         <!-- Kiosk Mode -->
         <div class="card p-4 mb-4">
             <h2 class="text-lg font-semibold mb-3">Mode Kios</h2>
@@ -511,11 +519,11 @@
         </div>
         
         <!-- Data Management -->
-        <div class="card p-4 mb-4">
+        <div id="dataManagementCard" class="card p-4 mb-4" style="display: none;">
             <h2 class="text-lg font-semibold mb-3">Manajemen Data</h2>
             <div class="space-y-2">
                 <button onclick="syncWithServer(true)" class="btn bg-blue-600 text-white w-full py-2">
-                    <i class="fas fa-cloud-upload-alt"></i> Sinkronkan dengan Server
+                    <i class="fas fa-cloud-upload-alt"></i> Sinkronkan
                 </button>
                 <button onclick="exportData()" class="btn bg-green-500 text-white w-full py-2">
                     <i class="fas fa-download"></i> Export Data
@@ -524,10 +532,18 @@
                     <i class="fas fa-upload"></i> Import Data
                 </button>
                 <input type="file" id="importFile" style="display: none;" accept=".json" onchange="handleImport(event)">
-                <button onclick="clearAllData()" class="btn bg-red-500 text-white w-full py-2">
+                <button id="clearDataBtn" onclick="clearAllData()" class="btn bg-red-500 text-white w-full py-2" style="display: none;">
                     <i class="fas fa-trash"></i> Hapus Semua Data
                 </button>
             </div>
+        </div>
+
+        <!-- Session Management -->
+        <div id="sessionManagementCard" class="card p-4 mb-4" style="display: none;">
+            <h2 class="text-lg font-semibold mb-3">Sesi</h2>
+             <button onclick="logout()" class="btn bg-orange-500 text-white w-full py-2">
+                <i class="fas fa-sign-out-alt"></i> Logout
+            </button>
         </div>
 
         <!-- Barcode/Label Generator -->

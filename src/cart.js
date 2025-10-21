@@ -307,6 +307,7 @@ export async function completeTransaction() {
              return sum + (discountAmount * item.quantity);
         }, 0);
 
+        const currentUser = window.app.currentUser;
         const transaction = {
             items: window.app.cart.items.map(item => ({
                 id: item.id,
@@ -322,6 +323,8 @@ export async function completeTransaction() {
             total: total,
             cashPaid: cashPaid,
             change: change,
+            userId: currentUser ? currentUser.id : null,
+            userName: currentUser ? currentUser.name : 'N/A',
             date: new Date().toISOString()
         };
 
