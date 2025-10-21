@@ -58,6 +58,7 @@ const functions = {
     showPage: ui.showPage,
     handleNavClick: ui.handleNavClick,
     loadDashboard: ui.loadDashboard,
+    closeConfirmationModal: ui.closeConfirmationModal,
     // product.js
     loadProductsList: product.loadProductsList,
     showAddProductModal: product.showAddProductModal,
