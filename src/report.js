@@ -1,3 +1,5 @@
+
+
 import { getAllFromDB, getFromDB, putToDB } from './db.js';
 import { showToast, showConfirmationModal } from './ui.js';
 import { queueSyncAction } from './sync.js';
@@ -7,38 +9,58 @@ import { formatCurrency } from './ui.js';
 export async function generateReport() {
     const dateFrom = (document.getElementById('dateFrom')).value;
     const dateTo = (document.getElementById('dateTo')).value;
+    const generateBtn = document.querySelector('#laporan button[onclick="generateReport()"]');
+    const originalBtnContent = generateBtn.innerHTML;
     
     if (!dateFrom || !dateTo) {
         showToast('Silakan pilih rentang tanggal.');
         return;
     }
     
-    const transactions = await getAllFromDB('transactions');
-    const products = await getAllFromDB('products');
-    
-    const filteredTransactions = transactions.filter(t => {
-        const date = t.date.split('T')[0];
-        return date >= dateFrom && date <= dateTo;
-    });
-    
-    window.app.currentReportData = filteredTransactions;
+    // Show loading state
+    generateBtn.disabled = true;
+    generateBtn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>Memuat Laporan...`;
 
-    if (filteredTransactions.length === 0) {
-        showToast('Tidak ada transaksi ditemukan pada rentang tanggal tersebut.');
-        document.getElementById('reportSummary').style.display = 'none';
-        document.getElementById('reportDetails').style.display = 'none';
-        document.getElementById('topSellingProductsCard').style.display = 'none';
-        return;
+    try {
+        // Optimization: Use IndexedDB range query to fetch only transactions within the date range.
+        // This is much faster than loading all transactions into memory and then filtering.
+        const startDate = new Date(dateFrom + 'T00:00:00').toISOString();
+        const endDate = new Date(dateTo + 'T23:59:59.999').toISOString();
+        const range = IDBKeyRange.bound(startDate, endDate);
+
+        // Fetch filtered transactions and all products concurrently
+        const [filteredTransactions, products] = await Promise.all([
+            getAllFromDB('transactions', 'date', range),
+            getAllFromDB('products')
+        ]);
+        
+        window.app.currentReportData = filteredTransactions;
+
+        if (filteredTransactions.length === 0) {
+            showToast('Tidak ada transaksi ditemukan pada rentang tanggal tersebut.');
+            document.getElementById('reportSummary').style.display = 'none';
+            document.getElementById('reportDetails').style.display = 'none';
+            document.getElementById('topSellingProductsCard').style.display = 'none';
+            return;
+        }
+
+        displayReportSummary(filteredTransactions, products);
+        displayReportDetails(filteredTransactions);
+        displayTopSellingProducts(filteredTransactions);
+
+        document.getElementById('reportSummary').style.display = 'block';
+        document.getElementById('reportDetails').style.display = 'block';
+        document.getElementById('topSellingProductsCard').style.display = 'block';
+    } catch (error) {
+        console.error("Failed to generate report:", error);
+        showToast('Gagal membuat laporan. Coba lagi.');
+    } finally {
+        // Restore button state
+        generateBtn.disabled = false;
+        generateBtn.innerHTML = originalBtnContent;
     }
-
-    displayReportSummary(filteredTransactions, products);
-    displayReportDetails(filteredTransactions);
-    displayTopSellingProducts(filteredTransactions);
-
-    document.getElementById('reportSummary').style.display = 'block';
-    document.getElementById('reportDetails').style.display = 'block';
-    document.getElementById('topSellingProductsCard').style.display = 'block';
 }
+
 
 function displayReportSummary(transactions, products) {
     const productMap = new Map(products.map(p => [p.id, p]));
@@ -373,7 +395,17 @@ export async function exportReportToCSV() {
         const dateTo = document.getElementById('dateTo').value;
 
         let csvContent = "";
+        
+        const escapeCSV = (val) => {
+            if (val === null || val === undefined) return '';
+            let str = String(val);
+            if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                return `"${str.replace(/"/g, '""')}"`;
+            }
+            return str;
+        };
 
+        // --- SECTION 1: Summary ---
         csvContent += "Ringkasan Laporan\n";
         csvContent += `Periode,"${dateFrom} s/d ${dateTo}"\n`;
         csvContent += "\n";
@@ -383,9 +415,42 @@ export async function exportReportToCSV() {
         csvContent += `(-) Total Biaya Operasional (Pajak/Biaya),${totalOperationalCost}\n`;
         csvContent += `Laba Bersih,${netProfit}\n`;
         csvContent += "\n\n";
+        
+        // --- SECTION 2: Top Selling Products ---
+        const productSales = {};
+        window.app.currentReportData.forEach(t => {
+            t.items.forEach(item => {
+                if (!productSales[item.name]) {
+                    productSales[item.name] = { quantity: 0, revenue: 0 };
+                }
+                productSales[item.name].quantity += item.quantity;
+                productSales[item.name].revenue += item.effectivePrice * item.quantity;
+            });
+        });
 
+        const sortedProducts = Object.entries(productSales)
+            .sort(([, a], [, b]) => b.quantity - a.quantity);
+
+        if (sortedProducts.length > 0) {
+            csvContent += "Produk Terlaris\n";
+            const topProductsHeader = ['Peringkat', 'Nama Produk', 'Jumlah Terjual', 'Total Pendapatan'].join(',');
+            csvContent += topProductsHeader + '\n';
+            sortedProducts.forEach(([name, data], index) => {
+                const row = [
+                    index + 1,
+                    name,
+                    data.quantity,
+                    data.revenue
+                ].map(escapeCSV).join(',');
+                csvContent += row + '\n';
+            });
+        }
+        csvContent += "\n\n";
+
+        // --- SECTION 3: Detailed Transactions ---
+        csvContent += "Detail Transaksi\n";
         const header = [
-            'ID Transaksi', 'Tanggal', 'Nama Produk', 'Kategori', 'Jumlah',
+            'ID Transaksi', 'Tanggal', 'Nama Kasir', 'Nama Produk', 'Kategori', 'Jumlah',
             'Harga Jual (Satuan)', 'Total Omzet Item', 'Harga Beli (Satuan)',
             'Total HPP Item', 'Laba Item'
         ].join(',');
@@ -393,6 +458,7 @@ export async function exportReportToCSV() {
 
         window.app.currentReportData.forEach(t => {
             const transactionDate = new Date(t.date).toLocaleString('id-ID');
+            const cashierName = t.userName || 'N/A';
             t.items.forEach(item => {
                 const product = productMap.get(item.id);
                 const category = product ? product.category : 'N/A';
@@ -402,18 +468,10 @@ export async function exportReportToCSV() {
                 const totalHppItem = purchasePrice * item.quantity;
                 const labaItem = totalOmzetItem - totalHppItem;
 
-                const escapeCSV = (val) => {
-                    if (val === null || val === undefined) return '';
-                    let str = String(val);
-                    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-                        return `"${str.replace(/"/g, '""')}"`;
-                    }
-                    return str;
-                };
-
                 const row = [
                     t.id,
                     transactionDate,
+                    cashierName,
                     item.name,
                     category,
                     item.quantity,
@@ -428,7 +486,7 @@ export async function exportReportToCSV() {
             });
         });
         
-        const fileName = `laporan_penjualan_rinci_${dateFrom}_sd_${dateTo}.csv`;
+        const fileName = `laporan_penjualan_${dateFrom}_sd_${dateTo}.csv`;
 
         if (window.AndroidDownloader) {
             window.AndroidDownloader.downloadFile(csvContent, fileName, 'text/csv');
