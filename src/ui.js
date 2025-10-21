@@ -7,6 +7,7 @@ import { getAllFromDB, getSettingFromDB } from './db.js';
 import { displaySalesReport } from './report.js';
 
 let isNavigating = false;
+let pageZIndex = 10; // Start with a base z-index for pages
 
 export function formatCurrency(amount) {
     return Math.round(amount).toLocaleString('id-ID');
@@ -222,7 +223,7 @@ export async function showPage(pageName, options = { force: false, initialTab: n
     if (window.app.currentPage === pageName || isNavigating) return;
     isNavigating = true;
 
-    const transitionDuration = 300;
+    const transitionDuration = 350; // Match CSS
 
     const oldPage = document.querySelector('.page.active');
     const newPage = document.getElementById(pageName);
@@ -237,6 +238,8 @@ export async function showPage(pageName, options = { force: false, initialTab: n
     const navItem = document.querySelector(`.nav-item[data-page="${pageName}"]`);
     if (navItem) navItem.classList.add('active');
 
+    // Prepare new page for transition
+    newPage.style.zIndex = `${++pageZIndex}`;
     newPage.classList.add('page-enter');
     newPage.style.display = 'block';
 
@@ -263,6 +266,7 @@ export async function showPage(pageName, options = { force: false, initialTab: n
         window.loadFees();
     }
 
+    // Trigger transition
     requestAnimationFrame(() => {
         newPage.classList.remove('page-enter');
         newPage.classList.add('active');

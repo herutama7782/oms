@@ -249,21 +249,24 @@ body {
     left: 0;
     width: 100%;
     background-color: #f5f5f5; /* Match body background to prevent seeing through */
-    transition: transform 300ms ease-in-out, opacity 300ms ease-in-out;
+    /* Refined transition for a smoother feel */
+    transition: transform 350ms cubic-bezier(0.4, 0, 0.2, 1), opacity 300ms ease-out;
+    will-change: transform, opacity;
 }
 
 .page.active {
     display: block;
 }
 
-/* New animation classes */
-.page-exit {
-  transform: translateX(-20px);
+/* Refined animation: page slides up and fades in */
+.page-enter {
+  transform: translateY(20px);
   opacity: 0;
 }
 
-.page-enter {
-  transform: translateX(20px);
+/* Refined animation: old page scales down and fades out */
+.page-exit {
+  transform: scale(0.97);
   opacity: 0;
 }
 
