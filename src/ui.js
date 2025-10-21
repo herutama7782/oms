@@ -302,6 +302,14 @@ export async function showPage(pageName, options = { force: false, initialTab: n
         loadProductsGrid();
         await reconcileCartFees();
         updateCartFabBadge();
+        const cashierLogoutBtn = document.getElementById('cashierLogoutBtn');
+        if (cashierLogoutBtn) {
+            if (window.app.currentUser && window.app.currentUser.role === 'cashier') {
+                cashierLogoutBtn.classList.remove('hidden');
+            } else {
+                cashierLogoutBtn.classList.add('hidden');
+            }
+        }
     } else if (pageName === 'produk') {
         loadProductsList();
     } else if (pageName === 'kontak') {
