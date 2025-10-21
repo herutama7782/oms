@@ -2,6 +2,7 @@ import { putSettingToDB, getSettingFromDB, getAllFromDB, putToDB, clearAllStores
 import { showToast, showConfirmationModal, loadDashboard, showPage, updateUiForRole } from './ui.js';
 import { queueSyncAction } from './sync.js';
 import { formatCurrency } from './ui.js';
+import { loadProductsList, loadProductsGrid } from './product.js';
 
 // --- SETTINGS ---
 export async function saveStoreSettings() {
@@ -192,6 +193,137 @@ export function clearAllData() {
     );
 }
 
+export function showImportProductsModal() {
+    document.getElementById('importProductsModal').classList.remove('hidden');
+}
+
+export function closeImportProductsModal() {
+    const modal = document.getElementById('importProductsModal');
+    if (modal) modal.classList.add('hidden');
+    const fileInput = document.getElementById('importProductsFile');
+    if (fileInput) fileInput.value = '';
+}
+
+export async function handleProductImport(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const csvText = e.target.result;
+            const rows = csvText.split(/\r?\n/).filter(row => row.trim() !== '');
+            if (rows.length < 2) {
+                showToast('File CSV kosong atau hanya berisi header.');
+                return;
+            }
+
+            const header = rows.shift().split(',').map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
+            const requiredHeaders = ['nama', 'harga_jual'];
+            if (!requiredHeaders.every(h => header.includes(h))) {
+                showToast(`Header CSV tidak valid. Wajib ada: ${requiredHeaders.join(', ')}`);
+                return;
+            }
+
+            showToast('Memulai proses import...', 4000);
+            closeImportProductsModal();
+
+            const existingProducts = await getAllFromDB('products');
+            const productNameMap = new Map(existingProducts.map(p => [p.name.toLowerCase(), p]));
+            const productBarcodeMap = new Map(existingProducts.filter(p => p.barcode).map(p => [p.barcode, p]));
+            
+            const existingCategories = await getAllFromDB('categories');
+            const categoryNameMap = new Map(existingCategories.map(c => [c.name.toLowerCase(), c]));
+            const newCategories = new Map();
+
+            let addedCount = 0;
+            let updatedCount = 0;
+            let errorCount = 0;
+            
+            const transaction = window.app.db.transaction(['products', 'categories'], 'readwrite');
+            const productStore = transaction.objectStore('products');
+            const categoryStore = transaction.objectStore('categories');
+
+            for (const row of rows) {
+                const values = row.split(',');
+                const rowData = header.reduce((obj, col, index) => {
+                    obj[col] = values[index] ? values[index].trim() : '';
+                    return obj;
+                }, {});
+
+                // Validation
+                if (!rowData.nama || isNaN(parseFloat(rowData.harga_jual))) {
+                    errorCount++;
+                    continue;
+                }
+                
+                const name = rowData.nama;
+                const barcode = rowData.barcode || null;
+                
+                let existingProduct = null;
+                if (barcode && productBarcodeMap.has(barcode)) {
+                    existingProduct = productBarcodeMap.get(barcode);
+                } else if (productNameMap.has(name.toLowerCase())) {
+                    existingProduct = productNameMap.get(name.toLowerCase());
+                }
+
+                const product = existingProduct || {
+                    createdAt: new Date().toISOString()
+                };
+
+                product.name = name;
+                product.price = parseFloat(rowData.harga_jual);
+                product.purchasePrice = parseFloat(rowData.harga_beli) || product.purchasePrice || 0;
+                product.stock = parseInt(rowData.stok) >= 0 ? parseInt(rowData.stok) : (product.stock || 0);
+                product.barcode = barcode;
+                product.category = rowData.kategori || product.category || 'Lainnya';
+                product.discountPercentage = parseFloat(rowData.diskon_persen) || product.discountPercentage || 0;
+                product.updatedAt = new Date().toISOString();
+                
+                // Handle new category
+                const categoryName = product.category;
+                if (categoryName && !categoryNameMap.has(categoryName.toLowerCase()) && !newCategories.has(categoryName.toLowerCase())) {
+                    const newCategory = { name: categoryName, createdAt: new Date().toISOString() };
+                    newCategories.set(categoryName.toLowerCase(), newCategory);
+                    categoryStore.add(newCategory);
+                }
+                
+                productStore.put(product);
+                
+                if (existingProduct) {
+                    updatedCount++;
+                } else {
+                    addedCount++;
+                }
+            }
+
+            transaction.oncomplete = () => {
+                let summary = `Import selesai.`;
+                if (addedCount > 0) summary += ` ${addedCount} produk ditambah.`;
+                if (updatedCount > 0) summary += ` ${updatedCount} produk diperbarui.`;
+                if (errorCount > 0) summary += ` ${errorCount} baris gagal.`;
+                showToast(summary, 5000);
+                
+                // Refresh UI
+                if(window.app.currentPage === 'produk') loadProductsList();
+                loadProductsGrid();
+                if(window.app.currentPage === 'dashboard') loadDashboard();
+            };
+            
+            transaction.onerror = (event) => {
+                console.error("Import transaction error:", event.target.error);
+                showToast('Terjadi kesalahan saat menyimpan data.');
+            }
+
+        } catch (error) {
+            console.error('Import failed:', error);
+            showToast('Gagal memproses file. Pastikan formatnya benar.');
+        } finally {
+            event.target.value = ''; // Reset file input
+        }
+    };
+    reader.readAsText(file);
+}
 
 // --- TAXES & FEES ---
 export async function addFee() {

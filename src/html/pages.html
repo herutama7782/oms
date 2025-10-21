@@ -530,11 +530,14 @@
                 <button onclick="syncWithServer(true)" class="btn bg-blue-600 text-white w-full py-2">
                     <i class="fas fa-cloud-upload-alt"></i> Sinkronkan
                 </button>
+                <button onclick="showImportProductsModal()" class="btn bg-cyan-500 text-white w-full py-2">
+                    <i class="fas fa-file-csv"></i> Import Produk (CSV)
+                </button>
                 <button onclick="exportData()" class="btn bg-green-500 text-white w-full py-2">
-                    <i class="fas fa-download"></i> Export Data
+                    <i class="fas fa-download"></i> Export Backup Data
                 </button>
                 <button onclick="importData()" class="btn bg-purple-500 text-white w-full py-2">
-                    <i class="fas fa-upload"></i> Import Data
+                    <i class="fas fa-upload"></i> Import Backup Data (JSON)
                 </button>
                 <input type="file" id="importFile" style="display: none;" accept=".json" onchange="handleImport(event)">
                 <button id="clearDataBtn" onclick="clearAllData()" class="btn bg-red-500 text-white w-full py-2" style="display: none;">

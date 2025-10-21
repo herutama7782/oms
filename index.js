@@ -129,6 +129,9 @@ const functions = {
     exportData: settings.exportData,
     importData: settings.importData,
     handleImport: settings.handleImport,
+    showImportProductsModal: settings.showImportProductsModal,
+    closeImportProductsModal: settings.closeImportProductsModal,
+    handleProductImport: settings.handleProductImport,
     clearAllData: settings.clearAllData,
     // Auth & User Management (from settings.js)
     handleLoginPinKeyPress: settings.handleLoginPinKeyPress,

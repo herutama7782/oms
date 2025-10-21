@@ -504,21 +504,6 @@
                 <button onclick="closePrintHelpModal()" class="text-gray-500 text-2xl">&times;</button>
             </div>
             <div class="space-y-4 text-gray-700 text-sm">
-                <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <h3 class="font-semibold text-md mb-2">Cara Kerja Pencetakan</h3>
-                    <ol class="list-decimal list-inside space-y-2">
-                        <li>
-                            <strong>Aplikasi POS Menyiapkan Data:</strong> Saat Anda menekan tombol "Cetak", kode di dalam aplikasi ini akan mengubah detail transaksi (nama barang, harga, total) menjadi format perintah khusus untuk printer thermal (disebut format ESC/POS).
-                        </li>
-                        <li>
-                            <strong>Data Dikirim ke RawBT:</strong> Data yang sudah diformat ini kemudian "dikirim" ke aplikasi RawBT melalui sebuah URL khusus (<code>rawbt:</code>). Ini mirip seperti saat Anda mengklik link email (<code>mailto:</code>) yang akan membuka aplikasi email Anda.
-                        </li>
-                        <li>
-                            <strong>RawBT Mengambil Alih:</strong> Aplikasi RawBT-lah yang menerima data tersebut, mengelola koneksi Bluetooth dengan printer yang sudah Anda atur sebelumnya, dan mengirimkan perintah cetak.
-                        </li>
-                    </ol>
-                </div>
-
                 <p class="pt-2">Jika hasil cetak struk Anda keluar dalam bentuk teks acak atau tidak tercetak sama sekali, ini biasanya karena masalah konfigurasi pada ponsel Anda, bukan pada aplikasi ini.</p>
                 
                 <div class="p-3 bg-gray-50 border rounded-lg">
@@ -529,24 +514,6 @@
                         <li>Ada aplikasi lain yang mencoba menangani perintah cetak.</li>
                     </ul>
                 </div>
-
-                <div class="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <h3 class="font-semibold text-md mb-2">Solusi & Metode Cetak Alternatif:</h3>
-                    <p class="mb-2">Aplikasi ini menyediakan dua tombol untuk mencetak:</p>
-                    <p><strong>1. Cetak via RawBT (Direkomendasikan):</strong></p>
-                    <ul class="list-disc list-inside ml-4 mb-2">
-                        <li>Metode tercepat dan otomatis menggunakan cara di atas.</li>
-                        <li><strong>Jika gagal</strong>, coba metode kedua di bawah ini.</li>
-                    </ul>
-
-                    <p><strong>2. Share ke Printer (Alternatif Andal):</strong></p>
-                    <ul class="list-disc list-inside ml-4">
-                        <li>Menggunakan menu "Share" bawaan Android.</li>
-                        <li>Setelah menekan tombol ini, akan muncul pilihan aplikasi.</li>
-                        <li>Pilih <strong class="text-blue-600">RawBT</strong> dari daftar untuk mencetak. Metode ini seringkali lebih stabil.</li>
-                    </ul>
-                </div>
-                
                 <a href="https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter" target="_blank" class="btn bg-green-500 text-white w-full py-2 mt-4 block text-center">
                     <i class="fab fa-google-play mr-2"></i>Download RawBT di Play Store
                 </a>
@@ -639,6 +606,45 @@
              <div class="flex gap-3 mt-6">
                 <button onclick="closeUserFormModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">Batal</button>
                 <button onclick="saveUser()" class="btn bg-blue-500 text-white flex-1 py-2">Simpan</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Import Products Modal -->
+<div id="importProductsModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-[1600]">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <h2 class="text-xl font-bold mb-4">Import Produk dari CSV</h2>
+            <p class="text-sm text-gray-600 mb-4">Unggah file CSV untuk menambah atau memperbarui produk secara massal. Jika produk dengan `nama` atau `barcode` yang sama sudah ada, datanya akan diperbarui.</p>
+            
+            <div class="p-3 bg-gray-50 border rounded-lg text-sm text-gray-700 mb-4">
+                <h3 class="font-semibold mb-2">Struktur Kolom yang Diperlukan:</h3>
+                <code class="block bg-gray-200 p-2 rounded text-xs overflow-x-auto">nama,kategori,harga_beli,harga_jual,stok,barcode,diskon_persen</code>
+                <ul class="list-disc list-inside mt-2 space-y-1 text-xs">
+                    <li><span class="font-semibold">nama</span>: (Wajib) Nama Produk</li>
+                    <li><span class="font-semibold">kategori</span>: (Opsional) Kategori Produk</li>
+                    <li><span class="font-semibold">harga_beli</span>: (Opsional) Harga Beli, default 0</li>
+                    <li><span class="font-semibold">harga_jual</span>: (Wajib) Harga Jual</li>
+                    <li><span class="font-semibold">stok</span>: (Opsional) Jumlah Stok, default 0</li>
+                    <li><span class="font-semibold">barcode</span>: (Opsional) Kode unik produk</li>
+                    <li><span class="font-semibold">diskon_persen</span>: (Opsional) Diskon (0-100), default 0</li>
+                </ul>
+            </div>
+            
+            <a href="data:text/csv;charset=utf-8,nama,kategori,harga_beli,harga_jual,stok,barcode,diskon_persen%0AKopi Susu,Minuman,5000,18000,50,KS001,10%0ARoti Coklat,Makanan,3000,7000,100,RC002,0" download="template_produk.csv" class="btn bg-green-500 text-white w-full py-2 mb-2 block text-center">
+                <i class="fas fa-download mr-2"></i>Unduh Template
+            </a>
+            
+            <button onclick="document.getElementById('importProductsFile').click()" class="btn bg-blue-500 text-white w-full py-2">
+                <i class="fas fa-upload mr-2"></i>Pilih File CSV
+            </button>
+            <input type="file" id="importProductsFile" style="display: none;" accept=".csv,text/csv" onchange="handleProductImport(event)">
+
+            <div class="flex mt-6">
+                 <button onclick="closeImportProductsModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">
+                    Tutup
+                </button>
             </div>
         </div>
     </div>
