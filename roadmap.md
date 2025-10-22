@@ -55,9 +55,9 @@ This document outlines the planned features and improvements for the POS Mobile 
 - **[x] Full Cloud Sync & Multi-Device Support:**
     - [x] Real-time synchronization of all data (products, sales, customers) across multiple devices.
     - [x] A web-based dashboard for store owners to manage their business from a desktop computer.
-- **[ ] E-commerce Integration:**
-    - [x]] Sync product inventory with popular e-commerce platforms (e.g., Shopify, WooCommerce).
-    - [ ] Manage online and offline sales from one place.
+- **[x] E-commerce Integration:**
+    - [x] Sync product inventory with popular e-commerce platforms (e.g., Shopify, WooCommerce).
+    - [x] Manage online and offline sales from one place.
 - **[x] Gemini API-Powered Features:** (Penerapannya harus di backend, sulit ribet jadi tidak perlu)
     - **[x] AI-Powered Product Descriptions:** Automatically generate compelling product descriptions from a product name and a few keywords.
     - **[x] Smart Sales Insights:** Use AI to analyze sales data and provide actionable insights, such as "You sold 50% more coffee on rainy days this month. Consider a rainy day promotion."
