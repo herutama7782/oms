@@ -910,7 +910,8 @@ export function setupBarcodeGenerator() {
 
     downloadPngBtn.addEventListener('click', async () => {
         try {
-            const { default: html2canvas } = await import('https://cdn.skypack.dev/html2canvas');
+            // Import html2canvas dengan URL yang benar
+            const { default: html2canvas } = await import('https://cdn.skypack.dev/html2canvas@1.4.1');
             const labelContent = document.getElementById('labelContent');
             const canvas = await html2canvas(labelContent, {
                 scale: 3,
@@ -932,11 +933,93 @@ export function setupBarcodeGenerator() {
             return;
         }
         try {
-            const data = await generateLabelEscPos();
-            sendToRawBT(data);
+            // Gunakan html2canvas untuk mengambil gambar dari elemen HTML
+            const { default: html2canvas } = await import('https://cdn.skypack.dev/html2canvas@1.4.1');
+            const labelContent = document.getElementById('labelContent');
+            const canvas = await html2canvas(labelContent, {
+                scale: 3,
+                backgroundColor: '#ffffff'
+            });
+
+            // Konversi canvas ke data URL (PNG)
+            const imageDataUrl = canvas.toDataURL('image/png');
+
+            // Buat objek blob dari data URL
+            const response = await fetch(imageDataUrl);
+            const blob = await response.blob();
+
+            // Ubah blob menjadi array buffer
+            const arrayBuffer = await blob.arrayBuffer();
+
+            // Konversi array buffer ke array byte
+            const imageBytes = new Uint8Array(arrayBuffer);
+
+            // Generate perintah ESC/POS untuk mencetak gambar
+            const escPosCommands = generateEscPosImageCommand(imageBytes, canvas.width, canvas.height);
+
+            // Kirim perintah ke printer
+            sendToRawBT(escPosCommands);
+
         } catch (e) {
             console.error('Print label failed:', e);
             showToast('Gagal mencetak label.');
         }
     });
+}
+
+// Fungsi tambahan: Generate perintah ESC/POS untuk mencetak gambar
+function generateEscPosImageCommand(imageData, width, height) {
+    // Pastikan lebar gambar kelipatan 8 (untuk kompatibilitas ESC/POS)
+    const paddedWidth = Math.ceil(width / 8) * 8;
+    const padding = paddedWidth - width;
+
+    let commands = [];
+
+    // Inisialisasi printer
+    commands.push(0x1B, 0x40); // ESC @
+
+    // Set mode cetak grafis
+    commands.push(0x1B, 0x2A, 0x00); // ESC * 0 (select bit image mode)
+
+    // Hitung jumlah baris (height)
+    for (let y = 0; y < height; y++) {
+        // Tentukan posisi X (selalu 0 karena kita cetak dari kiri)
+        commands.push(0x00, 0x00); // X position low, high
+
+        // Tentukan lebar gambar dalam byte (paddedWidth / 8)
+        const bytesPerLine = paddedWidth / 8;
+        commands.push(bytesPerLine & 0xFF, (bytesPerLine >> 8) & 0xFF);
+
+        // Tambahkan data gambar per baris
+        for (let x = 0; x < width; x += 8) {
+            let byte = 0;
+            for (let bit = 0; bit < 8; bit++) {
+                if (x + bit >= width) {
+                    byte |= (1 << (7 - bit)); // Isi dengan putih jika diluar batas
+                } else {
+                    // Ambil pixel dari gambar (sederhana: hitam=0, putih=1)
+                    const pixelIndex = ((y * width + x + bit) * 4) + 3; // Alpha channel
+                    const alpha = imageData[pixelIndex];
+                    // Jika alpha > 128, anggap hitam (0), jika tidak, putih (1)
+                    if (alpha > 128) {
+                        byte |= (1 << (7 - bit));
+                    }
+                }
+            }
+            commands.push(byte);
+        }
+
+        // Tambahkan padding jika perlu
+        for (let i = 0; i < padding / 8; i++) {
+            commands.push(0xFF); // Putih
+        }
+
+        // Tambahkan feed baris
+        commands.push(0x0A); // LF
+    }
+
+    // Cut paper (opsional)
+    commands.push(0x1D, 0x56, 0x41, 0x00); // GS V A 0
+
+    return new Uint8Array(commands);
 }
