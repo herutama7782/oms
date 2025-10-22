@@ -915,9 +915,11 @@ export function setupBarcodeGenerator() {
             JsBarcode("#barcode", barcodeCode, {
                 format: "CODE128",
                 lineColor: "#000",
-                width: 2,
-                height: 50,
-                displayValue: false
+                width: 1,
+                height: 25,
+                displayValue: false,
+                background: "transparent",
+                margin: 0
             });
             document.getElementById('barcodeLabelOutput').classList.remove('hidden');
             document.getElementById('download-buttons').classList.remove('hidden');
