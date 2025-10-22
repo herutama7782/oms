@@ -887,7 +887,7 @@ export function setupBarcodeGenerator() {
         const outputName = document.getElementById('output-product-name');
         const theOutputPrice = document.getElementById('output-product-price');
         const outputBarcodeText = document.getElementById('output-barcode-text');
-
+        
         outputName.textContent = productName;
         theOutputPrice.textContent = productPrice ? `Rp ${formatCurrency(productPrice)}` : '';
         outputBarcodeText.textContent = barcodeCode;
@@ -908,103 +908,35 @@ export function setupBarcodeGenerator() {
         }
     });
 
-    // DOWNLOAD PNG
     downloadPngBtn.addEventListener('click', async () => {
         try {
-            const { default: html2canvas } = await import('https://cdn.skypack.dev/pin/html2canvas@v1.4.1-ljBVZmM4eKCWXapgePUy/mode=imports,min/optimized/html2canvas.js');
+            const { default: html2canvas } = await import('https://cdn.skypack.dev/html2canvas');
             const labelContent = document.getElementById('labelContent');
             const canvas = await html2canvas(labelContent, {
-                scale: 2,
+                scale: 3,
                 backgroundColor: '#ffffff'
             });
             const link = document.createElement('a');
             link.download = `label-${document.getElementById('barcode-code').value}.png`;
-            link.href = canvas.toDataURL('image/png');
+            link.href = canvas.toDataURL("image/png").replace("image/png", "image/octet-stream");
             link.click();
         } catch (e) {
             console.error('Download PNG failed:', e);
             showToast('Gagal mengunduh PNG. Coba lagi.');
         }
     });
-
-    // CETAK LABEL (via ESC/POS)
+    
     printLabelBtn.addEventListener('click', async () => {
-        if (!window.app?.isPrinterReady) {
+        if (!window.app.isPrinterReady) {
             showToast('Fitur cetak tidak tersedia.');
             return;
         }
         try {
-            const { default: html2canvas } = await import('https://cdn.skypack.dev/pin/html2canvas@v1.4.1-ljBVZmM4eKCWXapgePUy/mode=imports,min/optimized/html2canvas.js');
-            const labelContent = document.getElementById('labelContent');
-            const canvas = await html2canvas(labelContent, {
-                scale: 2,
-                backgroundColor: '#ffffff'
-            });
-
-            const ctx = canvas.getContext('2d');
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const escPosCommands = generateEscPosImageCommand(imageData, canvas.width, canvas.height);
-
-            // Pastikan sendToRawBT menerima Uint8Array
-            sendToRawBT(escPosCommands);
-
+            const data = await generateLabelEscPos();
+            sendToRawBT(data);
         } catch (e) {
             console.error('Print label failed:', e);
             showToast('Gagal mencetak label.');
         }
     });
-}
-
-// === FUNGSI BANTUAN: GENERATE PERINTAH ESC/POS UNTUK GAMBAR ===
-function generateEscPosImageCommand(imageData, width, height) {
-    // Lebar harus kelipatan 8 bit
-    const paddedWidth = Math.ceil(width / 8) * 8;
-    const bytesPerLine = paddedWidth / 8;
-
-    const commands = [];
-
-    // Inisialisasi printer
-    commands.push(0x1B, 0x40); // ESC @
-
-    // Mode gambar: ESC * m xL xH d1...dk
-    // m = 0 → normal density (1 dot/mm)
-    for (let y = 0; y < height; y++) {
-        // Header per baris
-        commands.push(0x1B, 0x2A, 0x00); // ESC * 0
-        commands.push(bytesPerLine & 0xFF, (bytesPerLine >> 8) & 0xFF); // xL, xH
-
-        // Konversi tiap baris ke byte
-        for (let byteIndex = 0; byteIndex < bytesPerLine; byteIndex++) {
-            let byte = 0;
-            for (let bit = 0; bit < 8; bit++) {
-                const x = byteIndex * 8 + bit;
-                if (x >= width) {
-                    // Padding: anggap putih (tidak cetak = 0)
-                    continue;
-                }
-
-                const pixelIndex = (y * width + x) * 4;
-                const r = imageData.data[pixelIndex];
-                const g = imageData.data[pixelIndex + 1];
-                const b = imageData.data[pixelIndex + 2];
-                // const a = imageData.data[pixelIndex + 3]; // tidak digunakan karena bg putih
-
-                const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-
-                // Jika gelap → cetak (bit = 1)
-                if (luminance < 128) {
-                    byte |= (1 << (7 - bit));
-                }
-            }
-            commands.push(byte);
-        }
-
-        // Feed 1 baris
-        commands.push(0x0A); // LF
-    }
-
-    // Potong kertas
-    commands.push(0x1D, 0x56, 0x41, 0x00); // GS V A 0
-
-    return new Uint8Array(commands);
 }
