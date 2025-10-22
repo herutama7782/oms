@@ -678,66 +678,76 @@ async function generateLabelEscPos() {
     if (!window.app.isPrinterReady) {
         throw new Error('Printer library not loaded.');
     }
+    
+    // Dynamically load html2canvas if not already available
+    let h2c = window.html2canvas;
+    if (!h2c) {
+        try {
+            const module = await import('https://cdn.skypack.dev/html2canvas');
+            h2c = module.default;
+            window.html2canvas = h2c; // Cache for future use
+        } catch (e) {
+            console.error('Failed to load html2canvas:', e);
+            throw new Error('Label printing library (html2canvas) failed to load.');
+        }
+    }
 
-    const productName = document.getElementById('product-name').value.trim();
-    const productPrice = document.getElementById('product-price').value.trim();
-    const barcodeCode = document.getElementById('barcode-code').value.trim();
+    const labelContent = document.getElementById('labelContent');
+    if (!labelContent) {
+        throw new Error('Label preview element not found.');
+    }
 
+    // Get printer settings
     const paperSize = await getSettingFromDB('printerPaperSize') || '80mm';
-
-    // --- PERBAIKAN UTAMA: Hitung lebar berdasarkan resolusi printer (dots) ---
     const paperWidthDots = paperSize === '58mm' ? 384 : 576;
 
-    // Estimasi lebar karakter (dalam dots) untuk font default (Font A) dan Font B
-    const charWidthFontA = 12; // ~12 dots per karakter (Font A, normal)
-    const charWidthFontB = 9;  // ~9 dots per karakter (Font B, kecil)
+    // Render the preview div to a canvas
+    const canvas = await h2c(labelContent, {
+        scale: 3, // Use a higher scale for better source quality before resizing
+        backgroundColor: '#ffffff',
+    });
 
-    // Hitung jumlah karakter maksimum yang muat
-    const paperWidthChars = Math.floor(paperWidthDots / charWidthFontA);
-    const paperWidthCharsFontB = Math.floor(paperWidthDots / charWidthFontB);
+    // Process the canvas for printing, similar to the logo logic
+    const ratio = paperWidthDots / canvas.width;
+    const w = paperWidthDots;
+    const h = Math.round(canvas.height * ratio);
 
-    // Tambahkan margin aman agar tidak terpotong
-    const safePaperWidthChars = Math.max(20, paperWidthChars - 2);
-    const safePaperWidthCharsFontB = Math.max(20, paperWidthCharsFontB - 2);
+    const printCanvas = document.createElement('canvas');
+    printCanvas.width = w;
+    printCanvas.height = h;
+    const ctx = printCanvas.getContext('2d', { willReadFrequently: true });
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(canvas, 0, 0, w, h);
+    
+    // Crop, binarize, and convert to raster format using existing helper functions
+    const cropped = cropCanvasTopBottom(printCanvas, 245);
+    const cctx = cropped.getContext('2d', { willReadFrequently: true });
+    const src = cctx.getImageData(0, 0, cropped.width, cropped.height);
+    
+    const thr = 190; // A fixed threshold often works well for crisp text/barcode labels
+    
+    let mask = toMonoMask(src, thr);
+    
+    // Re-using the LOGO_DESPECKLE constant for consistency
+    if (LOGO_DESPECKLE) {
+        mask = despeckleMask(mask, cropped.width, cropped.height);
+    }
+    
+    const { header, payload } = buildRasterGSv0(mask, cropped.width, cropped.height);
 
+    // Create the final ESC/POS commands
     const encoder = new EscPosEncoder.default();
     encoder
         .initialize()
-        .raw([0x1b, 0x40]) // reset printer
-        .raw([0x1b, 0x33, 24]) // line spacing: single (24 dots)
-        .align('center');
-
-    if (productName) {
-        encoder.bold(true);
-        const nameLines = wrapWords(productName, safePaperWidthChars).map(l => l.trim());
-        nameLines.forEach(line => encoder.line(line));
-        encoder.bold(false);
-    }
-
-    if (productPrice) {
-        const formattedPrice = `Rp ${formatCurrency(productPrice)}`;
-        const priceLines = wrapWords(formattedPrice, safePaperWidthChars).map(l => l.trim());
-        priceLines.forEach(line => encoder.line(line));
-    }
-
-    if (barcodeCode) {
-        // Cetak barcode (tanpa teks bawah otomatis)
-        encoder.raw([0x1d, 0x68, 60]); // Tinggi barcode: 60 dots
-        encoder.raw([0x1d, 0x48, 0]);  // Sembunyikan HRI (teks bawah barcode)
-        encoder.raw([0x1d, 0x6b, 0x49]); // Format: CODE128
-        const barcodeLength = barcodeCode.length;
-        encoder.raw([barcodeLength]);
-        encoder.raw(new TextEncoder().encode(barcodeCode));
-
-        // Cetak teks barcode secara manual dengan Font B agar lebih kecil & muat
-        encoder.font('b');
-        const barcodeTextLines = wrapWords(barcodeCode, safePaperWidthCharsFontB).map(l => l.trim());
-        barcodeTextLines.forEach(line => encoder.line(line));
-        encoder.font('a'); // Kembali ke Font A
-    }
-
-    encoder.raw([0x1b, 0x32]); // Reset line spacing ke default
-    encoder.feed(3).cut();
+        .raw([0x1b, 0x40]) // Reset
+        .align('center')
+        .raw(Array.from(header))
+        .raw(Array.from(payload))
+        .feed(3)
+        .cut();
+        
     return encoder.encode();
 }
 
