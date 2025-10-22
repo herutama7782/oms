@@ -1,11 +1,10 @@
-const CACHE_NAME = 'pos-mobile-cache-v3'; // Bump version to force update
+const CACHE_NAME = 'pos-mobile-cache-v2'; // Bump version to force update
 const APP_SHELL_URLS = [
   '/',
   '/index.html',
   '/index.css',
   '/index.js',
   '/manifest.json',
-  '/src/ai.js',
   '/src/audio.js',
   '/src/cart.js',
   '/src/contact.js',

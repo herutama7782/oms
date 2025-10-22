@@ -1,3 +1,5 @@
+
+
 import { getSettingFromDB, getAllFromDB } from "./db.js";
 import { showToast, showConfirmationModal, formatCurrency, formatReceiptDate } from "./ui.js";
 import { addToCart } from "./cart.js";
@@ -681,35 +683,55 @@ async function generateLabelEscPos() {
     const productPrice = document.getElementById('product-price').value.trim();
     const barcodeCode = document.getElementById('barcode-code').value.trim();
 
-    await getSettingFromDB('printerPaperSize'); // kept for parity
+    const paperSize = await getSettingFromDB('printerPaperSize') || '80mm';
+    const paperWidthChars = paperSize === '58mm' ? 32 : 42;
+    // Font B is smaller and fits more characters.
+    const paperWidthCharsFontB = paperSize === '58mm' ? 42 : 56;
 
     const encoder = new EscPosEncoder.default();
     encoder
         .initialize()
-        .raw([0x1b, 0x40]);
+        .raw([0x1b, 0x40]) // reset
+        .raw([0x1b, 0x33, 24]); // Set line spacing to single spacing (24 dots)
 
     encoder.align('center');
 
     if (productName) {
-        encoder.bold(true).line(productName).bold(false);
+        // Match preview: font-bold text-xl -> Double Height + Bold
+        encoder.size(1, 2).bold(true);
+        const wrappedName = wrapWords(productName, paperWidthChars);
+        wrappedName.forEach(line => encoder.line(line));
+        encoder.size(1, 1).bold(false);
     }
 
     if (productPrice) {
+        // Match preview: font-semibold text-xl -> Double Height
         const formattedPrice = `Rp ${formatCurrency(productPrice)}`;
-        encoder.line(formattedPrice);
+        encoder.size(1, 2);
+        const wrappedPrice = wrapWords(formattedPrice, paperWidthChars);
+        wrappedPrice.forEach(line => encoder.line(line));
+        encoder.size(1, 1);
     }
 
-    encoder.line('');
-
     if (barcodeCode) {
-        // CODE128 (function 73) - raw konten
-        encoder.raw([0x1d, 0x6b, 0x49]);
+        // Set barcode height & disable HRI text (we print it manually)
+        encoder.raw([0x1d, 0x68, 60]); // GS h n (Set Barcode Height to 60 dots)
+        encoder.raw([0x1d, 0x48, 0]); // GS H n (Select HRI print position to None)
+
+        // Print barcode (CODE128)
+        encoder.raw([0x1d, 0x6b, 0x49]); // GS k m (CODE128)
         const barcodeLength = barcodeCode.length;
         encoder.raw([barcodeLength]);
         encoder.raw(new TextEncoder().encode(barcodeCode));
-        encoder.align('center').line(barcodeCode);
-    }
 
+        // Manually print barcode text below, matching font-mono text-sm -> Font B
+        encoder.font('b');
+        const wrappedBarcodeText = wrapWords(barcodeCode, paperWidthCharsFontB);
+        wrappedBarcodeText.forEach(line => encoder.line(line));
+        encoder.font('a'); // Reset to default font
+    }
+    
+    encoder.raw([0x1b, 0x32]); // Revert to default line spacing
     encoder.feed(3).cut();
     return encoder.encode();
 }

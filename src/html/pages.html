@@ -109,23 +109,6 @@
                 <canvas id="salesChart"></canvas>
             </div>
         </div>
-
-        <!-- AI Smart Insights -->
-        <div id="aiInsightCard" class="card p-4 mb-6">
-            <div class="flex justify-between items-center mb-3">
-                <h2 class="text-lg font-semibold flex items-center gap-2">
-                    <i class="fas fa-lightbulb text-yellow-500"></i>
-                    AI Smart Insight
-                </h2>
-                <span class="text-xs font-bold text-purple-600 bg-purple-100 px-2 py-1 rounded-full">DeepSeek</span>
-            </div>
-            <div id="aiInsightContent" class="min-h-[40px] flex items-center justify-center p-2 bg-gray-50 rounded-lg">
-                 <p class="text-sm text-gray-500 text-center">Dapatkan analisis penjualan cerdas dari AI.</p>
-            </div>
-            <button id="getInsightBtn" onclick="getSalesInsight()" class="btn bg-purple-500 text-white w-full mt-3 py-2">
-                <i class="fas fa-wand-magic-sparkles mr-2"></i>Dapatkan Insight Penjualan
-            </button>
-        </div>
         
         <!-- Receivables and Debts Summary -->
         <div class="grid grid-cols-2 gap-4">
@@ -544,31 +527,20 @@
         <div id="dataManagementCard" class="card p-4 mb-4" style="display: none;">
             <h2 class="text-lg font-semibold mb-3">Manajemen Data</h2>
             <div class="space-y-2">
-                <button onclick="syncWithServer(true)" class="btn bg-blue-600 text-white w-full py-2">
-                    <i class="fas fa-cloud-upload-alt"></i> Sinkronkan
-                </button>
                 <button onclick="showImportProductsModal()" class="btn bg-cyan-500 text-white w-full py-2">
-                    <i class="fas fa-file-csv"></i> Import Produk (CSV)
+                    <i class="fas fa-file-csv"></i> Import Produk (.CSV)
                 </button>
                 <button onclick="exportData()" class="btn bg-green-500 text-white w-full py-2">
-                    <i class="fas fa-download"></i> Export Backup Data
+                    <i class="fas fa-download"></i> Export Backup Data (.JSON)
                 </button>
                 <button onclick="importData()" class="btn bg-purple-500 text-white w-full py-2">
-                    <i class="fas fa-upload"></i> Import Backup Data (JSON)
+                    <i class="fas fa-upload"></i> Import Backup Data (.JSON)
                 </button>
                 <input type="file" id="importFile" style="display: none;" accept=".json" onchange="handleImport(event)">
                 <button id="clearDataBtn" onclick="clearAllData()" class="btn bg-red-500 text-white w-full py-2" style="display: none;">
                     <i class="fas fa-trash"></i> Hapus Semua Data
                 </button>
             </div>
-        </div>
-
-        <!-- Session Management -->
-        <div id="sessionManagementCard" class="card p-4 mb-4" style="display: none;">
-            <h2 class="text-lg font-semibold mb-3">Sesi</h2>
-             <button onclick="logout()" class="btn bg-orange-500 text-white w-full py-2">
-                <i class="fas fa-sign-out-alt"></i> Logout
-            </button>
         </div>
 
         <!-- Barcode/Label Generator -->
@@ -592,13 +564,16 @@
                 </button>
                
                 <div id="barcodeLabelOutput" class="hidden text-center p-4 border rounded-lg bg-white">
-                    <div id="labelContent" class="p-2">
-                        <p id="output-product-name" class="font-bold text-md truncate"></p>
-                        <p id="output-product-price" class="font-semibold text-md"></p>
-                        <div class="flex justify-center items-center my-1">
-                           <svg id="barcode"></svg>
+                    <div id="labelContent" class="p-2 bg-white">
+                        <!-- Explicit styling for better PNG/Print consistency -->
+                        <div class="flex flex-col items-center justify-center">
+                            <p id="output-product-name" class="font-bold text-xl break-words max-w-full mb-0 leading-tight"></p>
+                            <p id="output-product-price" class="font-semibold text-xl break-words max-w-full mb-1 leading-tight"></p>
+                            <div class="my-1">
+                               <svg id="barcode"></svg>
+                            </div>
+                            <p id="output-barcode-text" class="font-mono text-sm break-words max-w-full mt-0 leading-tight"></p>
                         </div>
-                         <p id="output-barcode-text" class="font-mono text-xs"></p>
                     </div>
                 </div>
         
@@ -618,6 +593,14 @@
             <h2 class="text-lg font-semibold mb-3">Tentang</h2>
             <p class="text-sm text-gray-600 mb-2">POS Mobile v1.3</p>
             <p class="text-sm text-gray-600">Sistem Point of Sale sederhana untuk usaha kecil dan menengah.</p>
+        </div>
+        
+        <!-- Session Management -->
+        <div id="sessionManagementCard" class="card p-4 mb-4" style="display: none;">
+            <h2 class="text-lg font-semibold mb-3">Sesi</h2>
+             <button onclick="logout()" class="btn bg-orange-500 text-white w-full py-2">
+                <i class="fas fa-sign-out-alt"></i> Logout
+            </button>
         </div>
     </div>
 </div>

@@ -1,5 +1,5 @@
 {
-  "name": "(OK) POS Mobile RawBT + QWEN",
+  "name": "(OK) POS Mobile RawBT + Label Barcode",
   "description": "",
   "requestFramePermissions": [
     "camera",

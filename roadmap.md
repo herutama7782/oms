@@ -35,7 +35,7 @@ This document outlines the planned features and improvements for the POS Mobile 
 
 - **[ ] Expanded Hardware Support:**
     - [x] Direct integration with common Bluetooth receipt printers (bypassing RawBT for a more seamless experience where possible).
-    - [ ] Support for external USB barcode scanners.
+    - [ ] Support for external USB barcode scanners. (Optional di usahakan)
     - **[V] Integration with electronic cash drawers:**
         - [V] Automatically send a pulse to open the cash drawer after a successful receipt print.
 - **[x] Advanced Reporting & Analytics:**
@@ -52,21 +52,17 @@ This document outlines the planned features and improvements for the POS Mobile 
 
 ### 2025: Cloud & AI Integration
 
-- **[ ] Full Cloud Sync & Multi-Device Support:**
-    - [ ] Real-time synchronization of all data (products, sales, customers) across multiple devices.
-    - [ ] A web-based dashboard for store owners to manage their business from a desktop computer.
+- **[x] Full Cloud Sync & Multi-Device Support:**
+    - [x] Real-time synchronization of all data (products, sales, customers) across multiple devices.
+    - [x] A web-based dashboard for store owners to manage their business from a desktop computer.
 - **[ ] E-commerce Integration:**
-    - [ ] Sync product inventory with popular e-commerce platforms (e.g., Shopify, WooCommerce).
+    - [x]] Sync product inventory with popular e-commerce platforms (e.g., Shopify, WooCommerce).
     - [ ] Manage online and offline sales from one place.
-- **[ ] Gemini API-Powered Features:**
-    - **[ ] AI-Powered Product Descriptions:** Automatically generate compelling product descriptions from a product name and a few keywords.
-    - **[ ] Smart Sales Insights:** Use AI to analyze sales data and provide actionable insights, such as "You sold 50% more coffee on rainy days this month. Consider a rainy day promotion."
-    - **[ ] Conversational Support:** Implement a simple AI chat assistant to help users with common questions about using the app.
-    - **[ ] Stock Forecasting:** Predict future stock needs based on historical sales data, seasonality, and trends to prevent stockouts.
-- **[ ] Qwen API-Powered Features (Alternative):**
-    - **[V] Smart Sales Insights:** Use AI to analyze sales data and provide actionable insights, such as "You sold 50% more coffee on rainy days this month. Consider a rainy day promotion."
-    - **[ ] Conversational Support:** Implement a simple AI chat assistant to help users with common questions about using the app.
-    - **[ ] Stock Forecasting:** Predict future stock needs based on historical sales data, seasonality, and trends to prevent stockouts.
+- **[x] Gemini API-Powered Features:** (Penerapannya harus di backend, sulit ribet jadi tidak perlu)
+    - **[x] AI-Powered Product Descriptions:** Automatically generate compelling product descriptions from a product name and a few keywords.
+    - **[x] Smart Sales Insights:** Use AI to analyze sales data and provide actionable insights, such as "You sold 50% more coffee on rainy days this month. Consider a rainy day promotion."
+    - **[x] Conversational Support:** Implement a simple AI chat assistant to help users with common questions about using the app.
+    - **[x] Stock Forecasting:** Predict future stock needs based on historical sales data, seasonality, and trends to prevent stockouts.
 
 ---
 
