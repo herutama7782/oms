@@ -689,48 +689,46 @@ async function generateLabelEscPos() {
     const paperWidthChars = paperSize === '58mm' ? 32 : 42;
     // Character width for smaller Font B
     const paperWidthCharsFontB = paperSize === '58mm' ? 42 : 56;
+    // Character width when using double-width font
+    const widePaperWidthChars = Math.floor(paperWidthChars / 2);
 
     const encoder = new EscPosEncoder.default();
     encoder
         .initialize()
         .raw([0x1b, 0x40]) // reset
-        .raw([0x1b, 0x33, 24]); // Set line spacing to single spacing (24 dots)
-
-    // Use manual centering (padding) for text for better compatibility
-    encoder.align('left'); 
+        .raw([0x1b, 0x33, 24]) // Set line spacing to single spacing (24 dots)
+        .align('center'); // Center all content from here
 
     if (productName) {
-        // Match preview: text-2xl font-bold -> Double Height + Bold
-        encoder.size(1, 2).bold(true);
-        const centeredNameLines = wrapAndCenter(productName, paperWidthChars);
-        centeredNameLines.forEach(line => encoder.line(line));
+        // Match preview: text-2xl font-bold -> Double Width/Height + Bold
+        encoder.size(2, 2).bold(true);
+        const nameLines = wrapWords(productName, widePaperWidthChars).map(l => l.trim());
+        nameLines.forEach(line => encoder.line(line));
         encoder.size(1, 1).bold(false);
     }
 
     if (productPrice) {
-        // Match preview: text-2xl font-semibold -> Double Height
+        // Match preview: text-2xl font-semibold -> Double Width/Height
         const formattedPrice = `Rp ${formatCurrency(productPrice)}`;
-        encoder.size(1, 2);
-        const centeredPriceLines = wrapAndCenter(formattedPrice, paperWidthChars);
-        centeredPriceLines.forEach(line => encoder.line(line));
+        encoder.size(2, 2);
+        const priceLines = wrapWords(formattedPrice, widePaperWidthChars).map(l => l.trim());
+        priceLines.forEach(line => encoder.line(line));
         encoder.size(1, 1);
     }
 
     if (barcodeCode) {
-        // Center the barcode itself using the printer's command
-        encoder.align('center');
+        // Barcode is already centered
         encoder.raw([0x1d, 0x68, 60]); // GS h n (Set Barcode Height to 60 dots)
         encoder.raw([0x1d, 0x48, 0]); // GS H n (Select HRI print position to None)
         encoder.raw([0x1d, 0x6b, 0x49]); // GS k m (CODE128)
         const barcodeLength = barcodeCode.length;
         encoder.raw([barcodeLength]);
         encoder.raw(new TextEncoder().encode(barcodeCode));
-        encoder.align('left'); // Revert alignment for manually centered text
-
-        // Manually print and center barcode text below
+        
+        // Print barcode text below, also centered, using smaller Font B
         encoder.font('b');
-        const centeredBarcodeLines = wrapAndCenter(barcodeCode, paperWidthCharsFontB);
-        centeredBarcodeLines.forEach(line => encoder.line(line));
+        const barcodeTextLines = wrapWords(barcodeCode, paperWidthCharsFontB).map(l => l.trim());
+        barcodeTextLines.forEach(line => encoder.line(line));
         encoder.font('a'); // Reset to default font
     }
     
