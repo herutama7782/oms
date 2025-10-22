@@ -34,7 +34,7 @@ export function hideCartModal() {
     if (!modal || !sheet) return;
     
     // Show nav and FAB again
-    if (bottomNav && !window.app.isKioskModeActive) {
+    if (bottomNav) {
         bottomNav.classList.remove('hidden');
     }
     if (cartFab && window.app.currentPage === 'kasir') {

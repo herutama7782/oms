@@ -246,11 +246,6 @@ export async function showPage(pageName, options = { force: false, initialTab: n
         return;
     }
 
-    if (window.app.isKioskModeActive && pageName !== 'kasir') {
-        showToast('Mode Kios aktif. Fitur lain dinonaktifkan.');
-        return; 
-    }
-
     if (window.app.currentPage === 'kasir' && window.app.cart.items.length > 0 && pageName !== 'kasir' && !force) {
         showConfirmationModal(
             'Keranjang Belum Disimpan',

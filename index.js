@@ -36,9 +36,7 @@ window.app = {
     isChartJsReady: false,
     salesChartInstance: null,
     scanCallback: null,
-    isKioskModeActive: false,
     currentPinInput: "",
-    pinAttemptCount: 0,
     lastDashboardLoadDate: null,
     audioContext: null,
     currentContactId: null,
@@ -120,13 +118,6 @@ const functions = {
     showFeeSelectionModal: settings.showFeeSelectionModal,
     closeFeeSelectionModal: settings.closeFeeSelectionModal,
     applySelectedFees: settings.applySelectedFees,
-    handleKioskModeToggle: settings.handleKioskModeToggle,
-    showSetKioskPinModal: settings.showSetKioskPinModal,
-    closeSetKioskPinModal: settings.closeSetKioskPinModal,
-    saveKioskPinAndActivate: settings.saveKioskPinAndActivate,
-    showEnterKioskPinModal: settings.showEnterKioskPinModal,
-    closeEnterKioskPinModal: settings.closeEnterKioskPinModal,
-    handlePinKeyPress: settings.handlePinKeyPress,
     exportData: settings.exportData,
     importData: settings.importData,
     handleImport: settings.handleImport,
@@ -236,11 +227,6 @@ async function initializeMainApp() {
     peripherals.updateFeatureAvailability();
     
     ui.updateUiForRole(); // Update UI based on logged in user's role
-
-    const kioskModeEnabled = await db.getSettingFromDB('kioskModeEnabled');
-    if (kioskModeEnabled) {
-        await settings.activateKioskMode();
-    }
 
     loadingOverlay.classList.add('opacity-0');
     setTimeout(() => {

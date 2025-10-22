@@ -474,11 +474,6 @@ body {
     z-index: 1500;
 }
 
-/* Kiosk Mode PIN Modal */
-#kioskPinDisplay div {
-    transition: background-color 0.2s ease-in-out;
-}
-
 /* Shake animation for incorrect PIN */
 @keyframes shake {
     0%, 100% { transform: translateX(0); }

@@ -1,5 +1,5 @@
 {
-  "name": "(OK) POS Mobile RawBT + Label Barcode",
+  "name": "(OK) POS Mobile RawBT + Label Barcode + Hapus Mode Kios",
   "description": "",
   "requestFramePermissions": [
     "camera",
