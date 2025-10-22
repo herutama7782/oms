@@ -689,8 +689,6 @@ async function generateLabelEscPos() {
     const paperWidthChars = paperSize === '58mm' ? 32 : 42;
     // Character width for smaller Font B
     const paperWidthCharsFontB = paperSize === '58mm' ? 42 : 56;
-    // Character width when using double-width font
-    const widePaperWidthChars = Math.floor(paperWidthChars / 2);
 
     const encoder = new EscPosEncoder.default();
     encoder
@@ -699,21 +697,18 @@ async function generateLabelEscPos() {
         .raw([0x1b, 0x33, 24]) // Set line spacing to single spacing (24 dots)
         .align('center'); // Center all content from here
 
+    // All text will be size(1,1) by default after reset.
     if (productName) {
-        // Match preview: text-2xl font-bold -> Double Width/Height + Bold
-        encoder.size(2, 2).bold(true);
-        const nameLines = wrapWords(productName, widePaperWidthChars).map(l => l.trim());
+        encoder.bold(true);
+        const nameLines = wrapWords(productName, paperWidthChars).map(l => l.trim());
         nameLines.forEach(line => encoder.line(line));
-        encoder.size(1, 1).bold(false);
+        encoder.bold(false);
     }
 
     if (productPrice) {
-        // Match preview: text-2xl font-semibold -> Double Width/Height
         const formattedPrice = `Rp ${formatCurrency(productPrice)}`;
-        encoder.size(2, 2);
-        const priceLines = wrapWords(formattedPrice, widePaperWidthChars).map(l => l.trim());
+        const priceLines = wrapWords(formattedPrice, paperWidthChars).map(l => l.trim());
         priceLines.forEach(line => encoder.line(line));
-        encoder.size(1, 1);
     }
 
     if (barcodeCode) {
