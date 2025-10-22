@@ -887,7 +887,7 @@ export function setupBarcodeGenerator() {
         const outputName = document.getElementById('output-product-name');
         const theOutputPrice = document.getElementById('output-product-price');
         const outputBarcodeText = document.getElementById('output-barcode-text');
-        
+
         outputName.textContent = productName;
         theOutputPrice.textContent = productPrice ? `Rp ${formatCurrency(productPrice)}` : '';
         outputBarcodeText.textContent = barcodeCode;
@@ -908,56 +908,44 @@ export function setupBarcodeGenerator() {
         }
     });
 
+    // DOWNLOAD PNG
     downloadPngBtn.addEventListener('click', async () => {
         try {
-            // Import html2canvas dengan URL yang benar
-            const { default: html2canvas } = await import('https://cdn.skypack.dev/html2canvas@1.4.1');
+            const { default: html2canvas } = await import('https://cdn.skypack.dev/pin/html2canvas@v1.4.1-ljBVZmM4eKCWXapgePUy/mode=imports,min/optimized/html2canvas.js');
             const labelContent = document.getElementById('labelContent');
             const canvas = await html2canvas(labelContent, {
-                scale: 3,
+                scale: 2,
                 backgroundColor: '#ffffff'
             });
             const link = document.createElement('a');
             link.download = `label-${document.getElementById('barcode-code').value}.png`;
-            link.href = canvas.toDataURL("image/png").replace("image/png", "image/octet-stream");
+            link.href = canvas.toDataURL('image/png');
             link.click();
         } catch (e) {
             console.error('Download PNG failed:', e);
             showToast('Gagal mengunduh PNG. Coba lagi.');
         }
     });
-    
+
+    // CETAK LABEL (via ESC/POS)
     printLabelBtn.addEventListener('click', async () => {
-        if (!window.app.isPrinterReady) {
+        if (!window.app?.isPrinterReady) {
             showToast('Fitur cetak tidak tersedia.');
             return;
         }
         try {
-            // Gunakan html2canvas untuk mengambil gambar dari elemen HTML
-            const { default: html2canvas } = await import('https://cdn.skypack.dev/html2canvas@1.4.1');
+            const { default: html2canvas } = await import('https://cdn.skypack.dev/pin/html2canvas@v1.4.1-ljBVZmM4eKCWXapgePUy/mode=imports,min/optimized/html2canvas.js');
             const labelContent = document.getElementById('labelContent');
             const canvas = await html2canvas(labelContent, {
-                scale: 3,
+                scale: 2,
                 backgroundColor: '#ffffff'
             });
 
-            // Konversi canvas ke data URL (PNG)
-            const imageDataUrl = canvas.toDataURL('image/png');
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const escPosCommands = generateEscPosImageCommand(imageData, canvas.width, canvas.height);
 
-            // Buat objek blob dari data URL
-            const response = await fetch(imageDataUrl);
-            const blob = await response.blob();
-
-            // Ubah blob menjadi array buffer
-            const arrayBuffer = await blob.arrayBuffer();
-
-            // Konversi array buffer ke array byte
-            const imageBytes = new Uint8Array(arrayBuffer);
-
-            // Generate perintah ESC/POS untuk mencetak gambar
-            const escPosCommands = generateEscPosImageCommand(imageBytes, canvas.width, canvas.height);
-
-            // Kirim perintah ke printer
+            // Pastikan sendToRawBT menerima Uint8Array
             sendToRawBT(escPosCommands);
 
         } catch (e) {
@@ -967,58 +955,55 @@ export function setupBarcodeGenerator() {
     });
 }
 
-// Fungsi tambahan: Generate perintah ESC/POS untuk mencetak gambar
+// === FUNGSI BANTUAN: GENERATE PERINTAH ESC/POS UNTUK GAMBAR ===
 function generateEscPosImageCommand(imageData, width, height) {
-    // Pastikan lebar gambar kelipatan 8 (untuk kompatibilitas ESC/POS)
+    // Lebar harus kelipatan 8 bit
     const paddedWidth = Math.ceil(width / 8) * 8;
-    const padding = paddedWidth - width;
+    const bytesPerLine = paddedWidth / 8;
 
-    let commands = [];
+    const commands = [];
 
     // Inisialisasi printer
     commands.push(0x1B, 0x40); // ESC @
 
-    // Set mode cetak grafis
-    commands.push(0x1B, 0x2A, 0x00); // ESC * 0 (select bit image mode)
-
-    // Hitung jumlah baris (height)
+    // Mode gambar: ESC * m xL xH d1...dk
+    // m = 0 → normal density (1 dot/mm)
     for (let y = 0; y < height; y++) {
-        // Tentukan posisi X (selalu 0 karena kita cetak dari kiri)
-        commands.push(0x00, 0x00); // X position low, high
+        // Header per baris
+        commands.push(0x1B, 0x2A, 0x00); // ESC * 0
+        commands.push(bytesPerLine & 0xFF, (bytesPerLine >> 8) & 0xFF); // xL, xH
 
-        // Tentukan lebar gambar dalam byte (paddedWidth / 8)
-        const bytesPerLine = paddedWidth / 8;
-        commands.push(bytesPerLine & 0xFF, (bytesPerLine >> 8) & 0xFF);
-
-        // Tambahkan data gambar per baris
-        for (let x = 0; x < width; x += 8) {
+        // Konversi tiap baris ke byte
+        for (let byteIndex = 0; byteIndex < bytesPerLine; byteIndex++) {
             let byte = 0;
             for (let bit = 0; bit < 8; bit++) {
-                if (x + bit >= width) {
-                    byte |= (1 << (7 - bit)); // Isi dengan putih jika diluar batas
-                } else {
-                    // Ambil pixel dari gambar (sederhana: hitam=0, putih=1)
-                    const pixelIndex = ((y * width + x + bit) * 4) + 3; // Alpha channel
-                    const alpha = imageData[pixelIndex];
-                    // Jika alpha > 128, anggap hitam (0), jika tidak, putih (1)
-                    if (alpha > 128) {
-                        byte |= (1 << (7 - bit));
-                    }
+                const x = byteIndex * 8 + bit;
+                if (x >= width) {
+                    // Padding: anggap putih (tidak cetak = 0)
+                    continue;
+                }
+
+                const pixelIndex = (y * width + x) * 4;
+                const r = imageData.data[pixelIndex];
+                const g = imageData.data[pixelIndex + 1];
+                const b = imageData.data[pixelIndex + 2];
+                // const a = imageData.data[pixelIndex + 3]; // tidak digunakan karena bg putih
+
+                const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+
+                // Jika gelap → cetak (bit = 1)
+                if (luminance < 128) {
+                    byte |= (1 << (7 - bit));
                 }
             }
             commands.push(byte);
         }
 
-        // Tambahkan padding jika perlu
-        for (let i = 0; i < padding / 8; i++) {
-            commands.push(0xFF); // Putih
-        }
-
-        // Tambahkan feed baris
+        // Feed 1 baris
         commands.push(0x0A); // LF
     }
 
-    // Cut paper (opsional)
+    // Potong kertas
     commands.push(0x1D, 0x56, 0x41, 0x00); // GS V A 0
 
     return new Uint8Array(commands);
