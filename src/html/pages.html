@@ -563,16 +563,16 @@
                     <i class="fas fa-tags mr-2"></i>Buat Label
                 </button>
                
-                <div id="barcodeLabelOutput" class="hidden text-center p-4 border rounded-lg bg-white">
-                    <div id="labelContent" class="p-2 bg-white">
+                <div id="barcodeLabelOutput" class="hidden text-center p-4 border rounded-lg bg-gray-100">
+                    <div id="labelContent" class="p-2 bg-white inline-block shadow-md">
                         <!-- Explicit styling for better PNG/Print consistency -->
-                        <div class="flex flex-col items-center justify-center">
-                            <p id="output-product-name" class="font-bold text-xl break-words max-w-full mb-0 leading-tight"></p>
-                            <p id="output-product-price" class="font-semibold text-xl break-words max-w-full mb-1 leading-tight"></p>
+                        <div class="flex flex-col items-center justify-center" style="width: 210px;"> <!-- Approx 55mm paper width for preview -->
+                            <p id="output-product-name" class="font-bold text-2xl break-words w-full text-center mb-0 leading-tight"></p>
+                            <p id="output-product-price" class="font-semibold text-2xl break-words w-full text-center mb-1 leading-tight"></p>
                             <div class="my-1">
                                <svg id="barcode"></svg>
                             </div>
-                            <p id="output-barcode-text" class="font-mono text-sm break-words max-w-full mt-0 leading-tight"></p>
+                            <p id="output-barcode-text" class="font-mono text-base break-words w-full text-center mt-0 leading-tight"></p>
                         </div>
                     </div>
                 </div>
