@@ -1,48 +1,53 @@
 import { getAllFromDB } from './db.js';
 
 // WARNING: Storing API keys directly in client-side code is not secure.
-// This is for demonstration purposes only, as requested.
-const QWEN_API_KEY = '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';
-const QWEN_API_URL = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation';
+// This is for demonstration purposes only.
+const OPENROUTER_API_KEY = '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';
+const DEEPSEEK_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-async function callQwenAPI(prompt) {
+async function callDeepSeekAPI(prompt) {
     // Use a CORS proxy to bypass browser security restrictions for client-side API calls.
     const PROXY_URL = 'https://corsproxy.io/?';
-    const proxiedUrl = PROXY_URL + encodeURIComponent(QWEN_API_URL);
+    const proxiedUrl = PROXY_URL + encodeURIComponent(DEEPSEEK_API_URL);
 
     try {
         const response = await fetch(proxiedUrl, {
             method: 'POST',
             headers: {
+                'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${QWEN_API_KEY}`,
+                // Optional headers for OpenRouter ranking
+                'HTTP-Referer': 'https://pos.mobile', 
+                'X-Title': 'POS Mobile',
             },
             body: JSON.stringify({
-                model: 'qwen-turbo',
-                input: {
-                    prompt: prompt,
-                },
-                parameters: {}
+                "model": "deepseek/deepseek-chat-v3.1:free",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
             }),
         });
 
         if (!response.ok) {
             const errorData = await response.json();
-            console.error('Qwen API Error:', errorData);
-            throw new Error(`API request failed with status ${response.status}: ${errorData.message || 'Unknown error'}`);
+            console.error('DeepSeek API Error:', errorData);
+            throw new Error(`API request failed with status ${response.status}: ${errorData.error?.message || 'Unknown error'}`);
         }
 
         const data = await response.json();
-        
-        // Add a check for API-specific errors in the response body
-        if (data.code || !data.output || !data.output.text) {
-            console.error('Qwen API returned an error structure:', data);
-            throw new Error(data.message || 'Invalid response from Qwen API');
+
+        // Check for the expected response structure
+        if (!data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
+            console.error('DeepSeek API returned an invalid structure:', data);
+            throw new Error('Invalid response from DeepSeek API');
         }
 
-        return data.output.text;
+        return data.choices[0].message.content;
     } catch (error) {
-        console.error('Error calling Qwen API:', error);
+        console.error('Error calling DeepSeek API:', error);
         throw error;
     }
 }
@@ -110,7 +115,7 @@ Data Penjualan:
 ${dataForPrompt}
 Insight Anda:`;
 
-        const insightText = await callQwenAPI(prompt);
+        const insightText = await callDeepSeekAPI(prompt);
 
         // 4. Display result
         insightContent.innerHTML = `<p class="text-sm text-gray-700 font-medium">${insightText}</p>`;
