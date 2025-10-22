@@ -11,6 +11,7 @@ import * as contact from './src/contact.js';
 import * as settings from './src/settings.js';
 import * as peripherals from './src/peripherals.js';
 import * as sync from './src/sync.js';
+import * as ai from './src/ai.js';
 import { loadDashboard, checkDashboardRefresh } from './src/ui.js';
 
 
@@ -160,6 +161,8 @@ const functions = {
     closePreviewReceiptModal: peripherals.closePreviewReceiptModal,
     // sync.js
     syncWithServer: sync.syncWithServer,
+    // ai.js
+    getSalesInsight: ai.getSalesInsight,
 };
 Object.assign(window, functions);
 

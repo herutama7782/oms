@@ -36,15 +36,15 @@ This document outlines the planned features and improvements for the POS Mobile 
 - **[ ] Expanded Hardware Support:**
     - [x] Direct integration with common Bluetooth receipt printers (bypassing RawBT for a more seamless experience where possible).
     - [ ] Support for external USB barcode scanners.
-    - **[v] Integration with electronic cash drawers:**
-        - [v] Automatically send a pulse to open the cash drawer after a successful receipt print (via RawBT).
+    - **[V] Integration with electronic cash drawers:**
+        - [V] Automatically send a pulse to open the cash drawer after a successful receipt print.
 - **[x] Advanced Reporting & Analytics:**
     - [x] Add more visual charts (e.g., pie charts for category sales, bar charts for daily profit).
     - [x] Implement "End of Day" / "Z-Report" summaries.
     - [x] Allow custom date range exports for all reports.
-- **[ ] Multi-User & Roles:**
-    - [v] Introduce owner, manager, and cashier roles with different permissions.
-    - [v] Track sales by employee/cashier.
+- **[x] Multi-User & Roles:**
+    - [V] Introduce owner, manager, and cashier roles with different permissions.
+    - [V] Track sales by employee/cashier.
 
 ---
 
@@ -63,8 +63,11 @@ This document outlines the planned features and improvements for the POS Mobile 
     - **[ ] Smart Sales Insights:** Use AI to analyze sales data and provide actionable insights, such as "You sold 50% more coffee on rainy days this month. Consider a rainy day promotion."
     - **[ ] Conversational Support:** Implement a simple AI chat assistant to help users with common questions about using the app.
     - **[ ] Stock Forecasting:** Predict future stock needs based on historical sales data, seasonality, and trends to prevent stockouts.
+- **[ ] Qwen API-Powered Features (Alternative):**
+    - **[V] Smart Sales Insights:** Use AI to analyze sales data and provide actionable insights, such as "You sold 50% more coffee on rainy days this month. Consider a rainy day promotion."
+    - **[ ] Conversational Support:** Implement a simple AI chat assistant to help users with common questions about using the app.
+    - **[ ] Stock Forecasting:** Predict future stock needs based on historical sales data, seasonality, and trends to prevent stockouts.
 
 ---
 
-This roadmap is a living document and will be updated based on user feedback and technological advancements.Integration with electronic cash drawers:
-        - Automatically send a pulse to open the cash drawer after a successful receipt print.
+This roadmap is a living document and will be updated based on user feedback and technological advancements.
