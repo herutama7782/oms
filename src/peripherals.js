@@ -462,6 +462,9 @@ async function _generateReceiptText(transactionData, isPreview) {
   
   receiptText += `No: ${transactionData.id || (isPreview ? 'PREVIEW' : 'N/A')}\n`;
   receiptText += `Tgl: ${formatReceiptDate(transactionData.date)}\n`;
+  if (transactionData.userName && transactionData.userName !== 'N/A') {
+    receiptText += `Kasir: ${transactionData.userName}\n`;
+  }
   receiptText += receiptLine('-') + '\n';
 
   transactionData.items.forEach(item => {
@@ -820,6 +823,7 @@ export async function showPreviewReceiptModal() {
          return sum + (discountAmount * item.quantity);
     }, 0);
 
+    const currentUser = window.app.currentUser;
     const previewData = {
         items: window.app.cart.items,
         subtotal: subtotal_raw,
@@ -828,6 +832,7 @@ export async function showPreviewReceiptModal() {
         total,
         cashPaid: 0,
         change: 0,
+        userName: currentUser ? currentUser.name : 'N/A',
         date: new Date().toISOString()
     };
     
