@@ -1,9 +1,10 @@
 {
-  "name": "(OK) POS Mobile RawBT + Logo Base64",
+  "name": "Copy of (OK) POS Mobile RawBT + Logo Base64 + Multi Print",
   "description": "",
   "requestFramePermissions": [
     "camera",
-    "geolocation"
+    "geolocation",
+    "bluetooth"
   ],
   "enabledApis": []
 }

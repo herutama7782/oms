@@ -400,18 +400,37 @@
                     <label class="text-sm text-gray-600">Telepon Kritik & Saran (Opsional)</label>
                     <input type="tel" id="storeFeedbackPhone" class="input-field w-full" placeholder="e.g., 1500959">
                 </div>
-
                 <div class="border-t my-4"></div>
-                <h3 class="text-md font-semibold mb-2">Pengaturan Cetak RawBT</h3>
-                
+                <div>
+                    <label class="text-sm text-gray-600">Ambang Batas Stok Rendah</label>
+                    <input type="number" id="lowStockThreshold" class="input-field w-full" placeholder="Contoh: 5">
+                </div>
+                <button onclick="saveStoreSettings()" class="btn bg-blue-500 text-white w-full py-2">
+                    <i class="fas fa-save"></i> Simpan
+                </button>
+            </div>
+        </div>
+
+        <!-- Print Settings -->
+        <div class="card p-4 mb-4">
+            <h2 class="text-lg font-semibold mb-3">Pengaturan Cetak</h2>
+            <div class="mb-4">
+                <label class="text-sm text-gray-600 block mb-2">Metode Cetak</label>
+                <div class="flex bg-gray-200 rounded-lg p-1">
+                    <button id="printMethodBtnRawBT" data-method="rawbt" class="print-method-btn flex-1 py-2 text-sm font-semibold rounded-md transition-colors">Aplikasi RawBT</button>
+                    <button id="printMethodBtnDirect" data-method="direct" class="print-method-btn flex-1 py-2 text-sm font-semibold rounded-md transition-colors">Bluetooth Langsung</button>
+                </div>
+            </div>
+            
+            <div id="rawbtSettingsSection">
                 <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg text-center mb-3">
                     <p class="text-xs text-blue-700 mb-2">
-                        Fitur ini memerlukan aplikasi 
+                        Metode ini memerlukan aplikasi 
                         <a href="https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter" target="_blank" class="text-blue-600 underline font-bold">RawBT</a> 
                         ter-install dari Play Store.
                     </p>
-                     <div class="grid grid-cols-2 gap-2">
-                        <button id="testPrintBtn" onclick="testPrint()" class="btn bg-gray-600 text-white w-full py-2 text-sm">
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="testPrint()" class="btn bg-gray-600 text-white w-full py-2 text-sm">
                             <i class="fas fa-print"></i> Test Cetak
                         </button>
                         <button onclick="showPrintHelpModal()" class="btn bg-blue-500 text-white w-full py-2 text-sm">
@@ -419,23 +438,6 @@
                         </button>
                     </div>
                 </div>
-
-                <div id="autoPrintContainer" class="flex justify-between items-center">
-                    <label for="autoPrintReceipt" class="text-sm text-gray-600 cursor-pointer">Cetak Struk Otomatis</label>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                      <input type="checkbox" id="autoPrintReceipt" class="sr-only peer">
-                      <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                    </label>
-                </div>
-
-                <div class="mt-2">
-                    <label class="text-sm text-gray-600">Ukuran Kertas Printer</label>
-                    <select id="printerPaperSize" class="input-field w-full">
-                        <option value="80mm">80mm (Standar)</option>
-                        <option value="58mm">58mm (Kecil)</option>
-                    </select>
-                </div>
-
                 <div class="flex justify-between items-center mt-3">
                     <div class="pr-4">
                         <label for="autoOpenCashDrawer" class="text-sm text-gray-600 cursor-pointer">Buka Laci Kas Otomatis</label>
@@ -446,16 +448,41 @@
                       <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                     </label>
                 </div>
-                
-                <div class="border-t my-4"></div>
-                
-                <div>
-                    <label class="text-sm text-gray-600">Ambang Batas Stok Rendah</label>
-                    <input type="number" id="lowStockThreshold" class="input-field w-full" placeholder="Contoh: 5">
+            </div>
+        
+            <div id="directBluetoothSettingsSection" class="hidden">
+                <div class="p-3 bg-gray-50 border rounded-lg">
+                    <p class="text-xs text-gray-600 mb-2">Hubungkan langsung ke printer thermal Bluetooth Anda. Mungkin tidak kompatibel dengan semua model.</p>
+                    <div class="flex items-center justify-between bg-white p-2 rounded">
+                        <div class="text-sm">
+                            <p class="font-semibold">Status Koneksi</p>
+                            <p id="bluetoothStatus" class="text-gray-500">Belum terhubung</p>
+                        </div>
+                        <div id="bluetoothControlButtons">
+                            <button onclick="connectBluetoothPrinter()" id="connectBluetoothBtn" class="btn bg-blue-500 text-white px-3 py-1 text-xs">Hubungkan</button>
+                            <button onclick="disconnectBluetoothPrinter()" id="disconnectBluetoothBtn" class="btn bg-red-500 text-white px-3 py-1 text-xs hidden">Putuskan</button>
+                        </div>
+                    </div>
                 </div>
-                <button onclick="saveStoreSettings()" class="btn bg-blue-500 text-white w-full py-2">
-                    <i class="fas fa-save"></i> Simpan
+                 <button onclick="testPrint()" class="btn bg-gray-600 text-white w-full py-2 text-sm mt-3">
+                    <i class="fas fa-print"></i> Test Cetak Langsung
                 </button>
+            </div>
+        
+            <div class="border-t my-4"></div>
+            <div id="autoPrintContainer" class="flex justify-between items-center">
+                <label for="autoPrintReceipt" class="text-sm text-gray-600 cursor-pointer">Cetak Struk Otomatis</label>
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" id="autoPrintReceipt" class="sr-only peer">
+                  <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+            </div>
+            <div class="mt-2">
+                <label class="text-sm text-gray-600">Ukuran Kertas Printer</label>
+                <select id="printerPaperSize" class="input-field w-full">
+                    <option value="80mm">80mm (Standar)</option>
+                    <option value="58mm">58mm (Kecil)</option>
+                </select>
             </div>
         </div>
 

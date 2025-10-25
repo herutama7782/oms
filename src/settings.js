@@ -4,6 +4,176 @@ import { queueSyncAction } from './sync.js';
 import { formatCurrency } from './ui.js';
 import { loadProductsList, loadProductsGrid } from './product.js';
 
+// --- BLUETOOTH PRINTING ---
+
+function updateBluetoothUI() {
+    const statusEl = document.getElementById('bluetoothStatus');
+    const connectBtn = document.getElementById('connectBluetoothBtn');
+    const disconnectBtn = document.getElementById('disconnectBluetoothBtn');
+
+    if (window.app.bluetoothDevice && window.app.bluetoothDevice.gatt.connected) {
+        statusEl.textContent = `Terhubung ke: ${window.app.bluetoothDevice.name}`;
+        statusEl.classList.add('text-green-600');
+        statusEl.classList.remove('text-gray-500', 'text-red-500');
+        connectBtn.classList.add('hidden');
+        disconnectBtn.classList.remove('hidden');
+    } else {
+        getSettingFromDB('bluetoothDeviceName').then(savedName => {
+            if (savedName) {
+                statusEl.textContent = `Tersimpan: ${savedName} (terputus)`;
+            } else {
+                statusEl.textContent = 'Belum terhubung';
+            }
+        });
+        statusEl.classList.remove('text-green-600', 'text-red-500');
+        statusEl.classList.add('text-gray-500');
+        connectBtn.classList.remove('hidden');
+        disconnectBtn.classList.add('hidden');
+    }
+}
+window.updateBluetoothUI = updateBluetoothUI; // Make it accessible from peripherals.js on error
+
+
+export async function connectBluetoothPrinter() {
+    if (!('bluetooth' in navigator)) {
+        showToast('Web Bluetooth tidak didukung di browser ini.');
+        return;
+    }
+
+    // Proactive check for better UX
+    if (navigator.bluetooth.getAvailability) {
+        try {
+            const isAvailable = await navigator.bluetooth.getAvailability();
+            if (!isAvailable) {
+                showConfirmationModal(
+                    'Bluetooth Tidak Aktif',
+                    'Bluetooth di perangkat Anda sepertinya nonaktif. Silakan aktifkan di pengaturan sistem untuk melanjutkan.',
+                    () => {}, 'Mengerti', 'bg-blue-500'
+                );
+                return;
+            }
+        } catch (e) {
+            console.warn("Could not check Bluetooth availability:", e);
+        }
+    }
+
+    try {
+        showToast('Mencari printer Bluetooth...', 3000);
+        const device = await navigator.bluetooth.requestDevice({
+            acceptAllDevices: true,
+            optionalServices: ['00001101-0000-1000-8000-00805f9b34fb'] // Standard Serial Port Service
+        });
+
+        showToast(`Menghubungkan ke ${device.name}...`, 3000);
+        const server = await device.gatt.connect();
+        window.app.bluetoothDevice = device;
+        
+        const services = await server.getPrimaryServices();
+        let foundCharacteristic = null;
+        
+        for (const service of services) {
+            const characteristics = await service.getCharacteristics();
+            for (const characteristic of characteristics) {
+                if (characteristic.properties.writeWithoutResponse) {
+                    foundCharacteristic = characteristic;
+                    break;
+                }
+            }
+            if (foundCharacteristic) break;
+        }
+
+        if (!foundCharacteristic) {
+            showToast('Printer tidak kompatibel (tidak ditemukan characteristic yang sesuai).');
+            device.gatt.disconnect();
+            return;
+        }
+
+        window.app.bluetoothCharacteristic = foundCharacteristic;
+
+        device.addEventListener('gattserverdisconnected', () => {
+            showToast(`Printer ${device.name} terputus.`);
+            window.app.bluetoothDevice = null;
+            window.app.bluetoothCharacteristic = null;
+            updateBluetoothUI();
+        });
+
+        await putSettingToDB({ key: 'bluetoothDeviceName', value: device.name });
+        showToast(`Berhasil terhubung ke ${device.name}`);
+        updateBluetoothUI();
+    } catch (error) {
+        console.error('Bluetooth connection failed:', error);
+        
+        const errorMessage = (error.message || '').toLowerCase();
+        
+        if (error.name === 'NotFoundError' || errorMessage.includes('user cancelled')) {
+            // This is not an error to show to the user, they simply closed the dialog.
+            console.log('User cancelled Bluetooth device selection.');
+        } else if (errorMessage.includes('globally disabled')) {
+             showConfirmationModal(
+                'Akses Bluetooth Ditolak',
+                'Pastikan Bluetooth aktif di perangkat Anda dan browser telah diberi izin untuk mengaksesnya.',
+                () => {}, 'Mengerti', 'bg-blue-500'
+            );
+        } else {
+            showToast(`Gagal terhubung: ${error.message}`);
+        }
+        
+        updateBluetoothUI();
+    }
+}
+
+
+export function disconnectBluetoothPrinter(isOnError = false) {
+    if (window.app.bluetoothDevice && window.app.bluetoothDevice.gatt.connected) {
+        window.app.bluetoothDevice.gatt.disconnect();
+    }
+    window.app.bluetoothDevice = null;
+    window.app.bluetoothCharacteristic = null;
+    if (!isOnError) {
+        putSettingToDB({ key: 'bluetoothDeviceName', value: null });
+        showToast('Koneksi printer diputus.');
+    }
+    updateBluetoothUI();
+}
+
+
+function setupPrintMethodToggle() {
+    const rawbtBtn = document.getElementById('printMethodBtnRawBT');
+    const directBtn = document.getElementById('printMethodBtnDirect');
+    const rawbtSection = document.getElementById('rawbtSettingsSection');
+    const directSection = document.getElementById('directBluetoothSettingsSection');
+    const directMethodBtn = document.getElementById('printMethodBtnDirect');
+    
+    if (!('bluetooth' in navigator)) {
+        directMethodBtn.disabled = true;
+        directMethodBtn.title = 'Browser tidak mendukung Bluetooth';
+        directMethodBtn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+
+    const setMethod = (method) => {
+        if (method === 'direct') {
+            rawbtBtn.classList.remove('active');
+            directBtn.classList.add('active');
+            rawbtSection.classList.add('hidden');
+            directSection.classList.remove('hidden');
+        } else {
+            directBtn.classList.remove('active');
+            rawbtBtn.classList.add('active');
+            directSection.classList.add('hidden');
+            rawbtSection.classList.remove('hidden');
+        }
+        putSettingToDB({ key: 'printMethod', value: method });
+    };
+
+    rawbtBtn.addEventListener('click', () => setMethod('rawbt'));
+    directBtn.addEventListener('click', () => setMethod('direct'));
+
+    getSettingFromDB('printMethod').then(method => {
+        setMethod(method || 'rawbt');
+    });
+}
+
+
 // --- SETTINGS ---
 export async function saveStoreSettings() {
     const settings = [
@@ -59,6 +229,10 @@ export async function loadSettings() {
         if (window.app.currentStoreLogoData) {
             (document.getElementById('storeLogoPreview')).innerHTML = `<img src="${window.app.currentStoreLogoData}" alt="Logo Preview" class="image-preview">`;
         }
+
+        setupPrintMethodToggle();
+        updateBluetoothUI();
+
     } catch (error) {
         console.error("Failed to load settings:", error);
     }

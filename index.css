@@ -585,3 +585,10 @@ body {
 #ledgerActionsPopover a.text-red-600:hover {
     background-color: #fee2e2; /* red-100 */
 }
+
+/* Print Method Toggle Styles */
+.print-method-btn.active {
+    background-color: white;
+    color: #3b82f6; /* text-blue-500 */
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}

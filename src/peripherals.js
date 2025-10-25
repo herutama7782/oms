@@ -431,6 +431,30 @@ function sendToRawBT(data) {
     window.location.href = intentUrl;
 }
 
+async function sendDataToBluetoothPrinter(data) {
+    if (!window.app.bluetoothDevice?.gatt?.connected || !window.app.bluetoothCharacteristic) {
+        showToast('Printer Bluetooth tidak terhubung.');
+        return false;
+    }
+
+    try {
+        const CHUNK_SIZE = 512;
+        for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+            const chunk = data.slice(i, i + CHUNK_SIZE);
+            await window.app.bluetoothCharacteristic.writeValueWithoutResponse(chunk);
+            await new Promise(resolve => setTimeout(resolve, 40));
+        }
+        return true;
+    } catch (error) {
+        console.error('Direct Bluetooth print error:', error);
+        showToast(`Gagal mencetak: ${error.message}`);
+        if (window.disconnectBluetoothPrinter) {
+            window.disconnectBluetoothPrinter(true); // Call disconnect on error
+        }
+        return false;
+    }
+}
+
 async function _generateReceiptText(transactionData, isPreview) {
   const settings = await getAllFromDB('settings');
   const settingsMap = new Map(settings.map(s => [s.key, s.value]));
@@ -554,6 +578,7 @@ async function generateReceiptEscPos(transactionData) {
   const showLogo = settingsMap.get('showLogoOnReceipt') !== false;
   const paperSize = settingsMap.get('printerPaperSize') || '80mm';
   const autoOpenCashDrawer = settingsMap.get('autoOpenCashDrawer') || false;
+  const printMethod = settingsMap.get('printMethod') || 'rawbt';
 
   // NOTE: jika printer 80mm Anda 512 dots, ganti 576 -> 512
   const paperWidthDots  = paperSize === '58mm' ? 384 : 576;
@@ -634,7 +659,7 @@ async function generateReceiptEscPos(transactionData) {
     }
   });
 
-  if (autoOpenCashDrawer) {
+  if (autoOpenCashDrawer && printMethod === 'rawbt') {
     encoder.pulse();
   }
   encoder.feed(FEED_BEFORE_CUT).cut();
@@ -650,7 +675,10 @@ export async function generateReceiptContent(transactionData, targetElementId = 
 window.generateReceiptContent = generateReceiptContent;
 
 export async function printReceipt(isAutoPrint = false) {
-    if (!window.app.isPrinterReady) {
+    const printMethod = await getSettingFromDB('printMethod') || 'rawbt';
+    const isDirectPrint = printMethod === 'direct' && window.app.bluetoothDevice?.gatt?.connected;
+    
+    if (!isDirectPrint && !window.app.isPrinterReady) {
         showToast('Fitur cetak tidak tersedia.');
         return;
     }
@@ -662,13 +690,18 @@ export async function printReceipt(isAutoPrint = false) {
     try {
         if (!isAutoPrint) showToast('Menyiapkan struk...', 2000);
         const data = await generateReceiptEscPos(window.app.currentReceiptTransaction);
-        sendToRawBT(data);
+        
+        if (isDirectPrint) {
+            await sendDataToBluetoothPrinter(data);
+        } else {
+            sendToRawBT(data);
+        }
     } catch (error) {
         console.error('Print error:', error);
         if (!isAutoPrint) {
             showConfirmationModal(
                 'Gagal Mencetak Struk',
-                'Struk gagal dicetak. Ini bisa terjadi jika aplikasi RawBT tidak terinstall atau belum diatur.<br><br>Coba gunakan tombol "Share ke Printer" sebagai alternatif.',
+                'Struk gagal dicetak. Ini bisa terjadi jika aplikasi RawBT tidak terinstall atau printer Bluetooth tidak terhubung.<br><br>Periksa kembali pengaturan cetak Anda.',
                 () => {},
                 'Mengerti',
                 'bg-blue-500'
@@ -755,16 +788,24 @@ async function generateLabelEscPos() {
 }
 
 export async function testPrint() {
-    if (!window.app.isPrinterReady) {
-        showToast('Fitur cetak tidak tersedia.');
+    const printMethod = await getSettingFromDB('printMethod') || 'rawbt';
+    const isDirectPrint = printMethod === 'direct';
+
+    if (isDirectPrint && !window.app.bluetoothDevice?.gatt?.connected) {
+        showToast('Printer Bluetooth tidak terhubung. Silakan hubungkan terlebih dahulu.');
         return;
     }
+    if (!isDirectPrint && !window.app.isPrinterReady) {
+        showToast('Fitur cetak RawBT tidak tersedia.');
+        return;
+    }
+
     try {
         const paperSize = await getSettingFromDB('printerPaperSize') || '80mm';
         const paperWidthChars = paperSize === '58mm' ? 32 : 42;
         const encoder = new EscPosEncoder.default();
 
-        const data = encoder
+        encoder
             .initialize()
             .raw([0x1b, 0x40])
             .align('center')
@@ -772,14 +813,21 @@ export async function testPrint() {
             .line('Test Cetak')
             .width(1).height(1)
             .line('----------------')
+            .line(`Metode: ${isDirectPrint ? 'Bluetooth Langsung' : 'RawBT'}`)
             .line('Printer terhubung!')
             .line(`Lebar kertas: ${paperWidthChars} karakter`)
             .line(new Date().toLocaleString('id-ID'))
             .feed(3)
-            .cut()
-            .encode();
+            .cut();
+        
+        const data = encoder.encode();
 
-        sendToRawBT(data);
+        if (isDirectPrint) {
+            const success = await sendDataToBluetoothPrinter(data);
+            if (success) showToast('Test cetak berhasil dikirim.');
+        } else {
+            sendToRawBT(data);
+        }
 
     } catch(e) {
         showToast('Gagal melakukan test cetak.');
@@ -862,30 +910,13 @@ export function updateFeatureAvailability() {
 
     const printReceiptBtn = document.getElementById('printReceiptBtn');
     const autoPrintContainer = document.getElementById('autoPrintContainer');
-    const testPrintBtn = document.getElementById('testPrintBtn');
-
-    if (!window.app.isPrinterReady) {
+    
+    if (!window.app.isPrinterReady && !('bluetooth' in navigator)) {
         if (printReceiptBtn) {
             printReceiptBtn.disabled = true;
-            printReceiptBtn.classList.remove('bg-gray-600');
+            printReceiptBtn.classList.remove('bg-gray-700');
             printReceiptBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
-            printReceiptBtn.title = 'Fitur cetak gagal dimuat.';
-        }
-        if (testPrintBtn) {
-            testPrintBtn.disabled = true;
-            testPrintBtn.title = 'Fitur cetak gagal dimuat.';
-        }
-        if (autoPrintContainer) {
-            autoPrintContainer.classList.add('opacity-50');
-            const autoPrintCheckbox = document.getElementById('autoPrintReceipt');
-            if (autoPrintCheckbox) autoPrintCheckbox.disabled = true;
-
-            if (!autoPrintContainer.parentElement.querySelector('.library-error-note')) {
-                const note = document.createElement('p');
-                note.className = 'text-xs text-red-500 text-center mt-2 library-error-note';
-                note.textContent = 'Fitur cetak tidak tersedia (library gagal dimuat).';
-                autoPrintContainer.parentElement.insertBefore(note, autoPrintContainer.nextSibling);
-            }
+            printReceiptBtn.title = 'Fitur cetak tidak tersedia.';
         }
     }
 }
@@ -953,13 +984,24 @@ export function setupBarcodeGenerator() {
     });
     
     printLabelBtn.addEventListener('click', async () => {
-        if (!window.app.isPrinterReady) {
-            showToast('Fitur cetak tidak tersedia.');
+        const printMethod = await getSettingFromDB('printMethod') || 'rawbt';
+        const isDirectPrint = printMethod === 'direct';
+
+        if (!isDirectPrint && !window.app.isPrinterReady) {
+            showToast('Fitur cetak RawBT tidak tersedia.');
+            return;
+        }
+        if (isDirectPrint && !window.app.bluetoothDevice?.gatt?.connected) {
+             showToast('Printer Bluetooth tidak terhubung.');
             return;
         }
         try {
             const data = await generateLabelEscPos();
-            sendToRawBT(data);
+            if (isDirectPrint) {
+                await sendDataToBluetoothPrinter(data);
+            } else {
+                sendToRawBT(data);
+            }
         } catch (e) {
             console.error('Print label failed:', e);
             showToast('Gagal mencetak label.');
