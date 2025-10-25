@@ -45,8 +45,6 @@ window.app = {
     cameraStream: null,
     currentUser: null, // For multi-user support
     onLoginSuccess: null,
-    bluetoothDevice: null,
-    bluetoothCharacteristic: null,
 };
 
 // --- GLOBAL FUNCTIONS ---
@@ -127,8 +125,6 @@ const functions = {
     closeImportProductsModal: settings.closeImportProductsModal,
     handleProductImport: settings.handleProductImport,
     clearAllData: settings.clearAllData,
-    connectBluetoothPrinter: settings.connectBluetoothPrinter,
-    disconnectBluetoothPrinter: settings.disconnectBluetoothPrinter,
     // Auth & User Management (from settings.js)
     handleLoginPinKeyPress: settings.handleLoginPinKeyPress,
     logout: settings.logout,
