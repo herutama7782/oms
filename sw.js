@@ -1,10 +1,11 @@
-const CACHE_NAME = 'pos-mobile-cache-v2'; // Bump version to force update
+const CACHE_NAME = 'pos-mobile-cache-v4'; // Bump version to include metadata.json
 const APP_SHELL_URLS = [
   '/',
   '/index.html',
   '/index.css',
   '/index.js',
   '/manifest.json',
+  '/metadata.json',
   '/src/audio.js',
   '/src/cart.js',
   '/src/contact.js',
@@ -16,7 +17,8 @@ const APP_SHELL_URLS = [
   '/src/sync.js',
   '/src/ui.js',
   '/src/html/pages.html',
-  '/src/html/modals.html'
+  '/src/html/modals.html',
+  'https://i.imgur.com/awbpnPX.png'
 ];
 
 self.addEventListener('install', event => {
