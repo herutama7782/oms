@@ -199,6 +199,39 @@ export function closeImportProductsModal() {
     if (fileInput) fileInput.value = '';
 }
 
+// Helper function to convert an image URL to a Base64 string
+async function imageUrlToBase64(url) {
+    if (!url || !(url.startsWith('http://') || url.startsWith('https://'))) {
+        return null;
+    }
+    try {
+        // NOTE: This fetch can be blocked by CORS policy. 
+        // The image server must allow cross-origin requests.
+        const response = await fetch(url);
+        if (!response.ok) {
+            console.warn(`Failed to fetch image from ${url}: ${response.statusText}`);
+            return null;
+        }
+        const blob = await response.blob();
+        if (blob.size === 0) {
+            console.warn(`Fetched empty blob from ${url}`);
+            return null;
+        }
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.onerror = (error) => {
+                console.error(`FileReader error for URL ${url}:`, error);
+                reject(error);
+            };
+            reader.readAsDataURL(blob);
+        });
+    } catch (error) {
+        console.error(`Error converting image URL to base64: ${url}`, error);
+        return null;
+    }
+}
+
 export async function handleProductImport(event) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -227,18 +260,9 @@ export async function handleProductImport(event) {
             const productNameMap = new Map(existingProducts.map(p => [p.name.toLowerCase(), p]));
             const productBarcodeMap = new Map(existingProducts.filter(p => p.barcode).map(p => [p.barcode, p]));
             
-            const existingCategories = await getAllFromDB('categories');
-            const categoryNameMap = new Map(existingCategories.map(c => [c.name.toLowerCase(), c]));
-            const newCategories = new Map();
-
-            let addedCount = 0;
-            let updatedCount = 0;
             let errorCount = 0;
-            
-            const transaction = window.app.db.transaction(['products', 'categories'], 'readwrite');
-            const productStore = transaction.objectStore('products');
-            const categoryStore = transaction.objectStore('categories');
 
+            const productsToProcess = [];
             for (const row of rows) {
                 const values = row.split(',');
                 const rowData = header.reduce((obj, col, index) => {
@@ -246,36 +270,62 @@ export async function handleProductImport(event) {
                     return obj;
                 }, {});
 
-                // Validation
                 if (!rowData.nama || isNaN(parseFloat(rowData.harga_jual))) {
                     errorCount++;
                     continue;
                 }
-                
-                const name = rowData.nama;
-                const barcode = rowData.barcode || null;
-                
-                let existingProduct = null;
-                if (barcode && productBarcodeMap.has(barcode)) {
-                    existingProduct = productBarcodeMap.get(barcode);
-                } else if (productNameMap.has(name.toLowerCase())) {
-                    existingProduct = productNameMap.get(name.toLowerCase());
-                }
 
+                let existingProduct = null;
+                if (rowData.barcode && productBarcodeMap.has(rowData.barcode)) {
+                    existingProduct = productBarcodeMap.get(rowData.barcode);
+                } else if (productNameMap.has(rowData.nama.toLowerCase())) {
+                    existingProduct = productNameMap.get(rowData.nama.toLowerCase());
+                }
+                productsToProcess.push({ rowData, existingProduct });
+            }
+
+            showToast(`Mengunduh gambar produk... (0/${productsToProcess.length})`, 60000); // long timeout
+            const imageFetchPromises = productsToProcess.map((p, i) => {
+                if (i > 0 && i % 5 === 0) { // Update toast periodically
+                    showToast(`Mengunduh gambar produk... (${i}/${productsToProcess.length})`, 60000);
+                }
+                return imageUrlToBase64(p.rowData.gambar);
+            });
+            const imageDataResults = await Promise.all(imageFetchPromises);
+            
+            showToast('Menyimpan data ke database...', 10000);
+
+            const existingCategories = await getAllFromDB('categories');
+            const categoryNameMap = new Map(existingCategories.map(c => [c.name.toLowerCase(), c]));
+            const newCategories = new Map();
+            let addedCount = 0;
+            let updatedCount = 0;
+            
+            const transaction = window.app.db.transaction(['products', 'categories'], 'readwrite');
+            const productStore = transaction.objectStore('products');
+            const categoryStore = transaction.objectStore('categories');
+
+            productsToProcess.forEach(({ rowData, existingProduct }, index) => {
                 const product = existingProduct || {
                     createdAt: new Date().toISOString()
                 };
 
-                product.name = name;
+                product.name = rowData.nama;
                 product.price = parseFloat(rowData.harga_jual);
                 product.purchasePrice = parseFloat(rowData.harga_beli) || product.purchasePrice || 0;
                 product.stock = parseInt(rowData.stok) >= 0 ? parseInt(rowData.stok) : (product.stock || 0);
-                product.barcode = barcode;
+                product.barcode = rowData.barcode || null;
                 product.category = rowData.kategori || product.category || 'Lainnya';
                 product.discountPercentage = parseFloat(rowData.diskon_persen) || product.discountPercentage || 0;
                 product.updatedAt = new Date().toISOString();
                 
-                // Handle new category
+                const imageData = imageDataResults[index];
+                if (imageData) {
+                    product.image = imageData;
+                } else if (!existingProduct) {
+                    product.image = null;
+                } // else: keep existing image if url is invalid or not provided
+
                 const categoryName = product.category;
                 if (categoryName && !categoryNameMap.has(categoryName.toLowerCase()) && !newCategories.has(categoryName.toLowerCase())) {
                     const newCategory = { name: categoryName, createdAt: new Date().toISOString() };
@@ -290,7 +340,7 @@ export async function handleProductImport(event) {
                 } else {
                     addedCount++;
                 }
-            }
+            });
 
             transaction.oncomplete = () => {
                 let summary = `Import selesai.`;
@@ -299,7 +349,6 @@ export async function handleProductImport(event) {
                 if (errorCount > 0) summary += ` ${errorCount} baris gagal.`;
                 showToast(summary, 5000);
                 
-                // Refresh UI
                 if(window.app.currentPage === 'produk') loadProductsList();
                 loadProductsGrid();
                 if(window.app.currentPage === 'dashboard') loadDashboard();
@@ -314,7 +363,7 @@ export async function handleProductImport(event) {
             console.error('Import failed:', error);
             showToast('Gagal memproses file. Pastikan formatnya benar.');
         } finally {
-            event.target.value = ''; // Reset file input
+            event.target.value = '';
         }
     };
     reader.readAsText(file);

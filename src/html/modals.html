@@ -565,7 +565,7 @@
             
             <div class="p-3 bg-gray-50 border rounded-lg text-sm text-gray-700 mb-4">
                 <h3 class="font-semibold mb-2">Struktur Kolom yang Diperlukan:</h3>
-                <code class="block bg-gray-200 p-2 rounded text-xs overflow-x-auto">nama,kategori,harga_beli,harga_jual,stok,barcode,diskon_persen</code>
+                <code class="block bg-gray-200 p-2 rounded text-xs overflow-x-auto">nama,kategori,harga_beli,harga_jual,stok,barcode,diskon_persen,gambar</code>
                 <ul class="list-disc list-inside mt-2 space-y-1 text-xs">
                     <li><span class="font-semibold">nama</span>: (Wajib) Nama Produk</li>
                     <li><span class="font-semibold">kategori</span>: (Opsional) Kategori Produk</li>
@@ -574,10 +574,11 @@
                     <li><span class="font-semibold">stok</span>: (Opsional) Jumlah Stok, default 0</li>
                     <li><span class="font-semibold">barcode</span>: (Opsional) Kode unik produk</li>
                     <li><span class="font-semibold">diskon_persen</span>: (Opsional) Diskon (0-100), default 0</li>
+                    <li><span class="font-semibold">gambar</span>: (Opsional) URL Gambar Produk (harus publik)</li>
                 </ul>
             </div>
             
-            <a href="data:text/csv;charset=utf-8,nama,kategori,harga_beli,harga_jual,stok,barcode,diskon_persen%0AKopi Susu,Minuman,5000,18000,50,KS001,10%0ARoti Coklat,Makanan,3000,7000,100,RC002,0" download="template_produk.csv" class="btn bg-green-500 text-white w-full py-2 mb-2 block text-center">
+            <a href="data:text/csv;charset=utf-8,nama,kategori,harga_beli,harga_jual,stok,barcode,diskon_persen,gambar%0AKopi Susu,Minuman,5000,18000,50,KS001,10,https://i.postimg.cc/ydYPGwS5/martabak.jpg%0ARoti Coklat,Makanan,3000,7000,100,RC002,0,https://i.postimg.cc/d1126rbK/pukis.jpg" download="template_produk.csv" class="btn bg-green-500 text-white w-full py-2 mb-2 block text-center">
                 <i class="fas fa-download mr-2"></i>Unduh Template
             </a>
             
