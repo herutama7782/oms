@@ -594,3 +594,19 @@
         </div>
     </div>
 </div>
+
+<!-- Cashier Close Report Modal -->
+<div id="cashierReportModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <h2 class="text-xl font-bold mb-4">Laporan Tutup Kasir</h2>
+            <div id="cashierReportContent" class="receipt-modal-content text-black font-mono text-sm mb-6 max-h-96 overflow-y-auto">
+                <!-- Report content will be dynamically generated here -->
+            </div>
+            <div class="space-y-2">
+                <button onclick="printCashierReport()" class="btn bg-gray-700 hover:bg-gray-800 text-white w-full py-2 text-sm"><i class="fas fa-print mr-1"></i>Cetak Laporan</button>
+                <button onclick="closeCashierReportModal()" class="btn bg-blue-500 hover:bg-blue-600 text-white w-full py-3 text-base">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>

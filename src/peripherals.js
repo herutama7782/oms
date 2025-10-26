@@ -966,3 +966,120 @@ export function setupBarcodeGenerator() {
         }
     });
 }
+
+
+// --- CASHIER REPORT ---
+
+// This function will be shared between HTML preview and ESC/POS generation
+async function _generateCashierReportText(reportData) {
+  const settings = await getAllFromDB('settings');
+  const settingsMap = new Map(settings.map(s => [s.key, s.value]));
+
+  const paperSize = settingsMap.get('printerPaperSize') || '80mm';
+  const paperWidthChars = paperSize === '58mm' ? 32 : 42;
+
+  const receiptLine = (char) => char.repeat(paperWidthChars);
+  const formatLine = (left, right) => {
+    const r = `Rp ${formatCurrency(right)}`;
+    const spaces = Math.max(0, paperWidthChars - left.length - r.length);
+    return left + ' '.repeat(spaces) + r;
+  };
+  
+  const formatLineNoRp = (left, right) => {
+    const spaces = Math.max(0, paperWidthChars - left.length - right.length);
+    return left + ' '.repeat(spaces) + right;
+  };
+
+  let text = '';
+  
+  wrapAndCenter('LAPORAN TUTUP KASIR', paperWidthChars).forEach(l => text += l + '\n');
+  text += receiptLine('=') + '\n';
+  text += `Kasir   : ${reportData.cashierName}\n`;
+  text += `Waktu   : ${formatReceiptDate(reportData.reportDate)}\n`;
+  text += receiptLine('-') + '\n\n';
+
+  text += centerPad('RINGKASAN PENJUALAN', paperWidthChars) + '\n';
+  text += receiptLine('-') + '\n';
+  text += formatLine('Total Penjualan (Omzet)', reportData.summary.totalOmzet) + '\n';
+  text += formatLine('Total Tunai Diterima', reportData.summary.totalCashPaid) + '\n';
+  text += formatLine('Total Kembalian', reportData.summary.totalChange) + '\n';
+  text += receiptLine('-') + '\n';
+  text += formatLine('TOTAL UANG TUNAI', reportData.summary.cashInHand) + '\n';
+  text += receiptLine('=') + '\n';
+  text += `Total Transaksi: ${reportData.summary.totalTransactions}\n\n`;
+
+  if (reportData.productSales.length > 0) {
+      text += centerPad('RINCIAN PRODUK TERJUAL', paperWidthChars) + '\n';
+      text += receiptLine('-') + '\n';
+      reportData.productSales.forEach(([name, data]) => {
+          const left = `${data.quantity}x ${name}`;
+          const right = `Rp ${formatCurrency(data.total)}`;
+          text += formatLineNoRp(left, right) + '\n';
+      });
+      text += '\n';
+  }
+  
+  if (reportData.feeSummary.length > 0) {
+      text += centerPad('RINCIAN PAJAK & BIAYA', paperWidthChars) + '\n';
+      text += receiptLine('-') + '\n';
+      reportData.feeSummary.forEach(([name, data]) => {
+          text += formatLine(name, data.amount) + '\n';
+      });
+      text += '\n';
+  }
+
+  return text;
+}
+
+
+export async function generateCashierReportContent(reportData) {
+    const contentEl = document.getElementById('cashierReportContent');
+    if (contentEl) {
+        const reportText = await _generateCashierReportText(reportData);
+        const pre = document.createElement('pre');
+        pre.style.margin = '0';
+        pre.style.whiteSpace = 'pre-wrap';
+        pre.textContent = reportText;
+        contentEl.innerHTML = '';
+        contentEl.appendChild(pre);
+    }
+}
+window.generateCashierReportContent = generateCashierReportContent;
+
+async function generateCashierReportEscPos() {
+    if (!window.app.isPrinterReady) throw new Error('Printer library not loaded.');
+    if (!window.app.currentCashierReportData) throw new Error('No cashier report data.');
+
+    const reportData = window.app.currentCashierReportData;
+    const reportText = await _generateCashierReportText(reportData);
+
+    const encoder = new EscPosEncoder.default();
+    encoder
+        .initialize()
+        .raw([0x1b, 0x40]) // Reset
+        .align('left')
+        .raw([0x1b, 0x33, LINE_SPACING_DOTS]); // Line spacing
+
+    reportText.split('\n').forEach(line => {
+        encoder.line(line);
+    });
+
+    encoder.feed(3).cut();
+    return encoder.encode();
+}
+
+export async function printCashierReport() {
+    if (!window.app.isPrinterReady || !window.app.currentCashierReportData) {
+        showToast('Tidak ada data laporan untuk dicetak.');
+        return;
+    }
+
+    try {
+        showToast('Mencetak laporan...', 2000);
+        const data = await generateCashierReportEscPos();
+        sendToRawBT(data);
+    } catch (error) {
+        console.error('Print cashier report error:', error);
+        showToast('Gagal mencetak laporan kasir.');
+    }
+}

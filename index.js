@@ -26,6 +26,7 @@ window.app = {
     confirmCallback: null,
     html5QrCode: null,
     currentReportData: [],
+    currentCashierReportData: null,
     dashboardTransactions: [],
     lowStockThreshold: 5,
     isOnline: navigator.onLine,
@@ -89,6 +90,8 @@ const functions = {
     generateReport: report.generateReport,
     exportReportToCSV: report.exportReportToCSV,
     returnItem: report.returnItem,
+    generateCashierReport: report.generateCashierReport,
+    closeCashierReportModal: report.closeCashierReportModal,
     // contact.js
     switchContactTab: contact.switchContactTab,
     showContactModal: contact.showContactModal,
@@ -149,6 +152,7 @@ const functions = {
     closePrintHelpModal: peripherals.closePrintHelpModal,
     showPreviewReceiptModal: peripherals.showPreviewReceiptModal,
     closePreviewReceiptModal: peripherals.closePreviewReceiptModal,
+    printCashierReport: peripherals.printCashierReport,
     // sync.js
     syncWithServer: sync.syncWithServer,
 };

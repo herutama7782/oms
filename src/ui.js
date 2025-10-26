@@ -206,7 +206,7 @@ export function updateUiForRole() {
     const navProduk = document.querySelector('.nav-item[data-page="produk"]');
     if (navProduk) navProduk.style.display = (role === 'cashier') ? 'none' : 'flex';
     const navLaporan = document.querySelector('.nav-item[data-page="laporan"]');
-    if (navLaporan) navLaporan.style.display = (role === 'cashier') ? 'none' : 'flex';
+    if (navLaporan) navLaporan.style.display = 'flex';
     const navKontak = document.querySelector('.nav-item[data-page="kontak"]');
     if (navKontak) navKontak.style.display = (role === 'cashier') ? 'none' : 'flex';
     const navPengaturan = document.querySelector('.nav-item[data-page="pengaturan"]');
@@ -237,7 +237,7 @@ export async function showPage(pageName, options = { force: false, initialTab: n
         'kasir': ['owner', 'manager', 'cashier'],
         'produk': ['owner', 'manager'],
         'kontak': ['owner', 'manager'],
-        'laporan': ['owner', 'manager'],
+        'laporan': ['owner', 'manager', 'cashier'],
         'pengaturan': ['owner', 'manager']
     };
 
@@ -309,6 +309,16 @@ export async function showPage(pageName, options = { force: false, initialTab: n
         loadProductsList();
     } else if (pageName === 'kontak') {
         loadContactsPage(initialTab);
+    } else if (pageName === 'laporan') {
+        const adminView = document.getElementById('adminReportView');
+        const cashierView = document.getElementById('cashierReportView');
+        if (checkAccess(['owner', 'manager'])) {
+            adminView.classList.remove('hidden');
+            cashierView.classList.add('hidden');
+        } else { // Cashier
+            adminView.classList.add('hidden');
+            cashierView.classList.remove('hidden');
+        }
     } else if (pageName === 'pengaturan') {
         loadSettings();
         window.loadFees();

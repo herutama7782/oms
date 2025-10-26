@@ -269,92 +269,107 @@
 </div>
 
 <!-- Laporan Page -->
-<div id="laporan" class="page">
+<div id="laporan" class="page pb-24">
     <div class="p-4">
         <h1 class="text-2xl font-bold mb-4">Laporan</h1>
         
-        <!-- Date Range -->
-        <div class="card p-4 mb-4">
-            <div class="grid grid-cols-2 gap-3">
-                <div>
-                    <label class="text-sm text-gray-600">Dari</label>
-                    <input type="date" id="dateFrom" class="input-field w-full">
+        <!-- View for Admin/Manager -->
+        <div id="adminReportView">
+            <!-- Date Range -->
+            <div class="card p-4 mb-4">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-sm text-gray-600">Dari</label>
+                        <input type="date" id="dateFrom" class="input-field w-full">
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-600">Sampai</label>
+                        <input type="date" id="dateTo" class="input-field w-full">
+                    </div>
                 </div>
-                <div>
-                    <label class="text-sm text-gray-600">Sampai</label>
-                    <input type="date" id="dateTo" class="input-field w-full">
+                <button onclick="generateReport()" class="btn bg-blue-500 text-white w-full mt-3 py-2">
+                    <i class="fas fa-chart-bar"></i> Generate Laporan
+                </button>
+            </div>
+            
+            <!-- Report Summary -->
+            <div id="reportSummary" class="card p-4 mb-4" style="display: none;">
+                <h2 class="text-lg font-semibold mb-3">Ringkasan Laporan</h2>
+                <div class="space-y-2 text-sm">
+                    <!-- Omzet -->
+                    <div class="flex justify-between items-center border-b pb-2">
+                        <span class="font-semibold text-gray-800">Total Omzet (Penjualan Kotor):</span>
+                        <span class="font-bold text-lg text-blue-600" id="reportOmzet">Rp 0</span>
+                    </div>
+                    <!-- HPP -->
+                    <div class="flex justify-between items-center pt-1">
+                        <span class="text-gray-600">(-) Harga Pokok Penjualan (HPP):</span>
+                        <span class="font-semibold text-red-500" id="reportHpp">Rp 0</span>
+                    </div>
+                    <!-- Laba Kotor -->
+                    <div class="flex justify-between items-center border-b pb-2">
+                        <span class="font-semibold text-gray-800">Laba Kotor:</span>
+                        <span class="font-bold text-green-600" id="reportGrossProfit">Rp 0</span>
+                    </div>
+                    <!-- Biaya Operasional -->
+                    <div class="flex justify-between items-center pt-1">
+                        <span class="text-gray-600">(-) Total Biaya Operasional:</span>
+                        <span class="font-semibold text-red-500" id="reportOperationalCost">Rp 0</span>
+                    </div>
+                    <!-- Laba Bersih -->
+                    <div class="flex justify-between items-center border-b pb-2">
+                        <span class="font-semibold text-gray-800">Laba Bersih:</span>
+                        <span class="font-bold text-xl text-green-700" id="reportNetProfit">Rp 0</span>
+                    </div>
+                    <!-- Arus Kas -->
+                    <div class="flex justify-between items-center pt-2">
+                        <span class="font-semibold text-gray-800">Arus Kas dari Penjualan:</span>
+                        <span class="font-bold text-blue-600" id="reportCashFlow">Rp 0</span>
+                    </div>
+                    <div class="border-t pt-2 mt-2"></div>
+                    <!-- Info Tambahan -->
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-600">Total Transaksi:</span>
+                        <span class="font-semibold" id="reportTotalTransactions">0</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-600">Rata-rata Omzet / Transaksi:</span>
+                        <span class="font-semibold" id="reportAverage">Rp 0</span>
+                    </div>
+                </div>
+                <button onclick="exportReportToCSV()" class="btn bg-green-500 text-white w-full mt-4 py-2">
+                    <i class="fas fa-file-excel"></i> Export ke Excel (.csv)
+                </button>
+            </div>
+
+            <!-- Produk Terlaris -->
+            <div id="topSellingProductsCard" class="card p-4 mb-4" style="display: none;">
+                <h2 class="text-lg font-semibold mb-3">Produk Terlaris</h2>
+                <div id="topSellingProductsList" class="space-y-2">
+                    <!-- Top products will be loaded here -->
                 </div>
             </div>
-            <button onclick="generateReport()" class="btn bg-blue-500 text-white w-full mt-3 py-2">
-                <i class="fas fa-chart-bar"></i> Generate Laporan
-            </button>
-        </div>
-        
-        <!-- Report Summary -->
-        <div id="reportSummary" class="card p-4 mb-4" style="display: none;">
-            <h2 class="text-lg font-semibold mb-3">Ringkasan Laporan</h2>
-            <div class="space-y-2 text-sm">
-                <!-- Omzet -->
-                <div class="flex justify-between items-center border-b pb-2">
-                    <span class="font-semibold text-gray-800">Total Omzet (Penjualan Kotor):</span>
-                    <span class="font-bold text-lg text-blue-600" id="reportOmzet">Rp 0</span>
-                </div>
-                <!-- HPP -->
-                <div class="flex justify-between items-center pt-1">
-                    <span class="text-gray-600">(-) Harga Pokok Penjualan (HPP):</span>
-                    <span class="font-semibold text-red-500" id="reportHpp">Rp 0</span>
-                </div>
-                <!-- Laba Kotor -->
-                <div class="flex justify-between items-center border-b pb-2">
-                    <span class="font-semibold text-gray-800">Laba Kotor:</span>
-                    <span class="font-bold text-green-600" id="reportGrossProfit">Rp 0</span>
-                </div>
-                <!-- Biaya Operasional -->
-                <div class="flex justify-between items-center pt-1">
-                    <span class="text-gray-600">(-) Total Biaya Operasional:</span>
-                    <span class="font-semibold text-red-500" id="reportOperationalCost">Rp 0</span>
-                </div>
-                <!-- Laba Bersih -->
-                <div class="flex justify-between items-center border-b pb-2">
-                    <span class="font-semibold text-gray-800">Laba Bersih:</span>
-                    <span class="font-bold text-xl text-green-700" id="reportNetProfit">Rp 0</span>
-                </div>
-                <!-- Arus Kas -->
-                <div class="flex justify-between items-center pt-2">
-                    <span class="font-semibold text-gray-800">Arus Kas dari Penjualan:</span>
-                    <span class="font-bold text-blue-600" id="reportCashFlow">Rp 0</span>
-                </div>
-                <div class="border-t pt-2 mt-2"></div>
-                <!-- Info Tambahan -->
-                <div class="flex justify-between items-center">
-                    <span class="text-gray-600">Total Transaksi:</span>
-                    <span class="font-semibold" id="reportTotalTransactions">0</span>
-                </div>
-                <div class="flex justify-between items-center">
-                    <span class="text-gray-600">Rata-rata Omzet / Transaksi:</span>
-                    <span class="font-semibold" id="reportAverage">Rp 0</span>
+
+            <!-- Report Details -->
+            <div id="reportDetails" class="card p-4" style="display: none;">
+                <h2 class="text-lg font-semibold mb-3">Detail Transaksi</h2>
+                <div id="reportTransactions" class="space-y-2">
+                    <!-- Report transactions will be loaded here -->
                 </div>
             </div>
-            <button onclick="exportReportToCSV()" class="btn bg-green-500 text-white w-full mt-4 py-2">
-                <i class="fas fa-file-excel"></i> Export ke Excel (.csv)
-            </button>
         </div>
 
-        <!-- Produk Terlaris -->
-        <div id="topSellingProductsCard" class="card p-4 mb-4" style="display: none;">
-            <h2 class="text-lg font-semibold mb-3">Produk Terlaris</h2>
-            <div id="topSellingProductsList" class="space-y-2">
-                <!-- Top products will be loaded here -->
+        <!-- View for Cashier -->
+        <div id="cashierReportView" class="hidden">
+            <div class="card p-4 mb-4 text-center">
+                <h2 class="text-lg font-semibold mb-3">Laporan Kasir Harian</h2>
+                <p class="text-sm text-gray-600 mb-4">Buat ringkasan penjualan Anda untuk hari ini.</p>
+                <button onclick="generateCashierReport()" class="btn bg-blue-500 text-white w-full py-3">
+                    <i class="fas fa-file-invoice-dollar mr-2"></i> Buat Laporan Tutup Kasir
+                </button>
             </div>
         </div>
 
-        <!-- Report Details -->
-        <div id="reportDetails" class="card p-4" style="display: none;">
-            <h2 class="text-lg font-semibold mb-3">Detail Transaksi</h2>
-            <div id="reportTransactions" class="space-y-2">
-                <!-- Report transactions will be loaded here -->
-            </div>
-        </div>
     </div>
 </div>
 

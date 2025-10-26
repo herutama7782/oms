@@ -4,6 +4,8 @@ import { getAllFromDB, getFromDB, putToDB } from './db.js';
 import { showToast, showConfirmationModal } from './ui.js';
 import { queueSyncAction } from './sync.js';
 import { formatCurrency } from './ui.js';
+import { getLocalDateString } from './ui.js';
+
 
 // --- REPORTS ---
 export async function generateReport() {
@@ -505,5 +507,102 @@ export async function exportReportToCSV() {
     } catch (error) {
         console.error('Export report failed:', error);
         showToast('Gagal mengekspor laporan.');
+    }
+}
+
+// --- CASHIER DAILY REPORT ---
+export async function generateCashierReport() {
+    const generateBtn = document.querySelector('#cashierReportView button');
+    const originalBtnContent = generateBtn.innerHTML;
+
+    generateBtn.disabled = true;
+    generateBtn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>Membuat Laporan...`;
+    
+    try {
+        const currentUser = window.app.currentUser;
+        if (!currentUser) {
+            showToast('Pengguna tidak ditemukan.');
+            return;
+        }
+
+        const todayString = getLocalDateString(new Date());
+        const startDate = new Date(todayString + 'T00:00:00').toISOString();
+        const endDate = new Date(todayString + 'T23:59:59.999').toISOString();
+        const range = IDBKeyRange.bound(startDate, endDate);
+
+        const allTodayTransactions = await getAllFromDB('transactions', 'date', range);
+        const cashierTransactions = allTodayTransactions.filter(t => t.userId === currentUser.id);
+
+        if (cashierTransactions.length === 0) {
+            showToast('Anda belum memiliki transaksi hari ini.');
+            return;
+        }
+
+        // --- CALCULATIONS ---
+        let totalOmzet = 0;
+        let totalCashPaid = 0;
+        let totalChange = 0;
+        const productSales = new Map();
+        const feeSummary = new Map();
+
+        cashierTransactions.forEach(t => {
+            totalOmzet += t.total;
+            totalCashPaid += t.cashPaid;
+            totalChange += t.change;
+
+            t.items.forEach(item => {
+                const existing = productSales.get(item.name) || { quantity: 0, total: 0 };
+                existing.quantity += item.quantity;
+                existing.total += item.effectivePrice * item.quantity;
+                productSales.set(item.name, existing);
+            });
+
+            (t.fees || []).forEach(fee => {
+                const existingFee = feeSummary.get(fee.name) || { amount: 0 };
+                existingFee.amount += fee.amount;
+                feeSummary.set(fee.name, existingFee);
+            });
+        });
+
+        const reportData = {
+            cashierName: currentUser.name,
+            reportDate: new Date().toISOString(),
+            transactions: cashierTransactions,
+            summary: {
+                totalOmzet,
+                totalCashPaid,
+                totalChange,
+                totalTransactions: cashierTransactions.length,
+                cashInHand: totalCashPaid - totalChange
+            },
+            productSales: Array.from(productSales.entries()).sort((a, b) => b[1].quantity - a[1].quantity),
+            feeSummary: Array.from(feeSummary.entries())
+        };
+
+        window.app.currentCashierReportData = reportData;
+        showCashierReportModal(reportData);
+
+    } catch (error) {
+        console.error("Failed to generate cashier report:", error);
+        showToast("Gagal membuat laporan kasir.");
+    } finally {
+        generateBtn.disabled = false;
+        generateBtn.innerHTML = originalBtnContent;
+    }
+}
+
+function showCashierReportModal(reportData) {
+    const modal = document.getElementById('cashierReportModal');
+    if (modal) {
+        window.generateCashierReportContent(reportData);
+        modal.classList.remove('hidden');
+    }
+}
+
+export function closeCashierReportModal() {
+    const modal = document.getElementById('cashierReportModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        window.app.currentCashierReportData = null;
     }
 }
