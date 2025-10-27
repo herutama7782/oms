@@ -107,10 +107,14 @@ function displayReportDetails(transactions) {
     detailsEl.innerHTML = transactions.sort((a,b) => new Date(b.date) - new Date(a.date)).map(t => {
         const date = new Date(t.date);
         const formattedDate = `${date.toLocaleDateString('id-ID')} ${date.toLocaleTimeString('id-ID')}`;
+        const paymentMethod = t.paymentMethod || 'TUNAI';
         return `
             <div class="border-t pt-2 mt-2">
                 <div class="flex justify-between text-sm">
-                    <span>${formattedDate}</span>
+                    <div>
+                        <span>${formattedDate}</span>
+                        <span class="ml-2 px-2 py-0.5 rounded-full text-xs ${paymentMethod === 'QRIS' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}">${paymentMethod}</span>
+                    </div>
                     <span class="font-semibold">Rp ${formatCurrency(t.total)}</span>
                 </div>
                  <p class="text-xs text-gray-500">Kasir: ${t.userName || 'N/A'}</p>
@@ -452,7 +456,7 @@ export async function exportReportToCSV() {
         // --- SECTION 3: Detailed Transactions ---
         csvContent += "Detail Transaksi\n";
         const header = [
-            'ID Transaksi', 'Tanggal', 'Nama Kasir', 'Nama Produk', 'Kategori', 'Jumlah',
+            'ID Transaksi', 'Tanggal', 'Metode Pembayaran', 'Nama Kasir', 'Nama Produk', 'Kategori', 'Jumlah',
             'Harga Jual (Satuan)', 'Total Omzet Item', 'Harga Beli (Satuan)',
             'Total HPP Item', 'Laba Item'
         ].join(',');
@@ -460,6 +464,7 @@ export async function exportReportToCSV() {
 
         window.app.currentReportData.forEach(t => {
             const transactionDate = new Date(t.date).toLocaleString('id-ID');
+            const paymentMethod = t.paymentMethod || 'TUNAI';
             const cashierName = t.userName || 'N/A';
             t.items.forEach(item => {
                 const product = productMap.get(item.id);
@@ -473,6 +478,7 @@ export async function exportReportToCSV() {
                 const row = [
                     t.id,
                     transactionDate,
+                    paymentMethod,
                     cashierName,
                     item.name,
                     category,

@@ -86,6 +86,7 @@ const functions = {
     handleQuickCash: cart.handleQuickCash,
     completeTransaction: cart.completeTransaction,
     startNewTransaction: cart.startNewTransaction,
+    selectPaymentMethod: cart.selectPaymentMethod,
     // report.js
     generateReport: report.generateReport,
     exportReportToCSV: report.exportReportToCSV,
@@ -230,35 +231,60 @@ async function initializeMainApp() {
 
     peripherals.updateFeatureAvailability();
     
-    ui.updateUiForRole(); // Update UI based on logged in user's role
-
-    loadingOverlay.classList.add('opacity-0');
-    setTimeout(() => {
-        loadingOverlay.style.display = 'none';
-        appContainer.classList.remove('hidden');
-    }, 300);
+    // Check if a user is logged in
+    const users = await db.getAllFromDB('users');
+    if (users.length > 0) {
+        // If there are users, start the login flow.
+        // The main app will be shown after successful login.
+        await settings.startAuthFlow(async () => {
+            appContainer.classList.remove('hidden');
+            loadingOverlay.classList.add('opacity-0');
+            setTimeout(() => loadingOverlay.style.display = 'none', 300);
+            
+            ui.updateUiForRole();
+            ui.showPage('dashboard', { force: true });
+        });
+    } else {
+        // If no users, this might be the first run.
+        // We'll let the user setup an owner account.
+         await settings.startAuthFlow(async () => {
+            appContainer.classList.remove('hidden');
+            loadingOverlay.classList.add('opacity-0');
+            setTimeout(() => loadingOverlay.style.display = 'none', 300);
+            
+            ui.updateUiForRole();
+            ui.showPage('dashboard', { force: true });
+        });
+    }
 }
 
 
-document.addEventListener('DOMContentLoaded', async () => {
-    const loadingOverlay = document.getElementById('loadingOverlay');
-
+// --- DOMContentLoaded ---
+window.addEventListener('DOMContentLoaded', async () => {
     try {
         await loadHtmlPartials();
-
-        window.app.isScannerReady = typeof Html5Qrcode !== 'undefined';
-        window.app.isPrinterReady = typeof EscPosEncoder !== 'undefined';
-        window.app.isChartJsReady = typeof Chart !== 'undefined';
-
         await db.initDB();
-        
-        // New Login Flow
-        await settings.startAuthFlow(initializeMainApp);
+
+        // Check for library readiness
+        const checkLibraries = (callback) => {
+            const check = () => {
+                if (window.EscPosEncoder) window.app.isPrinterReady = true;
+                if (window.Html5Qrcode) window.app.isScannerReady = true;
+                if (window.Chart) window.app.isChartJsReady = true;
+
+                if (window.app.isPrinterReady && window.app.isScannerReady && window.app.isChartJsReady) {
+                    callback();
+                } else {
+                    console.warn('One or more libraries not ready, retrying...');
+                    setTimeout(check, 100);
+                }
+            };
+            check();
+        };
+
+        checkLibraries(initializeMainApp);
 
     } catch (error) {
         console.error("Initialization failed:", error);
-        if (loadingOverlay.textContent.includes('Memuat')) {
-            loadingOverlay.innerHTML = `<p class="text-red-500 p-4">Gagal memuat aplikasi. Silakan coba lagi.</p>`;
-        }
     }
 });

@@ -1,4 +1,4 @@
-import { putSettingToDB, getSettingFromDB, getAllFromDB, putToDB, clearAllStores, getFromDB } from './db.js';
+import { putSettingToDB, getSettingFromDB, getAllFromDB, putToDB, clearAllStores, getFromDB, getFromDBByIndex } from './db.js';
 import { showToast, showConfirmationModal, loadDashboard, showPage, updateUiForRole } from './ui.js';
 import { queueSyncAction } from './sync.js';
 import { formatCurrency } from './ui.js';
@@ -260,104 +260,115 @@ export async function handleProductImport(event) {
             const productNameMap = new Map(existingProducts.map(p => [p.name.toLowerCase(), p]));
             const productBarcodeMap = new Map(existingProducts.filter(p => p.barcode).map(p => [p.barcode, p]));
             
+            const existingCategories = await getAllFromDB('categories');
+            const categoryNameMap = new Map(existingCategories.map(c => [c.name.toLowerCase(), c]));
+            
             let errorCount = 0;
+            let addedCount = 0;
+            let updatedCount = 0;
 
-            const productsToProcess = [];
-            for (const row of rows) {
-                const values = row.split(',');
-                const rowData = header.reduce((obj, col, index) => {
+            const productsData = rows.map(row => {
+                 const values = row.split(',');
+                 return header.reduce((obj, col, index) => {
                     obj[col] = values[index] ? values[index].trim() : '';
                     return obj;
                 }, {});
-
-                if (!rowData.nama || isNaN(parseFloat(rowData.harga_jual))) {
-                    errorCount++;
-                    continue;
-                }
-
-                let existingProduct = null;
-                if (rowData.barcode && productBarcodeMap.has(rowData.barcode)) {
-                    existingProduct = productBarcodeMap.get(rowData.barcode);
-                } else if (productNameMap.has(rowData.nama.toLowerCase())) {
-                    existingProduct = productNameMap.get(rowData.nama.toLowerCase());
-                }
-                productsToProcess.push({ rowData, existingProduct });
-            }
-
-            showToast(`Mengunduh gambar produk... (0/${productsToProcess.length})`, 60000); // long timeout
-            const imageFetchPromises = productsToProcess.map((p, i) => {
-                if (i > 0 && i % 5 === 0) { // Update toast periodically
-                    showToast(`Mengunduh gambar produk... (${i}/${productsToProcess.length})`, 60000);
-                }
-                return imageUrlToBase64(p.rowData.gambar);
             });
-            const imageDataResults = await Promise.all(imageFetchPromises);
+
+            showToast(`Mengunduh gambar... (0/${productsData.length})`, 60000);
+            const imageDataResults = [];
+            for (let i = 0; i < productsData.length; i++) {
+                if (i > 0 && i % 5 === 0) showToast(`Mengunduh gambar... (${i}/${productsData.length})`, 60000);
+                imageDataResults.push(await imageUrlToBase64(productsData[i].gambar));
+            }
             
             showToast('Menyimpan data ke database...', 10000);
 
-            const existingCategories = await getAllFromDB('categories');
-            const categoryNameMap = new Map(existingCategories.map(c => [c.name.toLowerCase(), c]));
-            const newCategories = new Map();
-            let addedCount = 0;
-            let updatedCount = 0;
-            
-            const transaction = window.app.db.transaction(['products', 'categories'], 'readwrite');
-            const productStore = transaction.objectStore('products');
-            const categoryStore = transaction.objectStore('categories');
+            for (const [index, rowData] of productsData.entries()) {
+                try {
+                    if (!rowData.nama || isNaN(parseFloat(rowData.harga_jual))) {
+                        throw new Error("Baris tidak valid: Nama dan Harga Jual wajib diisi.");
+                    }
+                    
+                    const barcode = rowData.barcode ? rowData.barcode.trim() : null;
+                    let product;
+                    let isUpdate = false;
 
-            productsToProcess.forEach(({ rowData, existingProduct }, index) => {
-                const product = existingProduct || {
-                    createdAt: new Date().toISOString()
-                };
+                    const productByName = productNameMap.get(rowData.nama.toLowerCase());
+                    const productByBarcode = barcode ? productBarcodeMap.get(barcode) : null;
+                    
+                    if (productByBarcode) {
+                        product = productByBarcode;
+                        isUpdate = true;
+                    } else if (productByName) {
+                        product = productByName;
+                        isUpdate = true;
+                    } else {
+                        product = { createdAt: new Date().toISOString() };
+                    }
+                    
+                    if (barcode) {
+                        const conflictingProduct = await getFromDBByIndex('products', 'barcode', barcode);
+                        if (conflictingProduct && conflictingProduct.id !== product.id) {
+                            throw new Error(`Barcode '${barcode}' sudah digunakan oleh produk '${conflictingProduct.name}'.`);
+                        }
+                    }
 
-                product.name = rowData.nama;
-                product.price = parseFloat(rowData.harga_jual);
-                product.purchasePrice = parseFloat(rowData.harga_beli) || product.purchasePrice || 0;
-                product.stock = parseInt(rowData.stok) >= 0 ? parseInt(rowData.stok) : (product.stock || 0);
-                product.barcode = rowData.barcode || null;
-                product.category = rowData.kategori || product.category || 'Lainnya';
-                product.discountPercentage = parseFloat(rowData.diskon_persen) || product.discountPercentage || 0;
-                product.updatedAt = new Date().toISOString();
-                
-                const imageData = imageDataResults[index];
-                if (imageData) {
-                    product.image = imageData;
-                } else if (!existingProduct) {
-                    product.image = null;
-                } // else: keep existing image if url is invalid or not provided
+                    product.name = rowData.nama;
+                    product.price = parseFloat(rowData.harga_jual);
+                    product.purchasePrice = parseFloat(rowData.harga_beli) || product.purchasePrice || 0;
+                    product.stock = parseInt(rowData.stok) >= 0 ? parseInt(rowData.stok) : (product.stock || 0);
+                    product.barcode = barcode;
+                    product.category = rowData.kategori || product.category || 'Lainnya';
+                    product.discountPercentage = parseFloat(rowData.diskon_persen) || product.discountPercentage || 0;
+                    product.updatedAt = new Date().toISOString();
+                    
+                    const imageData = imageDataResults[index];
+                    if (imageData) {
+                        product.image = imageData;
+                    } else if (!isUpdate) {
+                        product.image = null;
+                    }
 
-                const categoryName = product.category;
-                if (categoryName && !categoryNameMap.has(categoryName.toLowerCase()) && !newCategories.has(categoryName.toLowerCase())) {
-                    const newCategory = { name: categoryName, createdAt: new Date().toISOString() };
-                    newCategories.set(categoryName.toLowerCase(), newCategory);
-                    categoryStore.add(newCategory);
+                    const categoryName = product.category;
+                    if (categoryName && !categoryNameMap.has(categoryName.toLowerCase())) {
+                        const newCategory = { name: categoryName, createdAt: new Date().toISOString() };
+                        const savedCatId = await putToDB('categories', newCategory);
+                        const savedCategory = { ...newCategory, id: savedCatId };
+                        categoryNameMap.set(categoryName.toLowerCase(), savedCategory);
+                    }
+                    
+                    const savedProductId = await putToDB('products', product);
+                    
+                    if (!isUpdate) {
+                       const newProduct = { ...product, id: savedProductId };
+                       productNameMap.set(newProduct.name.toLowerCase(), newProduct);
+                       if (newProduct.barcode) {
+                           productBarcodeMap.set(newProduct.barcode, newProduct);
+                       }
+                    }
+
+                    if (isUpdate) {
+                        updatedCount++;
+                    } else {
+                        addedCount++;
+                    }
+
+                } catch(error) {
+                    console.error("Gagal mengimpor baris:", rowData, "Error:", error.message);
+                    errorCount++;
                 }
-                
-                productStore.put(product);
-                
-                if (existingProduct) {
-                    updatedCount++;
-                } else {
-                    addedCount++;
-                }
-            });
-
-            transaction.oncomplete = () => {
-                let summary = `Import selesai.`;
-                if (addedCount > 0) summary += ` ${addedCount} produk ditambah.`;
-                if (updatedCount > 0) summary += ` ${updatedCount} produk diperbarui.`;
-                if (errorCount > 0) summary += ` ${errorCount} baris gagal.`;
-                showToast(summary, 5000);
-                
-                if(window.app.currentPage === 'produk') loadProductsList();
-                loadProductsGrid();
-                if(window.app.currentPage === 'dashboard') loadDashboard();
-            };
-            
-            transaction.onerror = (event) => {
-                console.error("Import transaction error:", event.target.error);
-                showToast('Terjadi kesalahan saat menyimpan data.');
             }
+
+            let summary = `Import selesai.`;
+            if (addedCount > 0) summary += ` ${addedCount} produk ditambah.`;
+            if (updatedCount > 0) summary += ` ${updatedCount} produk diperbarui.`;
+            if (errorCount > 0) summary += ` ${errorCount} baris gagal (cek konsol).`;
+            showToast(summary, 5000);
+            
+            if(window.app.currentPage === 'produk') loadProductsList();
+            loadProductsGrid();
+            if(window.app.currentPage === 'dashboard') loadDashboard();
 
         } catch (error) {
             console.error('Import failed:', error);
@@ -368,6 +379,7 @@ export async function handleProductImport(event) {
     };
     reader.readAsText(file);
 }
+
 
 // --- TAXES & FEES ---
 export async function addFee() {

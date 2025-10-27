@@ -190,6 +190,30 @@ export function getAllFromDB(storeName, indexName, query) {
     });
 }
 
+export function getFromDBByIndex(storeName, indexName, key) {
+    return new Promise((resolve, reject) => {
+        if (!window.app.db) {
+            console.error('Database not initialized on getFromDBByIndex');
+            reject('Database not initialized');
+            return;
+        }
+        // An empty key is not valid for a query. Return null immediately.
+        if (key === null || key === undefined || key === '') {
+            return resolve(null);
+        }
+        const transaction = window.app.db.transaction([storeName], 'readonly');
+        const store = transaction.objectStore(storeName);
+        const index = store.index(indexName);
+        const request = index.get(key);
+        request.onsuccess = (event) => {
+            resolve(event.target.result);
+        };
+        request.onerror = (event) => {
+            reject(`Error fetching from index ${indexName} in DB: ` + event.target.error);
+        };
+    });
+}
+
 
 export function putToDB(storeName, value) {
     return new Promise((resolve, reject) => {

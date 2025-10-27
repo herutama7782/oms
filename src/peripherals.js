@@ -500,7 +500,8 @@ async function _generateReceiptText(transactionData, isPreview) {
 
   receiptText += receiptLine('-') + '\n';
   receiptText += formatLine('TOTAL', `${formatCurrency(transactionData.total)}`) + '\n';
-  receiptText += formatLine('TUNAI', `${formatCurrency(transactionData.cashPaid)}`) + '\n';
+  const paymentMethodLabel = transactionData.paymentMethod || 'TUNAI';
+  receiptText += formatLine(paymentMethodLabel, `${formatCurrency(transactionData.cashPaid)}`) + '\n';
   receiptText += formatLine('KEMBALI', `${formatCurrency(transactionData.change)}`) + '\n';
   receiptText += receiptLine('=') + '\n';
 

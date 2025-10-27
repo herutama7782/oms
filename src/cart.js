@@ -8,6 +8,9 @@ import { applyDefaultFees } from './settings.js';
 import { loadProductsGrid } from './product.js';
 import { loadDashboard } from './ui.js';
 
+// State for payment method in the modal
+let currentPaymentMethod = 'cash';
+
 // --- Cart Modal Functions ---
 export function showCartModal() {
     updateCartDisplay(); // Ensure content is up-to-date
@@ -184,6 +187,46 @@ export function clearCart() {
 }
 
 // --- CHECKOUT PROCESS ---
+
+export function selectPaymentMethod(method) {
+    currentPaymentMethod = method;
+    const cashBtn = document.getElementById('paymentMethodCash');
+    const qrisBtn = document.getElementById('paymentMethodQris');
+    const cashFields = document.getElementById('cashPaymentFields');
+    const cashInput = document.getElementById('cashPaidInput');
+    const completeButton = document.getElementById('completeTransactionButton');
+
+    if (method === 'cash') {
+        cashBtn.classList.replace('bg-gray-200', 'bg-blue-500');
+        cashBtn.classList.replace('text-gray-700', 'text-white');
+        qrisBtn.classList.replace('bg-blue-500', 'bg-gray-200');
+        qrisBtn.classList.replace('text-white', 'text-gray-700');
+        cashFields.style.display = 'block';
+        cashInput.value = '';
+        cashInput.dispatchEvent(new Event('input')); // Trigger update to recalculate change
+    } else { // QRIS
+        qrisBtn.classList.replace('bg-gray-200', 'bg-blue-500');
+        qrisBtn.classList.replace('text-gray-700', 'text-white');
+        cashBtn.classList.replace('bg-blue-500', 'bg-gray-200');
+        cashBtn.classList.replace('text-white', 'text-gray-700');
+        cashFields.style.display = 'none';
+
+        // Auto-fill amount for QRIS
+        const subtotal = window.app.cart.items.reduce((sum, item) => sum + Math.round(item.effectivePrice * item.quantity), 0);
+        let totalFees = 0;
+        window.app.cart.fees.forEach(fee => {
+            const feeAmountRaw = fee.type === 'percentage' ? subtotal * (fee.value / 100) : fee.value;
+            totalFees += Math.round(feeAmountRaw);
+        });
+        const finalTotal = subtotal + totalFees;
+        
+        cashInput.value = finalTotal;
+        cashInput.dispatchEvent(new Event('input')); // Trigger update
+        completeButton.disabled = false;
+        completeButton.classList.remove('disabled:bg-blue-300');
+    }
+}
+
 export function showPaymentModal() {
     if (window.app.cart.items.length === 0) {
         showToast('Keranjang kosong. Tidak dapat melakukan pembayaran.');
@@ -201,19 +244,10 @@ export function showPaymentModal() {
     (document.getElementById('paymentTotal')).textContent = `Rp ${formatCurrency(finalTotal)}`;
     (document.getElementById('paymentModal')).classList.remove('hidden');
     
+    // Reset to default cash payment method
+    selectPaymentMethod('cash');
+
     const cashInput = document.getElementById('cashPaidInput');
-    cashInput.value = '';
-    
-    const changeEl = document.getElementById('paymentChange');
-    const changeLabelEl = document.getElementById('paymentChangeLabel');
-    const completeButton = document.getElementById('completeTransactionButton');
-
-    changeEl.textContent = 'Rp 0';
-    changeLabelEl.textContent = 'Kembalian:';
-    changeEl.classList.remove('text-red-500', 'text-green-500');
-    completeButton.disabled = true;
-    completeButton.classList.add('disabled:bg-blue-300');
-
     cashInput.focus();
 }
 
@@ -241,6 +275,17 @@ export function updatePaymentChange(e) {
     const changeEl = document.getElementById('paymentChange');
     const changeLabelEl = document.getElementById('paymentChangeLabel');
     const completeButton = document.getElementById('completeTransactionButton');
+
+    // For QRIS, change is always 0 and payment is always exact
+    if (currentPaymentMethod === 'qris') {
+        changeEl.textContent = 'Rp 0';
+        changeLabelEl.textContent = 'Kembalian:';
+        changeEl.classList.remove('text-red-500');
+        changeEl.classList.add('text-green-500');
+        completeButton.disabled = false;
+        completeButton.classList.remove('disabled:bg-blue-300');
+        return;
+    }
 
     if (cashPaidValue.trim() === '') {
         changeEl.textContent = 'Rp 0';
@@ -281,8 +326,6 @@ export async function completeTransaction() {
     spinner.classList.remove('hidden');
 
     try {
-        const cashPaid = Math.round(parseFloat(document.getElementById('cashPaidInput').value) || 0);
-
         const subtotalAfterDiscount = window.app.cart.items.reduce((sum, item) => {
             return sum + Math.round(item.effectivePrice * item.quantity);
         }, 0);
@@ -299,6 +342,10 @@ export async function completeTransaction() {
         });
 
         const total = subtotalAfterDiscount + totalFeeAmount;
+        const cashPaid = (currentPaymentMethod === 'qris')
+            ? total
+            : Math.round(parseFloat(document.getElementById('cashPaidInput').value) || 0);
+
         const change = cashPaid - total;
 
         const subtotal_for_report = window.app.cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -323,6 +370,7 @@ export async function completeTransaction() {
             total: total,
             cashPaid: cashPaid,
             change: change,
+            paymentMethod: currentPaymentMethod === 'cash' ? 'TUNAI' : 'QRIS',
             userId: currentUser ? currentUser.id : null,
             userName: currentUser ? currentUser.name : 'N/A',
             date: new Date().toISOString()
