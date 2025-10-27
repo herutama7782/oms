@@ -921,7 +921,7 @@ export function setupBarcodeGenerator() {
             JsBarcode("#barcode", barcodeCode, {
                 format: "CODE128",
                 lineColor: "#000",
-                width: 1.2,
+                width: 1.5,
                 height: 25,
                 displayValue: false,
                 background: "transparent",
