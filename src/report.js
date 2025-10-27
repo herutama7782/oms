@@ -546,15 +546,21 @@ export async function generateCashierReport() {
 
         // --- CALCULATIONS ---
         let totalOmzet = 0;
-        let totalCashPaid = 0;
+        let totalReceivedCash = 0;
+        let totalReceivedQris = 0;
         let totalChange = 0;
         const productSales = new Map();
         const feeSummary = new Map();
 
         cashierTransactions.forEach(t => {
             totalOmzet += t.total;
-            totalCashPaid += t.cashPaid;
-            totalChange += t.change;
+
+            if (t.paymentMethod === 'QRIS') {
+                totalReceivedQris += t.total;
+            } else { // Default to TUNAI for old transactions or ones without the method set
+                totalReceivedCash += t.cashPaid;
+                totalChange += t.change;
+            }
 
             t.items.forEach(item => {
                 const existing = productSales.get(item.name) || { quantity: 0, total: 0 };
@@ -576,10 +582,11 @@ export async function generateCashierReport() {
             transactions: cashierTransactions,
             summary: {
                 totalOmzet,
-                totalCashPaid,
+                totalReceivedCash,
+                totalReceivedQris,
                 totalChange,
                 totalTransactions: cashierTransactions.length,
-                cashInHand: totalCashPaid - totalChange
+                cashInHand: totalReceivedCash - totalChange
             },
             productSales: Array.from(productSales.entries()).sort((a, b) => b[1].quantity - a[1].quantity),
             feeSummary: Array.from(feeSummary.entries())

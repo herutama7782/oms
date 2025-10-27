@@ -1002,10 +1002,11 @@ async function _generateCashierReportText(reportData) {
   text += centerPad('RINGKASAN PENJUALAN', paperWidthChars) + '\n';
   text += receiptLine('-') + '\n';
   text += formatLine('Total Penjualan (Omzet)', reportData.summary.totalOmzet) + '\n';
-  text += formatLine('Total Tunai Diterima', reportData.summary.totalCashPaid) + '\n';
+  text += formatLine('Total Diterima (Tunai)', reportData.summary.totalReceivedCash) + '\n';
+  text += formatLine('Total Diterima (QRIS)', reportData.summary.totalReceivedQris) + '\n';
   text += formatLine('Total Kembalian', reportData.summary.totalChange) + '\n';
   text += receiptLine('-') + '\n';
-  text += formatLine('TOTAL UANG TUNAI', reportData.summary.cashInHand) + '\n';
+  text += formatLine('TOTAL UANG TUNAI DI LACI', reportData.summary.cashInHand) + '\n';
   text += receiptLine('=') + '\n';
   text += `Total Transaksi: ${reportData.summary.totalTransactions}\n\n`;
 
