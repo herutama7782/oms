@@ -683,17 +683,9 @@ async function generateLabelEscPos() {
         throw new Error('Printer library not loaded.');
     }
     
-    // Dynamically load html2canvas if not already available
-    let h2c = window.html2canvas;
-    if (!h2c) {
-        try {
-            const module = await import('https://cdn.skypack.dev/html2canvas');
-            h2c = module.default;
-            window.html2canvas = h2c; // Cache for future use
-        } catch (e) {
-            console.error('Failed to load html2canvas:', e);
-            throw new Error('Label printing library (html2canvas) failed to load.');
-        }
+    // Check for pre-loaded html2canvas
+    if (typeof html2canvas === 'undefined') {
+        throw new Error('Fitur label belum siap. Coba lagi.');
     }
 
     const labelContent = document.getElementById('labelContent');
@@ -706,8 +698,8 @@ async function generateLabelEscPos() {
     const paperWidthDots = paperSize === '58mm' ? 384 : 576;
 
     // Render the preview div to a canvas
-    const canvas = await h2c(labelContent, {
-        scale: 3, // Use a higher scale for better source quality before resizing
+    const canvas = await html2canvas(labelContent, {
+        scale: 2, // REDUCED scale for better performance
         backgroundColor: '#ffffff',
     });
 
@@ -936,20 +928,31 @@ export function setupBarcodeGenerator() {
     });
 
     downloadPngBtn.addEventListener('click', async () => {
+        if (typeof html2canvas === 'undefined') {
+            showToast('Fitur label belum siap, coba sesaat lagi.');
+            console.error('html2canvas is not loaded.');
+            return;
+        }
+        const button = downloadPngBtn;
+        button.disabled = true;
+        button.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>Memproses...`;
+        
         try {
-            const { default: html2canvas } = await import('https://cdn.skypack.dev/html2canvas');
             const labelContent = document.getElementById('labelContent');
             const canvas = await html2canvas(labelContent, {
-                scale: 3,
+                scale: 2, // Reduced scale for better performance
                 backgroundColor: '#ffffff'
             });
             const link = document.createElement('a');
             link.download = `label-${document.getElementById('barcode-code').value}.png`;
-            link.href = canvas.toDataURL("image/png").replace("image/png", "image/octet-stream");
+            link.href = canvas.toDataURL("image/png");
             link.click();
         } catch (e) {
             console.error('Download PNG failed:', e);
             showToast('Gagal mengunduh PNG. Coba lagi.');
+        } finally {
+            button.disabled = false;
+            button.innerHTML = `<i class="fas fa-download mr-2"></i>Unduh PNG`;
         }
     });
     
@@ -958,12 +961,20 @@ export function setupBarcodeGenerator() {
             showToast('Fitur cetak tidak tersedia.');
             return;
         }
+        
+        const button = printLabelBtn;
+        button.disabled = true;
+        button.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>Mencetak...`;
+
         try {
             const data = await generateLabelEscPos();
             sendToRawBT(data);
         } catch (e) {
             console.error('Print label failed:', e);
-            showToast('Gagal mencetak label.');
+            showToast(e.message || 'Gagal mencetak label.');
+        } finally {
+            button.disabled = false;
+            button.innerHTML = `<i class="fas fa-print mr-2"></i>Cetak Label`;
         }
     });
 }
