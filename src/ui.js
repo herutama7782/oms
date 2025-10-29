@@ -225,6 +225,9 @@ export function updateUiForRole() {
     const clearDataBtn = document.getElementById('clearDataBtn');
     if(clearDataBtn) clearDataBtn.style.display = checkAccess('owner') ? 'block' : 'none';
     
+    const fullLogoutBtn = document.getElementById('fullLogoutBtn');
+    if (fullLogoutBtn) fullLogoutBtn.style.display = (role === 'owner') ? 'block' : 'none';
+    
     const bottomNav = document.getElementById('bottomNav');
     if(bottomNav) bottomNav.classList.remove('hidden');
 }
@@ -299,11 +302,7 @@ export async function showPage(pageName, options = { force: false, initialTab: n
         updateCartFabBadge();
         const cashierLogoutBtn = document.getElementById('cashierLogoutBtn');
         if (cashierLogoutBtn) {
-            if (window.app.currentUser && window.app.currentUser.role === 'cashier') {
-                cashierLogoutBtn.classList.remove('hidden');
-            } else {
-                cashierLogoutBtn.classList.add('hidden');
-            }
+            cashierLogoutBtn.classList.remove('hidden');
         }
     } else if (pageName === 'produk') {
         loadProductsList();

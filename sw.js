@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pos-mobile-cache-v4'; // Bump version to include metadata.json
+const CACHE_NAME = 'pos-mobile-cache-v5'; // Bump version to cache Firebase SDKs
 const APP_SHELL_URLS = [
   '/',
   '/index.html',
@@ -59,7 +59,8 @@ self.addEventListener('fetch', event => {
   if (event.request.url.includes('cdn.tailwindcss.com') || 
       event.request.url.includes('cdnjs.cloudflare.com') ||
       event.request.url.includes('unpkg.com') ||
-      event.request.url.includes('cdn.jsdelivr.net')
+      event.request.url.includes('cdn.jsdelivr.net') ||
+      event.request.url.includes('www.gstatic.com') // Cache Firebase SDKs
      ) {
     event.respondWith(
       caches.open(CACHE_NAME).then(cache => {

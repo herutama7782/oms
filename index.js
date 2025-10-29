@@ -1,4 +1,7 @@
 // Main application entry point
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
 
 // Import all modules
 import * as audio from './src/audio.js';
@@ -45,6 +48,7 @@ window.app = {
     activePopover: null,
     cameraStream: null,
     currentUser: null, // For multi-user support
+    firebaseUser: null, // For Firebase auth user,
     onLoginSuccess: null,
 };
 
@@ -130,14 +134,24 @@ const functions = {
     handleProductImport: settings.handleProductImport,
     clearAllData: settings.clearAllData,
     // Auth & User Management (from settings.js)
-    handleLoginPinKeyPress: settings.handleLoginPinKeyPress,
     logout: settings.logout,
+    lockScreen: settings.lockScreen,
     showManageUsersModal: settings.showManageUsersModal,
     closeManageUsersModal: settings.closeManageUsersModal,
     showUserFormModal: settings.showUserFormModal,
     closeUserFormModal: settings.closeUserFormModal,
     saveUser: settings.saveUser,
     deleteUser: settings.deleteUser,
+    // PIN Management
+    handlePinInput: settings.handlePinInput,
+    handleInitialPinSetup: settings.handleInitialPinSetup,
+    // Firebase Auth functions
+    showLoginView: settings.showLoginView,
+    showRegisterView: settings.showRegisterView,
+    showForgotPasswordView: settings.showForgotPasswordView,
+    handleEmailLogin: settings.handleEmailLogin,
+    handleEmailRegister: settings.handleEmailRegister,
+    handleForgotPassword: settings.handleForgotPassword,
     // peripherals.js
     openCameraModal: peripherals.openCameraModal,
     closeCameraModal: peripherals.closeCameraModal,
@@ -194,14 +208,10 @@ async function loadHtmlPartials() {
     }
 }
 
-async function initializeMainApp() {
-    const loadingOverlay = document.getElementById('loadingOverlay');
-    const appContainer = document.getElementById('appContainer');
-
+async function initializeAppDependencies() {
     await settings.loadSettings();
     await product.populateCategoryDropdowns(['productCategory', 'editProductCategory', 'productCategoryFilter']);
-    await loadDashboard();
-
+    
     // Setup event listeners that are not onclick
     document.getElementById('searchProduct')?.addEventListener('input', product.filterProductsInGrid);
     document.getElementById('confirmButton')?.addEventListener('click', ui.executeConfirm);
@@ -230,59 +240,92 @@ async function initializeMainApp() {
     });
 
     peripherals.updateFeatureAvailability();
-    
-    // Check if a user is logged in
-    const users = await db.getAllFromDB('users');
-    if (users.length > 0) {
-        // If there are users, start the login flow.
-        // The main app will be shown after successful login.
-        await settings.startAuthFlow(async () => {
-            appContainer.classList.remove('hidden');
+}
+
+function listenForAuthStateChanges() {
+    onAuthStateChanged(window.auth, async (firebaseUser) => {
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        window.app.firebaseUser = firebaseUser;
+
+        if (firebaseUser) {
+            // Firebase user is logged in. Initiate PIN-based local user login flow.
+            console.log("Firebase user detected:", firebaseUser.uid);
+            await settings.initiatePinLoginFlow(firebaseUser);
+        } else {
+            // Firebase user is not logged in. Show login/register screen.
+            console.log("No Firebase user. Showing auth screen.");
+            document.getElementById('appContainer').classList.add('hidden');
+            document.getElementById('bottomNav').classList.add('hidden');
+            // Hide all PIN modals as well
+            document.getElementById('loginModal')?.classList.add('hidden');
+            document.getElementById('setDevicePinModal')?.classList.add('hidden');
+
             loadingOverlay.classList.add('opacity-0');
             setTimeout(() => loadingOverlay.style.display = 'none', 300);
-            
-            ui.updateUiForRole();
-            ui.showPage('dashboard', { force: true });
-        });
-    } else {
-        // If no users, this might be the first run.
-        // We'll let the user setup an owner account.
-         await settings.startAuthFlow(async () => {
-            appContainer.classList.remove('hidden');
-            loadingOverlay.classList.add('opacity-0');
-            setTimeout(() => loadingOverlay.style.display = 'none', 300);
-            
-            ui.updateUiForRole();
-            ui.showPage('dashboard', { force: true });
-        });
-    }
+            settings.showAuthContainer();
+        }
+    });
 }
 
 
 // --- DOMContentLoaded ---
+async function waitForLibraries() {
+    return new Promise(resolve => {
+        const check = () => {
+            if (window.EscPosEncoder && window.Html5Qrcode && window.Chart && 
+                window.html2canvas && window.JsBarcode) {
+                
+                if (!window.app.isPrinterReady) window.app.isPrinterReady = true;
+                if (!window.app.isScannerReady) window.app.isScannerReady = true;
+                if (!window.app.isChartJsReady) window.app.isChartJsReady = true;
+
+                console.log('All libraries ready.');
+                resolve();
+            } else {
+                console.warn('One or more libraries not ready, retrying...');
+                setTimeout(check, 100);
+            }
+        };
+        check();
+    });
+}
+
+
 window.addEventListener('DOMContentLoaded', async () => {
     try {
         await loadHtmlPartials();
-        await db.initDB();
+        
+        await waitForLibraries();
 
-        // Check for library readiness
-        const checkLibraries = (callback) => {
-            const check = () => {
-                if (window.EscPosEncoder) window.app.isPrinterReady = true;
-                if (window.Html5Qrcode) window.app.isScannerReady = true;
-                if (window.Chart) window.app.isChartJsReady = true;
-
-                if (window.app.isPrinterReady && window.app.isScannerReady && window.app.isChartJsReady) {
-                    callback();
-                } else {
-                    console.warn('One or more libraries not ready, retrying...');
-                    setTimeout(check, 100);
-                }
-            };
-            check();
+        const firebaseConfig = {
+            apiKey: "AIzaSyBq_BeiCGHKnhFrZvDc0U9BHuZefVaywG0",
+            authDomain: "omsetin-45334.firebaseapp.com",
+            projectId: "omsetin-45334",
+            storageBucket: "omsetin-45334.appspot.com",
+            messagingSenderId: "944626340482",
+            appId: "1:944626340482:web:61d4a8c5c3c1a3b3e1c2e1"
         };
+        
+        const firebaseApp = initializeApp(firebaseConfig);
+        window.auth = getAuth(firebaseApp);
+        
+        try {
+            window.db_firestore = initializeFirestore(firebaseApp, {
+                localCache: persistentLocalCache({})
+            });
+            console.log('Firestore offline persistence enabled.');
+        } catch (err) {
+            console.error("Firestore initialization with persistence failed:", err);
+            if (err.code === 'failed-precondition') {
+                 console.warn('Firestore persistence failed: multiple tabs open or other issue.');
+            }
+             // Fallback to in-memory persistence
+            window.db_firestore = initializeFirestore(firebaseApp, {});
+        }
 
-        checkLibraries(initializeMainApp);
+        await db.initDB();
+        await initializeAppDependencies();
+        listenForAuthStateChanges();
 
     } catch (error) {
         console.error("Initialization failed:", error);

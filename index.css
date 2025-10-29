@@ -585,3 +585,16 @@ body {
 #ledgerActionsPopover a.text-red-600:hover {
     background-color: #fee2e2; /* red-100 */
 }
+
+/* Auth button spinner */
+.btn .auth-button-spinner {
+    display: none;
+}
+
+.btn:disabled .auth-button-spinner {
+    display: inline-block;
+}
+
+.btn:disabled .auth-button-text {
+    display: none;
+}

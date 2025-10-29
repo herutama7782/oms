@@ -5,6 +5,38 @@ import { formatCurrency } from './ui.js';
 
 let currentContactTab = 'customer';
 
+// --- SANITIZATION HELPERS ---
+function sanitizeContact(contact) {
+    if (!contact) return null;
+    return {
+        id: contact.id,
+        serverId: contact.serverId,
+        name: contact.name,
+        phone: contact.phone,
+        address: contact.address,
+        notes: contact.notes,
+        type: contact.type,
+        createdAt: contact.createdAt,
+        updatedAt: contact.updatedAt,
+    };
+}
+
+function sanitizeLedgerEntry(entry) {
+    if (!entry) return null;
+    return {
+        id: entry.id,
+        serverId: entry.serverId,
+        contactId: entry.contactId,
+        amount: entry.amount,
+        description: entry.description,
+        type: entry.type,
+        dueDate: entry.dueDate,
+        createdAt: entry.createdAt,
+        updatedAt: entry.updatedAt,
+    };
+}
+
+
 export function switchContactTab(tabName) {
     if (currentContactTab === tabName) return;
 
@@ -189,7 +221,7 @@ export async function deleteContact(contactId) {
             const tx = window.app.db.transaction('contacts', 'readwrite');
             tx.objectStore('contacts').delete(contactId);
             tx.oncomplete = async () => {
-                await queueSyncAction('DELETE_CONTACT', contactToDelete);
+                await queueSyncAction('DELETE_CONTACT', sanitizeContact(contactToDelete));
                 showToast('Kontak berhasil dihapus.');
                 loadContacts(contactToDelete.type);
             };
@@ -432,7 +464,7 @@ export function deleteLedgerEntry(entryId) {
             const tx = window.app.db.transaction('ledgers', 'readwrite');
             tx.objectStore('ledgers').delete(entryId);
             tx.oncomplete = async () => {
-                await queueSyncAction('DELETE_LEDGER_ENTRY', entryToDelete);
+                await queueSyncAction('DELETE_LEDGER_ENTRY', sanitizeLedgerEntry(entryToDelete));
                 showToast('Catatan berhasil dihapus.');
                 await renderLedgerHistory(window.app.currentContactId);
                 await window.updateDashboardSummaries();
@@ -485,7 +517,7 @@ export async function saveDueDate() {
             entry.updatedAt = new Date().toISOString();
             
             await putToDB('ledgers', entry);
-            await queueSyncAction('UPDATE_LEDGER_ENTRY', entry);
+            await queueSyncAction('UPDATE_LEDGER_ENTRY', sanitizeLedgerEntry(entry));
             
             showToast('Tanggal jatuh tempo berhasil diperbarui.');
             closeEditDueDateModal();

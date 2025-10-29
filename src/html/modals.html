@@ -483,43 +483,6 @@
     </div>
 </div>
 
-<!-- Login Modal (NEW) -->
-<div id="loginModal" class="fixed inset-0 bg-slate-100 hidden z-[9998]">
-    <div class="flex flex-col items-center justify-center h-full p-4">
-
-        <div class="text-center mb-6">
-             <img src="https://i.imgur.com/awbpnPX.png" alt="OMSETIN Logo" class="w-24 h-24 mx-auto rounded-2xl shadow-lg mb-4">
-            <h1 class="text-3xl font-bold text-gray-800">OMSETIN</h1>
-            <p class="text-gray-600 mt-1">Silakan masukkan PIN Anda</p>
-            <p class="text-gray-600 mt-1">Pemilik / Manajer / Kasir</p>
-        </div>
-
-        <div class="bg-white rounded-3xl p-6 w-full max-w-xs shadow-lg">
-            <div id="loginPinDisplay" class="flex justify-center items-center gap-4 mb-6">
-                <div class="w-4 h-4 rounded-full bg-gray-200 transition-colors duration-200"></div>
-                <div class="w-4 h-4 rounded-full bg-gray-200 transition-colors duration-200"></div>
-                <div class="w-4 h-4 rounded-full bg-gray-200 transition-colors duration-200"></div>
-                <div class="w-4 h-4 rounded-full bg-gray-200 transition-colors duration-200"></div>
-            </div>
-            <div id="loginPinError" class="text-red-500 text-center text-sm mb-4 min-h-[1.25rem]"></div>
-            <div class="grid grid-cols-3 gap-3">
-                <button onclick="handleLoginPinKeyPress('1')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">1</button>
-                <button onclick="handleLoginPinKeyPress('2')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">2</button>
-                <button onclick="handleLoginPinKeyPress('3')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">3</button>
-                <button onclick="handleLoginPinKeyPress('4')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">4</button>
-                <button onclick="handleLoginPinKeyPress('5')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">5</button>
-                <button onclick="handleLoginPinKeyPress('6')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">6</button>
-                <button onclick="handleLoginPinKeyPress('7')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">7</button>
-                <button onclick="handleLoginPinKeyPress('8')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">8</button>
-                <button onclick="handleLoginPinKeyPress('9')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">9</button>
-                <div></div> <!-- Placeholder for empty cell -->
-                <button onclick="handleLoginPinKeyPress('0')" class="btn bg-gray-100 text-gray-700 text-2xl font-semibold py-4 rounded-2xl hover:bg-gray-200 active:scale-95 transition-all">0</button>
-                <button onclick="handleLoginPinKeyPress('backspace')" class="btn bg-gray-200 text-gray-700 text-xl py-4 rounded-2xl hover:bg-gray-300 active:scale-95 transition-all"><i class="fas fa-backspace"></i></button>
-            </div>
-        </div>
-    </div>
-</div>
-
 <!-- Manage Users Modal (NEW) -->
 <div id="manageUsersModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
     <div class="flex items-center justify-center h-full p-4">
@@ -551,7 +514,7 @@
                 </div>
                 <div>
                     <label class="text-sm text-gray-600">PIN (4 digit)</label>
-                    <input type="password" id="userPin" class="input-field w-full" maxlength="4" inputmode="numeric" placeholder="Masukkan 4 digit PIN">
+                    <input type="password" inputmode="numeric" id="userPin" class="input-field w-full" placeholder="Kosongkan jika tidak diubah" maxlength="4">
                 </div>
                 <div>
                     <label class="text-sm text-gray-600">Peran</label>
@@ -621,6 +584,144 @@
             <div class="space-y-2">
                 <button onclick="printCashierReport()" class="btn bg-gray-700 hover:bg-gray-800 text-white w-full py-2 text-sm"><i class="fas fa-print mr-1"></i>Cetak Laporan</button>
                 <button onclick="closeCashierReportModal()" class="btn bg-blue-500 hover:bg-blue-600 text-white w-full py-3 text-base">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Firebase Auth Container -->
+<div id="authContainer" class="fixed inset-0 bg-slate-100 z-[9997] hidden">
+    <div class="flex flex-col items-center justify-center h-full p-4">
+        <!-- Login View -->
+        <div id="loginView" class="bg-white rounded-3xl p-6 w-full max-w-sm shadow-lg">
+            <div class="text-center mb-6">
+                <img src="https://i.imgur.com/awbpnPX.png" alt="OMSETIN Logo" class="w-20 h-20 mx-auto rounded-2xl shadow-lg mb-4">
+                <h1 class="text-2xl font-bold text-gray-800">Selamat Datang Kembali</h1>
+                <p class="text-gray-600 mt-1">Login untuk melanjutkan</p>
+            </div>
+            <form onsubmit="handleEmailLogin(event); return false;" class="space-y-4">
+                <div>
+                    <label for="loginEmail" class="text-sm font-medium text-gray-700">Email</label>
+                    <input type="email" id="loginEmail" required class="input-field w-full mt-1" placeholder="email@anda.com">
+                </div>
+                <div>
+                    <div class="flex justify-between items-center">
+                        <label for="loginPassword" class="text-sm font-medium text-gray-700">Password</label>
+                        <button type="button" onclick="showForgotPasswordView()" class="text-sm text-blue-500 hover:underline">Lupa Password?</button>
+                    </div>
+                    <input type="password" id="loginPassword" required class="input-field w-full mt-1" placeholder="********">
+                </div>
+                <div id="loginError" class="text-red-500 text-sm text-center min-h-[1.25rem]"></div>
+                <button type="submit" id="loginButton" class="btn bg-blue-500 text-white w-full py-3 font-semibold flex items-center justify-center">
+                    <span class="auth-button-text">Login</span>
+                    <i class="fas fa-spinner fa-spin auth-button-spinner"></i>
+                </button>
+            </form>
+            <p class="text-center text-sm text-gray-600 mt-4">
+                Belum punya akun? <button onclick="showRegisterView()" class="font-semibold text-blue-500">Daftar di sini</button>
+            </p>
+        </div>
+
+        <!-- Register View -->
+        <div id="registerView" class="bg-white rounded-3xl p-6 w-full max-w-sm shadow-lg hidden">
+            <div class="text-center mb-6">
+                 <img src="https://i.imgur.com/awbpnPX.png" alt="OMSETIN Logo" class="w-20 h-20 mx-auto rounded-2xl shadow-lg mb-4">
+                <h1 class="text-2xl font-bold text-gray-800">Buat Akun Baru</h1>
+                <p class="text-gray-600 mt-1">Isi data diri Anda</p>
+            </div>
+            <form onsubmit="handleEmailRegister(event); return false;" class="space-y-3">
+                 <div>
+                    <label for="registerName" class="text-sm font-medium text-gray-700">Nama Lengkap</label>
+                    <input type="text" id="registerName" required class="input-field w-full mt-1" placeholder="Nama Anda">
+                </div>
+                <div>
+                    <label for="registerPhone" class="text-sm font-medium text-gray-700">No. HP</label>
+                    <input type="tel" id="registerPhone" required class="input-field w-full mt-1" placeholder="08123456789">
+                </div>
+                <div>
+                    <label for="registerEmail" class="text-sm font-medium text-gray-700">Email</label>
+                    <input type="email" id="registerEmail" required class="input-field w-full mt-1" placeholder="email@anda.com">
+                </div>
+                <div>
+                    <label for="registerPassword" class="text-sm font-medium text-gray-700">Password</label>
+                    <input type="password" id="registerPassword" required class="input-field w-full mt-1" placeholder="Minimal 6 karakter">
+                </div>
+                <div id="registerError" class="text-red-500 text-sm text-center min-h-[1.25rem]"></div>
+                <button type="submit" id="registerButton" class="btn bg-blue-500 text-white w-full py-3 font-semibold flex items-center justify-center">
+                    <span class="auth-button-text">Daftar</span>
+                    <i class="fas fa-spinner fa-spin auth-button-spinner"></i>
+                </button>
+            </form>
+             <p class="text-center text-sm text-gray-600 mt-4">
+                Sudah punya akun? <button onclick="showLoginView()" class="font-semibold text-blue-500">Login di sini</button>
+            </p>
+        </div>
+        
+        <!-- Forgot Password View -->
+        <div id="forgotPasswordView" class="bg-white rounded-3xl p-6 w-full max-w-sm shadow-lg hidden">
+            <div class="text-center mb-6">
+                <img src="https://i.imgur.com/awbpnPX.png" alt="OMSETIN Logo" class="w-20 h-20 mx-auto rounded-2xl shadow-lg mb-4">
+                <h1 class="text-2xl font-bold text-gray-800">Reset Password</h1>
+                <p class="text-gray-600 mt-1">Masukkan email Anda</p>
+            </div>
+            <form onsubmit="handleForgotPassword(event); return false;" class="space-y-4">
+                <div>
+                    <label for="forgotEmail" class="text-sm font-medium text-gray-700">Email</label>
+                    <input type="email" id="forgotEmail" required class="input-field w-full mt-1" placeholder="email@anda.com">
+                </div>
+                <div id="forgotError" class="text-red-500 text-sm text-center min-h-[1.25rem]"></div>
+                <div id="forgotSuccess" class="text-green-600 text-sm text-center min-h-[1.25rem]"></div>
+                <button type="submit" id="forgotButton" class="btn bg-blue-500 text-white w-full py-3 font-semibold flex items-center justify-center">
+                    <span class="auth-button-text">Kirim Link Reset</span>
+                    <i class="fas fa-spinner fa-spin auth-button-spinner"></i>
+                </button>
+            </form>
+            <p class="text-center text-sm text-gray-600 mt-4">
+                Ingat password Anda? <button onclick="showLoginView()" class="font-semibold text-blue-500">Kembali ke Login</button>
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- PIN Login Modal -->
+<div id="loginModal" class="fixed inset-0 bg-slate-100 z-[9998] hidden">
+    <div class="flex flex-col items-center justify-center h-full p-4">
+        <img src="https://i.imgur.com/awbpnPX.png" alt="OMSETIN Logo" class="w-20 h-20 mx-auto rounded-2xl shadow-lg mb-4">
+        <h2 class="text-2xl font-bold text-gray-800 mb-2">Masukkan PIN Anda</h2>
+        <div id="pinDisplay" class="flex gap-4 mb-6 h-8 items-center">
+            <!-- PIN dots will be generated here -->
+        </div>
+        <div id="pinLockoutMessage" class="text-center text-red-500 font-semibold mb-4 hidden h-5"></div>
+        <div id="pinKeypad" class="grid grid-cols-3 gap-4 w-full max-w-xs">
+            <button onclick="handlePinInput('1')" class="btn bg-white text-3xl font-bold p-4 h-20 rounded-2xl shadow-md">1</button>
+            <button onclick="handlePinInput('2')" class="btn bg-white text-3xl font-bold p-4 h-20 rounded-2xl shadow-md">2</button>
+            <button onclick="handlePinInput('3')" class="btn bg-white text-3xl font-bold p-4 h-20 rounded-2xl shadow-md">3</button>
+            <button onclick="handlePinInput('4')" class="btn bg-white text-3xl font-bold p-4 h-20 rounded-2xl shadow-md">4</button>
+            <button onclick="handlePinInput('5')" class="btn bg-white text-3xl font-bold p-4 h-20 rounded-2xl shadow-md">5</button>
+            <button onclick="handlePinInput('6')" class="btn bg-white text-3xl font-bold p-4 h-20 rounded-2xl shadow-md">6</button>
+            <button onclick="handlePinInput('7')" class="btn bg-white text-3xl font-bold p-4 h-20 rounded-2xl shadow-md">7</button>
+            <button onclick="handlePinInput('8')" class="btn bg-white text-3xl font-bold p-4 h-20 rounded-2xl shadow-md">8</button>
+            <button onclick="handlePinInput('9')" class="btn bg-white text-3xl font-bold p-4 h-20 rounded-2xl shadow-md">9</button>
+            <button onclick="handlePinInput('clear')" class="btn bg-white text-xl font-bold p-4 h-20 rounded-2xl shadow-md text-orange-500">C</button>
+            <button onclick="handlePinInput('0')" class="btn bg-white text-3xl font-bold p-4 h-20 rounded-2xl shadow-md">0</button>
+            <button onclick="handlePinInput('backspace')" class="btn bg-white text-2xl font-bold p-4 h-20 rounded-2xl shadow-md"><i class="fas fa-backspace"></i></button>
+        </div>
+    </div>
+</div>
+
+<!-- Set Initial PIN Modal -->
+<div id="setDevicePinModal" class="fixed inset-0 bg-slate-100 z-[9998] hidden">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
+            <h2 class="text-xl font-bold mb-2 text-center">Buat PIN Keamanan</h2>
+            <p class="text-gray-600 mb-4 text-sm text-center">Anda adalah pengguna pertama. Buat PIN 4 digit untuk akun <strong>Pemilik</strong> Anda.</p>
+            <div class="space-y-3">
+                <input type="password" inputmode="numeric" id="setPinInput" class="input-field w-full text-center text-2xl tracking-[1em]" maxlength="4" placeholder="••••" autocomplete="new-password">
+                <input type="password" inputmode="numeric" id="confirmPinInput" class="input-field w-full text-center text-2xl tracking-[1em]" maxlength="4" placeholder="••••" autocomplete="new-password">
+            </div>
+            <div id="pinSetError" class="text-red-500 text-sm text-center min-h-[1.25rem] mt-2"></div>
+            <div class="flex mt-4">
+                <button onclick="handleInitialPinSetup()" class="btn bg-blue-500 text-white flex-1 py-3 font-semibold">Simpan PIN</button>
             </div>
         </div>
     </div>

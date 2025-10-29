@@ -3,6 +3,37 @@ import { showToast, showConfirmationModal, formatCurrency } from "./ui.js";
 import { queueSyncAction } from "./sync.js";
 import { loadDashboard } from "./ui.js";
 
+// --- SANITIZATION HELPERS ---
+function sanitizeProduct(product) {
+    if (!product) return null;
+    return {
+        id: product.id,
+        serverId: product.serverId,
+        name: product.name,
+        price: product.price,
+        purchasePrice: product.purchasePrice,
+        stock: product.stock,
+        barcode: product.barcode,
+        category: product.category,
+        discountPercentage: product.discountPercentage,
+        image: product.image,
+        createdAt: product.createdAt,
+        updatedAt: product.updatedAt
+    };
+}
+
+function sanitizeCategory(category) {
+    if (!category) return null;
+    return {
+        id: category.id,
+        serverId: category.serverId,
+        name: category.name,
+        createdAt: category.createdAt,
+        updatedAt: category.updatedAt
+    };
+}
+
+
 // --- CATEGORY MANAGEMENT ---
 export async function populateCategoryDropdowns(selectElementIds, selectedValue) {
     try {
@@ -118,7 +149,7 @@ export async function deleteCategory(id, name) {
             const store = transaction.objectStore('categories');
             store.delete(id);
             transaction.oncomplete = async () => {
-                await queueSyncAction('DELETE_CATEGORY', categoryToDelete);
+                await queueSyncAction('DELETE_CATEGORY', sanitizeCategory(categoryToDelete));
                 showToast('Kategori berhasil dihapus');
                 await populateCategoryDropdowns(['productCategory', 'editProductCategory', 'productCategoryFilter']);
             };
@@ -282,7 +313,7 @@ export async function increaseStock(productId) {
         product.updatedAt = new Date().toISOString();
 
         await putToDB('products', product);
-        await queueSyncAction('UPDATE_PRODUCT', product);
+        await queueSyncAction('UPDATE_PRODUCT', sanitizeProduct(product));
 
         if (window.app.currentPage === 'produk') {
             await loadProductsList();
@@ -313,7 +344,7 @@ export async function decreaseStock(productId) {
         product.updatedAt = new Date().toISOString();
 
         await putToDB('products', product);
-        await queueSyncAction('UPDATE_PRODUCT', product);
+        await queueSyncAction('UPDATE_PRODUCT', sanitizeProduct(product));
 
         if (window.app.currentPage === 'produk') {
             await loadProductsList();
@@ -492,7 +523,7 @@ export async function updateProduct() {
             product.updatedAt = new Date().toISOString();
             
             await putToDB('products', product);
-            await queueSyncAction('UPDATE_PRODUCT', product);
+            await queueSyncAction('UPDATE_PRODUCT', sanitizeProduct(product));
             showToast('Produk berhasil diperbarui');
             closeEditProductModal();
             loadProductsList();
@@ -515,7 +546,7 @@ export function deleteProduct(id) {
                 const store = transaction.objectStore('products');
                 store.delete(id);
                 transaction.oncomplete = async () => {
-                    await queueSyncAction('DELETE_PRODUCT', productToDelete);
+                    await queueSyncAction('DELETE_PRODUCT', sanitizeProduct(productToDelete));
                     showToast('Produk berhasil dihapus');
                     loadProductsList();
                     loadProductsGrid();

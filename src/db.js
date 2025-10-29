@@ -22,7 +22,7 @@ export function initDB() {
             return;
         }
 
-        const request = indexedDB.open('POS_DB', 9); 
+        const request = indexedDB.open('POS_DB', 13); 
 
         request.onerror = function(event) {
             console.error("Database error:", event.target.error);
@@ -144,6 +144,34 @@ export function initDB() {
                 const transactionStore = transaction.objectStore('transactions');
                 if (!transactionStore.indexNames.contains('userId')) {
                     transactionStore.createIndex('userId', 'userId', { unique: false });
+                }
+            }
+            if (event.oldVersion < 10) {
+                const userStore = transaction.objectStore('users');
+                if (!userStore.indexNames.contains('firebaseUid')) {
+                    userStore.createIndex('firebaseUid', 'firebaseUid', { unique: true });
+                }
+            }
+            if (event.oldVersion < 11) {
+                const userStore = transaction.objectStore('users');
+                if (userStore.indexNames.contains('pin')) {
+                    userStore.deleteIndex('pin');
+                }
+            }
+             if (event.oldVersion < 12) {
+                const userStore = transaction.objectStore('users');
+                if (!userStore.indexNames.contains('pin')) {
+                    userStore.createIndex('pin', 'pin', { unique: true });
+                }
+            }
+            if (event.oldVersion < 13) {
+                const userStore = transaction.objectStore('users');
+                if (userStore.indexNames.contains('firebaseUid')) {
+                    userStore.deleteIndex('firebaseUid');
+                }
+                // Re-create as a non-unique index for querying purposes
+                if (!userStore.indexNames.contains('firebaseUid')) {
+                    userStore.createIndex('firebaseUid', 'firebaseUid', { unique: false });
                 }
             }
         };

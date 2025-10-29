@@ -1,8 +1,34 @@
+import {
+    signInWithEmailAndPassword,
+    createUserWithEmailAndPassword,
+    sendPasswordResetEmail,
+    signOut
+} from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
+import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+
 import { putSettingToDB, getSettingFromDB, getAllFromDB, putToDB, clearAllStores, getFromDB, getFromDBByIndex } from './db.js';
 import { showToast, showConfirmationModal, loadDashboard, showPage, updateUiForRole } from './ui.js';
 import { queueSyncAction } from './sync.js';
 import { formatCurrency } from './ui.js';
 import { loadProductsList, loadProductsGrid } from './product.js';
+
+let pinLockoutInterval = null;
+const FAILED_ATTEMPTS_LIMIT = 5;
+
+// --- SANITIZATION HELPER ---
+function sanitizeFee(fee) {
+    if (!fee) return null;
+    return {
+        id: fee.id,
+        serverId: fee.serverId,
+        name: fee.name,
+        type: fee.type,
+        value: fee.value,
+        isDefault: fee.isDefault,
+        isTax: fee.isTax,
+        createdAt: fee.createdAt,
+    };
+}
 
 // --- SETTINGS ---
 export async function saveStoreSettings() {
@@ -79,14 +105,52 @@ export function previewStoreLogo(event) {
 // --- DATA MANAGEMENT ---
 export async function exportData() {
     try {
-        const products = await getAllFromDB('products');
-        const transactions = await getAllFromDB('transactions');
-        const settings = await getAllFromDB('settings');
-        const categories = await getAllFromDB('categories');
-        const fees = await getAllFromDB('fees');
-        const contacts = await getAllFromDB('contacts');
-        const ledgers = await getAllFromDB('ledgers');
-        const users = await getAllFromDB('users');
+        // Use a shallow copy for simple, flat objects.
+        const sanitizeFlat = (items) => items.map(item => ({ ...item }));
+
+        // Use a deep, manual reconstruction for complex nested objects like transactions
+        // to robustly prevent circular reference errors.
+        const sanitizeTransactions = (transactions) => {
+            return transactions.map(t => ({
+                id: t.id,
+                subtotal: t.subtotal,
+                totalDiscount: t.totalDiscount,
+                total: t.total,
+                cashPaid: t.cashPaid,
+                change: t.change,
+                paymentMethod: t.paymentMethod,
+                userId: t.userId,
+                userName: t.userName,
+                date: t.date,
+                items: (t.items || []).map(item => ({
+                    id: item.id,
+                    name: item.name,
+                    quantity: item.quantity,
+                    price: item.price,
+                    effectivePrice: item.effectivePrice,
+                    discountPercentage: item.discountPercentage
+                })),
+                fees: (t.fees || []).map(fee => ({
+                    id: fee.id,
+                    name: fee.name,
+                    type: fee.type,
+                    value: fee.value,
+                    isDefault: fee.isDefault,
+                    isTax: fee.isTax,
+                    createdAt: fee.createdAt,
+                    amount: fee.amount
+                }))
+            }));
+        };
+
+        const products = sanitizeFlat(await getAllFromDB('products'));
+        const transactions = sanitizeTransactions(await getAllFromDB('transactions'));
+        const settings = sanitizeFlat(await getAllFromDB('settings'));
+        const categories = sanitizeFlat(await getAllFromDB('categories'));
+        const fees = sanitizeFlat(await getAllFromDB('fees'));
+        const contacts = sanitizeFlat(await getAllFromDB('contacts'));
+        const ledgers = sanitizeFlat(await getAllFromDB('ledgers'));
+        const users = sanitizeFlat(await getAllFromDB('users'));
         
         const data = {
             products,
@@ -460,7 +524,7 @@ export async function deleteFee(id) {
             const tx = window.app.db.transaction('fees', 'readwrite');
             tx.objectStore('fees').delete(id);
             tx.oncomplete = async () => {
-                await queueSyncAction('DELETE_FEE', feeToDelete);
+                await queueSyncAction('DELETE_FEE', sanitizeFee(feeToDelete));
                 showToast('Biaya berhasil dihapus.');
                 loadFees();
             };
@@ -544,19 +608,235 @@ export async function reconcileCartFees() {
     window.app.cart.fees = reconciledFees;
 }
 
-// --- AUTH & USER MANAGEMENT ---
+// --- PIN & AUTH FLOW ---
 
-/**
- * Checks if the current user has access based on their role.
- * @param {string|string[]} allowedRoles - A role or an array of roles that are allowed.
- * @returns {boolean} - True if the user has access, false otherwise.
- */
+// Helper function to enable/disable the PIN keypad
+function setKeypadDisabled(disabled) {
+    const keypad = document.getElementById('pinKeypad');
+    if (!keypad) return;
+    keypad.querySelectorAll('button').forEach(btn => {
+        btn.disabled = disabled;
+    });
+    if (disabled) {
+        keypad.classList.add('opacity-50', 'pointer-events-none');
+    } else {
+        keypad.classList.remove('opacity-50', 'pointer-events-none');
+    }
+}
+
+// Manages the lockout timer UI
+function updateLockoutTimer(endTime) {
+    const lockoutMessageEl = document.getElementById('pinLockoutMessage');
+    const remainingMs = endTime - Date.now();
+
+    if (remainingMs <= 0) {
+        clearInterval(pinLockoutInterval);
+        pinLockoutInterval = null;
+        lockoutMessageEl.classList.add('hidden');
+        setKeypadDisabled(false);
+        localStorage.removeItem('pinLockoutEndTime');
+        // Reset attempts after lockout period ends, giving them a fresh start
+        localStorage.setItem('pinFailedAttempts', '0');
+    } else {
+        const remainingSeconds = Math.ceil(remainingMs / 1000);
+        const minutes = Math.floor(remainingSeconds / 60);
+        const seconds = remainingSeconds % 60;
+        lockoutMessageEl.textContent = `Terlalu banyak percobaan. Coba lagi dalam ${minutes > 0 ? `${minutes} menit ` : ''}${seconds} detik.`;
+    }
+}
+
+// Initiates the UI and logic for a PIN lockout
+function startPinLockout(endTime) {
+    const lockoutMessageEl = document.getElementById('pinLockoutMessage');
+    setKeypadDisabled(true);
+    lockoutMessageEl.classList.remove('hidden');
+
+    if (pinLockoutInterval) {
+        clearInterval(pinLockoutInterval);
+    }
+    updateLockoutTimer(endTime); // Initial call to show message immediately
+    pinLockoutInterval = setInterval(() => updateLockoutTimer(endTime), 1000);
+}
+
+// Checks for an active lockout when the PIN modal is displayed
+function checkPinLockout() {
+    const endTime = parseInt(localStorage.getItem('pinLockoutEndTime') || '0');
+    if (endTime > Date.now()) {
+        startPinLockout(endTime);
+    } else {
+        setKeypadDisabled(false);
+        document.getElementById('pinLockoutMessage').classList.add('hidden');
+    }
+}
+
+function resetPinInput() {
+    window.app.currentPinInput = "";
+    const pinDisplay = document.getElementById('pinDisplay');
+    pinDisplay.innerHTML = `
+        <div class="w-4 h-4 rounded-full border-2 border-gray-400"></div>
+        <div class="w-4 h-4 rounded-full border-2 border-gray-400"></div>
+        <div class="w-4 h-4 rounded-full border-2 border-gray-400"></div>
+        <div class="w-4 h-4 rounded-full border-2 border-gray-400"></div>
+    `;
+    pinDisplay.classList.remove('animate-shake');
+}
+
+export async function initiatePinLoginFlow(firebaseUser) {
+    document.getElementById('authContainer')?.classList.add('hidden');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    if (loadingOverlay.style.display !== 'none') {
+        loadingOverlay.classList.add('opacity-0');
+        setTimeout(() => loadingOverlay.style.display = 'none', 300);
+    }
+
+    const allUsers = await getAllFromDB('users');
+    if (allUsers.length === 0) {
+        console.log("No local users found. Initiating first-time PIN setup for owner.");
+        document.getElementById('setDevicePinModal').classList.remove('hidden');
+    } else {
+        console.log("Local users found. Showing PIN login screen.");
+        document.getElementById('loginModal').classList.remove('hidden');
+        resetPinInput();
+        checkPinLockout();
+    }
+}
+
+export async function handleInitialPinSetup() {
+    const pin = document.getElementById('setPinInput').value;
+    const confirmPin = document.getElementById('confirmPinInput').value;
+    const errorEl = document.getElementById('pinSetError');
+
+    if (pin.length !== 4) {
+        errorEl.textContent = 'PIN harus 4 digit.';
+        return;
+    }
+    if (pin !== confirmPin) {
+        errorEl.textContent = 'PIN tidak cocok.';
+        return;
+    }
+    errorEl.textContent = '';
+
+    try {
+        const firebaseUser = window.app.firebaseUser;
+        let userName = firebaseUser.email.split('@')[0];
+
+        // Try to get name from Firestore, but don't fail if offline
+        try {
+            if (window.app.isOnline) {
+                const userDocRef = doc(window.db_firestore, 'users', firebaseUser.uid);
+                const userDoc = await getDoc(userDocRef);
+                if (userDoc.exists()) {
+                    userName = userDoc.data().name || userName;
+                }
+            }
+        } catch (e) {
+            console.warn("Could not fetch user profile from Firestore during initial setup (likely offline):", e.message);
+            // Fallback to email-based name is already the default, so we just continue.
+        }
+
+        const ownerUser = {
+            name: userName,
+            pin: pin,
+            role: 'owner',
+            firebaseUid: firebaseUser.uid,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+
+        const addedId = await putToDB('users', ownerUser);
+        window.app.currentUser = { ...ownerUser, id: addedId };
+
+        document.getElementById('setDevicePinModal').classList.add('hidden');
+        document.getElementById('appContainer').classList.remove('hidden');
+        document.getElementById('bottomNav').classList.remove('hidden');
+        updateUiForRole();
+        showPage('dashboard');
+
+    } catch (error) {
+        console.error('Failed to set up initial PIN:', error);
+        errorEl.textContent = 'Gagal menyimpan PIN. Coba lagi.';
+    }
+}
+
+export async function handlePinInput(digit) {
+    const pinDisplay = document.getElementById('pinDisplay');
+    pinDisplay.classList.remove('animate-shake');
+
+    if (digit === 'clear') {
+        resetPinInput();
+        return;
+    }
+    if (digit === 'backspace') {
+        window.app.currentPinInput = window.app.currentPinInput.slice(0, -1);
+    } else if (window.app.currentPinInput.length < 4) {
+        window.app.currentPinInput += digit;
+    }
+
+    let dots = '';
+    for (let i = 0; i < 4; i++) {
+        const filled = i < window.app.currentPinInput.length ? 'bg-blue-500 border-blue-500' : 'border-gray-400';
+        dots += `<div class="w-4 h-4 rounded-full border-2 ${filled}"></div>`;
+    }
+    pinDisplay.innerHTML = dots;
+
+    if (window.app.currentPinInput.length === 4) {
+        const pin = window.app.currentPinInput;
+        const user = await getFromDBByIndex('users', 'pin', pin);
+
+        if (user) {
+            // Successful login, clear all attempt/lockout data
+            localStorage.removeItem('pinFailedAttempts');
+            localStorage.removeItem('pinLockoutEndTime');
+            localStorage.removeItem('pinLockoutCount');
+
+            window.app.currentUser = user;
+            document.getElementById('loginModal').classList.add('hidden');
+            document.getElementById('appContainer').classList.remove('hidden');
+            document.getElementById('bottomNav').classList.remove('hidden');
+            updateUiForRole();
+            showPage('dashboard');
+        } else {
+            // Incorrect PIN
+            const failedAttempts = parseInt(localStorage.getItem('pinFailedAttempts') || '0') + 1;
+            localStorage.setItem('pinFailedAttempts', failedAttempts);
+
+            if (failedAttempts >= FAILED_ATTEMPTS_LIMIT) {
+                const lockoutCount = parseInt(localStorage.getItem('pinLockoutCount') || '0') + 1;
+                localStorage.setItem('pinLockoutCount', lockoutCount);
+                
+                let lockoutMinutes = 1; // 1 minute for 1st lockout
+                if (lockoutCount > 1) lockoutMinutes = 5; // 5 mins for 2nd
+                if (lockoutCount > 2) lockoutMinutes = 15; // 15 mins thereafter
+                
+                const endTime = Date.now() + lockoutMinutes * 60 * 1000;
+                localStorage.setItem('pinLockoutEndTime', endTime);
+                startPinLockout(endTime);
+                // Don't reset failed attempts here; it will be reset when the lockout ends
+            } else {
+                pinDisplay.classList.add('animate-shake');
+                showToast(`PIN salah. Sisa percobaan: ${FAILED_ATTEMPTS_LIMIT - failedAttempts}`);
+            }
+            setTimeout(resetPinInput, 500);
+        }
+    }
+}
+
+export function lockScreen() {
+    window.app.currentUser = null;
+    document.getElementById('appContainer').classList.add('hidden');
+    document.getElementById('bottomNav').classList.add('hidden');
+    document.getElementById('loginModal').classList.remove('hidden');
+    resetPinInput();
+    checkPinLockout();
+}
+
+
+// --- AUTH & USER MANAGEMENT ---
 export function checkAccess(allowedRoles) {
     const currentUser = window.app.currentUser;
     if (!currentUser) {
         return false;
     }
-
     const userRole = currentUser.role;
     if (Array.isArray(allowedRoles)) {
         return allowedRoles.includes(userRole);
@@ -565,99 +845,11 @@ export function checkAccess(allowedRoles) {
     }
 }
 
-async function createDefaultOwner() {
-    const owner = {
-        name: 'Pemilik',
-        pin: '1234', // Default PIN
-        role: 'owner',
-        createdAt: new Date().toISOString()
-    };
-    await putToDB('users', owner);
-    showConfirmationModal(
-        'Selamat Datang!',
-        'Akun "Pemilik" default telah dibuat dengan PIN: <strong>1234</strong>. Silakan login dan segera ganti PIN Anda di menu Manajemen Pengguna.',
-        () => {}, 'Mengerti', 'bg-blue-500'
-    );
-}
-
-export async function startAuthFlow(onSuccessCallback) {
-    const users = await getAllFromDB('users');
-    if (users.length === 0) {
-        await createDefaultOwner();
-    }
-    
-    document.getElementById('loginModal').classList.remove('hidden');
-    // Hide main app elements until login is successful
-    document.getElementById('appContainer').classList.add('hidden');
-    document.getElementById('bottomNav').classList.add('hidden');
-    document.getElementById('loadingOverlay').style.display = 'none';
-
-    window.app.onLoginSuccess = onSuccessCallback;
-}
-
-function updateLoginPinDisplay() {
-    const dots = document.querySelectorAll('#loginPinDisplay div');
-    dots.forEach((dot, index) => {
-        dot.classList.toggle('bg-gray-800', index < window.app.currentPinInput.length);
-        dot.classList.toggle('bg-gray-200', index >= window.app.currentPinInput.length);
-    });
-}
-
-async function verifyLoginPin() {
-    const pin = window.app.currentPinInput;
-    const errorEl = document.getElementById('loginPinError');
-    const pinDisplay = document.getElementById('loginPinDisplay');
-    
-    const users = await getAllFromDB('users', 'pin', pin);
-    const user = users.length > 0 ? users[0] : null;
-
-    if (user) {
-        errorEl.textContent = '';
-        login(user);
-    } else {
-        errorEl.textContent = `PIN Salah.`;
-        pinDisplay.classList.add('animate-shake');
-        setTimeout(() => {
-            pinDisplay.classList.remove('animate-shake');
-            window.app.currentPinInput = "";
-            updateLoginPinDisplay();
-        }, 500);
-    }
-}
-
-function login(user) {
-    window.app.currentUser = user;
-    document.getElementById('loginModal').classList.add('hidden');
-    
-    if (window.app.onLoginSuccess) {
-        window.app.onLoginSuccess();
-    } else {
-        location.reload();
-    }
-}
-
 export function logout() {
-    showConfirmationModal('Logout', 'Anda yakin ingin keluar?', () => {
+    showConfirmationModal('Logout Akun Utama', 'Semua pengguna lokal akan dihapus dari perangkat ini. Anda yakin ingin melanjutkan?', () => {
         window.app.currentUser = null;
-        location.reload();
-    });
-}
-
-export function handleLoginPinKeyPress(key) {
-    if (key === 'backspace') {
-        if (window.app.currentPinInput.length > 0) {
-            window.app.currentPinInput = window.app.currentPinInput.slice(0, -1);
-        }
-    } else {
-        if (window.app.currentPinInput.length < 4) {
-            window.app.currentPinInput += key;
-        }
-    }
-    updateLoginPinDisplay();
-
-    if (window.app.currentPinInput.length === 4) {
-        verifyLoginPin();
-    }
+        signOut(window.auth); // onAuthStateChanged will handle UI reset
+    }, 'Ya, Logout', 'bg-orange-500');
 }
 
 export async function showManageUsersModal() {
@@ -697,10 +889,10 @@ async function loadUsersForManagement() {
         const deleteButton = canDelete ? `<button onclick="deleteUser(${user.id})" class="text-red-500 clickable"><i class="fas fa-trash"></i></button>` : `<div class="w-6"></div>`;
 
         return `
-            <div class="flex justify-between items-center bg-gray-100 p-3 rounded-lg">
+            <div class="flex justify-between items-center bg-gray-100 p-2 rounded-lg">
                 <div>
                     <p class="font-semibold">${user.name}</p>
-                    <p class="text-sm text-gray-600">${roleDisplay[user.role] || user.role}</p>
+                    <p class="text-sm text-gray-500">${roleDisplay[user.role]}</p>
                 </div>
                 <div class="flex items-center gap-4">
                     ${editButton}
@@ -718,20 +910,21 @@ export function closeManageUsersModal() {
 export async function showUserFormModal(userId = null) {
     const modal = document.getElementById('userFormModal');
     const title = document.getElementById('userFormTitle');
-    const idInput = document.getElementById('userId');
     const nameInput = document.getElementById('userName');
     const pinInput = document.getElementById('userPin');
-    const roleInput = document.getElementById('userRole');
+    const roleSelect = document.getElementById('userRole');
+    const idInput = document.getElementById('userId');
+    const currentUser = window.app.currentUser;
 
     // Reset form
     idInput.value = '';
     nameInput.value = '';
     pinInput.value = '';
-    pinInput.placeholder = 'Masukkan 4 digit PIN';
-    roleInput.value = 'cashier';
+    pinInput.placeholder = 'Wajib diisi (4 digit)';
+    roleSelect.value = 'cashier';
 
-    const currentUser = window.app.currentUser;
-    Array.from(roleInput.options).forEach(option => {
+    // Disable role selection based on current user's role
+    Array.from(roleSelect.options).forEach(option => {
         if (currentUser.role === 'manager' && option.value === 'owner') {
             option.disabled = true;
         } else {
@@ -745,8 +938,14 @@ export async function showUserFormModal(userId = null) {
         if (user) {
             idInput.value = user.id;
             nameInput.value = user.name;
-            pinInput.placeholder = 'Kosongkan jika tidak ganti PIN';
-            roleInput.value = user.role;
+            roleSelect.value = user.role;
+            pinInput.placeholder = 'Kosongkan jika tidak diubah';
+            
+            // A manager cannot edit an owner
+            if (currentUser.role === 'manager' && user.role === 'owner') {
+                 showToast('Manajer tidak dapat mengedit data Pemilik.');
+                 return;
+            }
         }
     } else {
         title.textContent = 'Tambah Pengguna';
@@ -764,71 +963,87 @@ export async function saveUser() {
     const name = document.getElementById('userName').value.trim();
     const pin = document.getElementById('userPin').value.trim();
     const role = document.getElementById('userRole').value;
+    const currentUser = window.app.currentUser;
 
     if (!name) {
         showToast('Nama pengguna tidak boleh kosong.');
         return;
     }
+
+    if (!id && pin.length !== 4) {
+        showToast('PIN baru wajib diisi dan harus 4 digit.');
+        return;
+    }
     
-    if (!id && (!pin || pin.length !== 4)) {
-        showToast('PIN wajib diisi dengan 4 digit untuk pengguna baru.');
+    if (id && pin && pin.length !== 4) {
+        showToast('Jika diisi, PIN harus 4 digit.');
         return;
     }
-
-    if (pin && pin.length !== 4) {
-        showToast('PIN harus 4 digit.');
-        return;
-    }
-
-    const userData = {
-        name,
-        role,
-        updatedAt: new Date().toISOString()
-    };
-
+    
     if (pin) {
-        const usersWithPin = await getAllFromDB('users', 'pin', pin);
-        if (usersWithPin.some(u => u.id !== id)) {
+        const existingUserWithPin = await getFromDBByIndex('users', 'pin', pin);
+        if (existingUserWithPin && existingUserWithPin.id !== id) {
             showToast('PIN ini sudah digunakan oleh pengguna lain.');
             return;
         }
-        userData.pin = pin;
     }
-
-    let action = '';
-    if (id) {
-        userData.id = id;
-        const existingUser = await getFromDB('users', id);
-        if (!userData.pin) userData.pin = existingUser.pin;
-        userData.createdAt = existingUser.createdAt;
-        action = 'UPDATE_USER';
-    } else {
-        userData.createdAt = new Date().toISOString();
-        action = 'CREATE_USER';
+    
+    // A manager cannot create an owner
+    if (currentUser.role === 'manager' && role === 'owner') {
+        showToast('Manajer tidak dapat membuat pengguna dengan peran Pemilik.');
+        return;
     }
 
     try {
+        let userData;
+        let action = '';
+
+        if (id) { // Update
+            userData = await getFromDB('users', id);
+            if (!userData) {
+                showToast('Pengguna tidak ditemukan.');
+                return;
+            }
+            userData.name = name;
+            userData.role = role;
+            if (pin) {
+                userData.pin = pin;
+            }
+            userData.updatedAt = new Date().toISOString();
+            action = 'UPDATE_USER';
+        } else { // Create
+            userData = {
+                name,
+                pin,
+                role,
+                firebaseUid: currentUser.firebaseUid, // Associate with the main Firebase account
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            };
+            action = 'CREATE_USER';
+        }
+
         const savedId = await putToDB('users', userData);
-        showToast(`Pengguna berhasil ${id ? 'diperbarui' : 'disimpan'}.`);
+        
+        showToast(`Pengguna berhasil ${id ? 'diperbarui' : 'ditambahkan'}.`);
         closeUserFormModal();
         await loadUsersForManagement();
     } catch (error) {
         console.error('Failed to save user:', error);
-        showToast('Gagal menyimpan pengguna.');
+        showToast('Gagal menyimpan pengguna. Cek kembali data Anda.');
     }
 }
 
-export async function deleteUser(userId) {
+export function deleteUser(userId) {
     const currentUser = window.app.currentUser;
     if (userId === currentUser.id) {
-        showToast('Anda tidak dapat menghapus akun sendiri.');
+        showToast('Anda tidak dapat menghapus akun Anda sendiri.');
         return;
     }
-    
-    const userToDelete = await getFromDB('users', userId);
 
-    showConfirmationModal('Hapus Pengguna', `Yakin ingin menghapus pengguna "${userToDelete.name}"?`, async () => {
+    showConfirmationModal('Hapus Pengguna', 'Yakin ingin menghapus pengguna ini?', async () => {
         try {
+            const userToDelete = await getFromDB('users', userId);
             const tx = window.app.db.transaction('users', 'readwrite');
             tx.objectStore('users').delete(userId);
             tx.oncomplete = async () => {
@@ -840,4 +1055,140 @@ export async function deleteUser(userId) {
             showToast('Gagal menghapus pengguna.');
         }
     }, 'Ya, Hapus', 'bg-red-500');
+}
+
+// --- FIREBASE AUTH UI FLOW ---
+
+export function showAuthContainer() {
+    const authContainer = document.getElementById('authContainer');
+    if (authContainer) {
+        authContainer.classList.remove('hidden');
+        showLoginView(); // Default to login view
+    }
+}
+
+function switchAuthView(viewToShow) {
+    ['loginView', 'registerView', 'forgotPasswordView'].forEach(viewId => {
+        const view = document.getElementById(viewId);
+        if (view) {
+            if (viewId === viewToShow) {
+                view.classList.remove('hidden');
+            } else {
+                view.classList.add('hidden');
+            }
+        }
+    });
+    // Clear any previous error messages
+    document.getElementById('loginError').textContent = '';
+    document.getElementById('registerError').textContent = '';
+    document.getElementById('forgotError').textContent = '';
+    document.getElementById('forgotSuccess').textContent = '';
+}
+
+export function showLoginView() {
+    switchAuthView('loginView');
+}
+
+export function showRegisterView() {
+    switchAuthView('registerView');
+}
+
+export function showForgotPasswordView() {
+    switchAuthView('forgotPasswordView');
+}
+
+function setAuthButtonLoading(buttonId, isLoading) {
+    const button = document.getElementById(buttonId);
+    if (button) {
+        button.disabled = isLoading;
+        const text = button.querySelector('.auth-button-text');
+        const spinner = button.querySelector('.auth-button-spinner');
+        if (text) text.style.display = isLoading ? 'none' : 'inline';
+        if (spinner) spinner.style.display = isLoading ? 'inline-block' : 'none';
+    }
+}
+
+export async function handleEmailLogin(event) {
+    event.preventDefault();
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    const errorEl = document.getElementById('loginError');
+    setAuthButtonLoading('loginButton', true);
+    errorEl.textContent = '';
+
+    try {
+        await signInWithEmailAndPassword(window.auth, email, password);
+        // onAuthStateChanged will handle the rest
+    } catch (error) {
+        if (error.code === 'auth/invalid-credential' || error.code === 'auth/invalid-login-credentials' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+            console.warn("Login attempt failed (invalid credentials):", error.code);
+            errorEl.textContent = 'Email atau password salah.';
+        } else {
+            console.error("An unexpected login error occurred:", error);
+            errorEl.textContent = 'Gagal login. Terjadi kesalahan tak terduga.';
+        }
+    } finally {
+        setAuthButtonLoading('loginButton', false);
+    }
+}
+
+export async function handleEmailRegister(event) {
+    event.preventDefault();
+    const name = document.getElementById('registerName').value.trim();
+    const phone = document.getElementById('registerPhone').value.trim();
+    const email = document.getElementById('registerEmail').value.trim();
+    const password = document.getElementById('registerPassword').value;
+    const errorEl = document.getElementById('registerError');
+    setAuthButtonLoading('registerButton', true);
+    errorEl.textContent = '';
+    
+    if (password.length < 6) {
+        errorEl.textContent = 'Password harus minimal 6 karakter.';
+        setAuthButtonLoading('registerButton', false);
+        return;
+    }
+
+    try {
+        const userCredential = await createUserWithEmailAndPassword(window.auth, email, password);
+        const user = userCredential.user;
+
+        // Save user profile info to Firestore
+        await setDoc(doc(window.db_firestore, "users", user.uid), {
+            name: name,
+            phone: phone,
+            email: email,
+            createdAt: new Date().toISOString()
+        });
+        
+        // onAuthStateChanged will handle the rest
+    } catch (error) {
+        console.error("Registration failed:", error.code);
+        if (error.code === 'auth/email-already-in-use') {
+            errorEl.textContent = 'Email ini sudah terdaftar.';
+        } else {
+            errorEl.textContent = 'Gagal mendaftar. Coba lagi.';
+        }
+    } finally {
+        setAuthButtonLoading('registerButton', false);
+    }
+}
+
+export async function handleForgotPassword(event) {
+    event.preventDefault();
+    const email = document.getElementById('forgotEmail').value;
+    const errorEl = document.getElementById('forgotError');
+    const successEl = document.getElementById('forgotSuccess');
+    setAuthButtonLoading('forgotButton', true);
+    errorEl.textContent = '';
+    successEl.textContent = '';
+
+    try {
+        await sendPasswordResetEmail(window.auth, email);
+        successEl.textContent = 'Link reset password telah dikirim ke email Anda.';
+    } catch (error) {
+        console.error("Forgot password failed:", error.code);
+        errorEl.textContent = 'Gagal mengirim link. Periksa kembali email Anda.';
+    } finally {
+        setAuthButtonLoading('forgotButton', false);
+    }
 }

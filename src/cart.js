@@ -385,7 +385,23 @@ export async function completeTransaction() {
                 product.stock -= item.quantity;
                 product.updatedAt = new Date().toISOString();
                 await putToDB('products', product);
-                await queueSyncAction('UPDATE_PRODUCT', product);
+                
+                // Manually create a clean object for the sync queue to avoid circular refs
+                const sanitizedProduct = {
+                    id: product.id,
+                    serverId: product.serverId,
+                    name: product.name,
+                    price: product.price,
+                    purchasePrice: product.purchasePrice,
+                    stock: product.stock,
+                    barcode: product.barcode,
+                    category: product.category,
+                    discountPercentage: product.discountPercentage,
+                    image: product.image,
+                    createdAt: product.createdAt,
+                    updatedAt: product.updatedAt
+                };
+                await queueSyncAction('UPDATE_PRODUCT', sanitizedProduct);
             }
         }
         

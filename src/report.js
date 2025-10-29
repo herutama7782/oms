@@ -1,5 +1,3 @@
-
-
 import { getAllFromDB, getFromDB, putToDB } from './db.js';
 import { showToast, showConfirmationModal } from './ui.js';
 import { queueSyncAction } from './sync.js';
@@ -161,12 +159,42 @@ export async function returnItem(transactionId, itemIndex) {
 async function processItemReturn(transactionId, itemIndex) {
     try {
         const originalTransaction = await getFromDB('transactions', transactionId);
-        const transaction = JSON.parse(JSON.stringify(originalTransaction));
-
-        if (!transaction || !transaction.items[itemIndex]) {
+        if (!originalTransaction) {
             showToast('Transaksi tidak valid saat proses.');
             return;
         }
+
+        // Manually reconstruct the object to strip any Firestore-specific properties.
+        // This is a robust fix for the "circular structure" error.
+        const transaction = {
+            id: originalTransaction.id,
+            serverId: originalTransaction.serverId,
+            date: originalTransaction.date,
+            userId: originalTransaction.userId,
+            userName: originalTransaction.userName,
+            paymentMethod: originalTransaction.paymentMethod,
+            cashPaid: originalTransaction.cashPaid,
+            change: originalTransaction.change,
+            subtotal: originalTransaction.subtotal,
+            totalDiscount: originalTransaction.totalDiscount,
+            total: originalTransaction.total,
+            items: (originalTransaction.items || []).map(item => ({
+                id: item.id,
+                name: item.name,
+                quantity: item.quantity,
+                price: item.price,
+                effectivePrice: item.effectivePrice,
+                discountPercentage: item.discountPercentage,
+            })),
+            fees: (originalTransaction.fees || []).map(fee => ({
+                id: fee.id,
+                name: fee.name,
+                type: fee.type,
+                value: fee.value,
+                amount: fee.amount,
+                isTax: fee.isTax,
+            })),
+        };
 
         const [returnedItem] = transaction.items.splice(itemIndex, 1);
         if (!returnedItem) {
@@ -178,8 +206,10 @@ async function processItemReturn(transactionId, itemIndex) {
              const tx = window.app.db.transaction('transactions', 'readwrite');
              tx.objectStore('transactions').delete(transactionId);
              await new Promise(resolve => tx.oncomplete = resolve);
-             await queueSyncAction('DELETE_TRANSACTION', originalTransaction);
+             // Use the sanitized object for the delete queue
+             await queueSyncAction('DELETE_TRANSACTION', transaction);
         } else {
+            // Recalculate totals after removing the item
             transaction.subtotal = transaction.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             transaction.totalDiscount = transaction.items.reduce((sum, item) => {
                 const discountAmount = item.price * ((item.discountPercentage || 0) / 100);
@@ -191,12 +221,13 @@ async function processItemReturn(transactionId, itemIndex) {
 
             (transaction.fees || []).forEach(fee => {
                 if (fee.type === 'percentage') {
-                    fee.amount = subtotalAfterDiscount * (fee.value / 100);
+                    fee.amount = Math.round(subtotalAfterDiscount * (fee.value / 100));
                 }
                 totalFeeAmount += fee.amount;
             });
             
             transaction.total = subtotalAfterDiscount + totalFeeAmount;
+            // Assuming cashPaid doesn't change, only change is affected
             transaction.change = transaction.cashPaid - transaction.total;
             
             await putToDB('transactions', transaction);
@@ -208,7 +239,23 @@ async function processItemReturn(transactionId, itemIndex) {
             product.stock += returnedItem.quantity;
             product.updatedAt = new Date().toISOString();
             await putToDB('products', product);
-            await queueSyncAction('UPDATE_PRODUCT', product);
+            
+            // Manually create a clean object for the sync queue to avoid circular refs
+            const sanitizedProduct = {
+                id: product.id,
+                serverId: product.serverId,
+                name: product.name,
+                price: product.price,
+                purchasePrice: product.purchasePrice,
+                stock: product.stock,
+                barcode: product.barcode,
+                category: product.category,
+                discountPercentage: product.discountPercentage,
+                image: product.image,
+                createdAt: product.createdAt,
+                updatedAt: product.updatedAt
+            };
+            await queueSyncAction('UPDATE_PRODUCT', sanitizedProduct);
         }
 
         showToast('Item berhasil dikembalikan.');
