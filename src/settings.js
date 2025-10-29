@@ -641,7 +641,7 @@ function updateLockoutTimer(endTime) {
         const remainingSeconds = Math.ceil(remainingMs / 1000);
         const minutes = Math.floor(remainingSeconds / 60);
         const seconds = remainingSeconds % 60;
-        lockoutMessageEl.textContent = `Terlalu banyak percobaan. Coba lagi dalam ${minutes > 0 ? `${minutes} menit ` : ''}${seconds} detik.`;
+        lockoutMessageEl.textContent = `Terlalu banyak percobaan. ${minutes > 0 ? `${minutes} menit ` : ''}${seconds} detik.`;
     }
 }
 
