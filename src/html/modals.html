@@ -612,51 +612,19 @@
                     <input type="password" id="loginPassword" required class="input-field w-full mt-1" placeholder="********">
                 </div>
                 <div id="loginError" class="text-red-500 text-sm text-center min-h-[1.25rem]"></div>
+                <p class="text-center text-sm text-gray-600">
+                    Belum punya akun? daftar disini:<br>
+                    <a href="https://wa.me/+6289608357867" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline font-semibold break-all">
+                        https://wa.me/+6289608357867
+                    </a>
+                </p>
                 <button type="submit" id="loginButton" class="btn bg-blue-500 text-white w-full py-3 font-semibold flex items-center justify-center">
                     <span class="auth-button-text">Login</span>
                     <i class="fas fa-spinner fa-spin auth-button-spinner"></i>
                 </button>
             </form>
-            <p class="text-center text-sm text-gray-600 mt-4">
-                Belum punya akun? <button onclick="showRegisterView()" class="font-semibold text-blue-500">Daftar di sini</button>
-            </p>
         </div>
 
-        <!-- Register View -->
-        <div id="registerView" class="bg-white rounded-3xl p-6 w-full max-w-sm shadow-lg hidden">
-            <div class="text-center mb-6">
-                 <img src="https://i.imgur.com/awbpnPX.png" alt="OMSETIN Logo" class="w-20 h-20 mx-auto rounded-2xl shadow-lg mb-4">
-                <h1 class="text-2xl font-bold text-gray-800">Buat Akun Baru</h1>
-                <p class="text-gray-600 mt-1">Isi data diri Anda</p>
-            </div>
-            <form onsubmit="handleEmailRegister(event); return false;" class="space-y-3">
-                 <div>
-                    <label for="registerName" class="text-sm font-medium text-gray-700">Nama Lengkap</label>
-                    <input type="text" id="registerName" required class="input-field w-full mt-1" placeholder="Nama Anda">
-                </div>
-                <div>
-                    <label for="registerPhone" class="text-sm font-medium text-gray-700">No. HP</label>
-                    <input type="tel" id="registerPhone" required class="input-field w-full mt-1" placeholder="08123456789">
-                </div>
-                <div>
-                    <label for="registerEmail" class="text-sm font-medium text-gray-700">Email</label>
-                    <input type="email" id="registerEmail" required class="input-field w-full mt-1" placeholder="email@anda.com">
-                </div>
-                <div>
-                    <label for="registerPassword" class="text-sm font-medium text-gray-700">Password</label>
-                    <input type="password" id="registerPassword" required class="input-field w-full mt-1" placeholder="Minimal 6 karakter">
-                </div>
-                <div id="registerError" class="text-red-500 text-sm text-center min-h-[1.25rem]"></div>
-                <button type="submit" id="registerButton" class="btn bg-blue-500 text-white w-full py-3 font-semibold flex items-center justify-center">
-                    <span class="auth-button-text">Daftar</span>
-                    <i class="fas fa-spinner fa-spin auth-button-spinner"></i>
-                </button>
-            </form>
-             <p class="text-center text-sm text-gray-600 mt-4">
-                Sudah punya akun? <button onclick="showLoginView()" class="font-semibold text-blue-500">Login di sini</button>
-            </p>
-        </div>
-        
         <!-- Forgot Password View -->
         <div id="forgotPasswordView" class="bg-white rounded-3xl p-6 w-full max-w-sm shadow-lg hidden">
             <div class="text-center mb-6">

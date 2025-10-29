@@ -147,10 +147,8 @@ const functions = {
     handleInitialPinSetup: settings.handleInitialPinSetup,
     // Firebase Auth functions
     showLoginView: settings.showLoginView,
-    showRegisterView: settings.showRegisterView,
     showForgotPasswordView: settings.showForgotPasswordView,
     handleEmailLogin: settings.handleEmailLogin,
-    handleEmailRegister: settings.handleEmailRegister,
     handleForgotPassword: settings.handleForgotPassword,
     // peripherals.js
     openCameraModal: peripherals.openCameraModal,

@@ -1068,7 +1068,8 @@ export function showAuthContainer() {
 }
 
 function switchAuthView(viewToShow) {
-    ['loginView', 'registerView', 'forgotPasswordView'].forEach(viewId => {
+    // Only manage views that exist in the HTML.
+    ['loginView', 'forgotPasswordView'].forEach(viewId => {
         const view = document.getElementById(viewId);
         if (view) {
             if (viewId === viewToShow) {
@@ -1078,19 +1079,19 @@ function switchAuthView(viewToShow) {
             }
         }
     });
-    // Clear any previous error messages
-    document.getElementById('loginError').textContent = '';
-    document.getElementById('registerError').textContent = '';
-    document.getElementById('forgotError').textContent = '';
-    document.getElementById('forgotSuccess').textContent = '';
+    // Clear any previous error messages, checking for nulls.
+    const loginError = document.getElementById('loginError');
+    if (loginError) loginError.textContent = '';
+
+    const forgotError = document.getElementById('forgotError');
+    if (forgotError) forgotError.textContent = '';
+    
+    const forgotSuccess = document.getElementById('forgotSuccess');
+    if (forgotSuccess) forgotSuccess.textContent = '';
 }
 
 export function showLoginView() {
     switchAuthView('loginView');
-}
-
-export function showRegisterView() {
-    switchAuthView('registerView');
 }
 
 export function showForgotPasswordView() {
@@ -1129,47 +1130,6 @@ export async function handleEmailLogin(event) {
         }
     } finally {
         setAuthButtonLoading('loginButton', false);
-    }
-}
-
-export async function handleEmailRegister(event) {
-    event.preventDefault();
-    const name = document.getElementById('registerName').value.trim();
-    const phone = document.getElementById('registerPhone').value.trim();
-    const email = document.getElementById('registerEmail').value.trim();
-    const password = document.getElementById('registerPassword').value;
-    const errorEl = document.getElementById('registerError');
-    setAuthButtonLoading('registerButton', true);
-    errorEl.textContent = '';
-    
-    if (password.length < 6) {
-        errorEl.textContent = 'Password harus minimal 6 karakter.';
-        setAuthButtonLoading('registerButton', false);
-        return;
-    }
-
-    try {
-        const userCredential = await createUserWithEmailAndPassword(window.auth, email, password);
-        const user = userCredential.user;
-
-        // Save user profile info to Firestore
-        await setDoc(doc(window.db_firestore, "users", user.uid), {
-            name: name,
-            phone: phone,
-            email: email,
-            createdAt: new Date().toISOString()
-        });
-        
-        // onAuthStateChanged will handle the rest
-    } catch (error) {
-        console.error("Registration failed:", error.code);
-        if (error.code === 'auth/email-already-in-use') {
-            errorEl.textContent = 'Email ini sudah terdaftar.';
-        } else {
-            errorEl.textContent = 'Gagal mendaftar. Coba lagi.';
-        }
-    } finally {
-        setAuthButtonLoading('registerButton', false);
     }
 }
 
