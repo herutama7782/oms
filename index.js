@@ -150,6 +150,7 @@ const functions = {
     showForgotPasswordView: settings.showForgotPasswordView,
     handleEmailLogin: settings.handleEmailLogin,
     handleForgotPassword: settings.handleForgotPassword,
+    handleGuestLogin: settings.handleGuestLogin,
     // peripherals.js
     openCameraModal: peripherals.openCameraModal,
     closeCameraModal: peripherals.closeCameraModal,
@@ -246,9 +247,9 @@ function listenForAuthStateChanges() {
         window.app.firebaseUser = firebaseUser;
 
         if (firebaseUser) {
-            // Firebase user is logged in. Initiate PIN-based local user login flow.
-            console.log("Firebase user detected:", firebaseUser.uid);
-            await settings.initiatePinLoginFlow(firebaseUser);
+            // Firebase user is logged in. This could be a registered user or a guest.
+            console.log("Firebase user detected:", firebaseUser.uid, "Is Anonymous:", firebaseUser.isAnonymous);
+            await settings.initiatePinLoginFlow(firebaseUser); // This function will now handle both cases
         } else {
             // Firebase user is not logged in. Show login/register screen.
             console.log("No Firebase user. Showing auth screen.");

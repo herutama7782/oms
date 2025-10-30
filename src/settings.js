@@ -2,7 +2,8 @@ import {
     signInWithEmailAndPassword,
     createUserWithEmailAndPassword,
     sendPasswordResetEmail,
-    signOut
+    signOut,
+    signInAnonymously
 } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
 import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
 
@@ -689,6 +690,23 @@ export async function initiatePinLoginFlow(firebaseUser) {
         setTimeout(() => loadingOverlay.style.display = 'none', 300);
     }
 
+    if (firebaseUser.isAnonymous) {
+        // Handle guest login: create a temporary user session and show the app
+        console.log("Anonymous user detected:", firebaseUser.uid);
+        window.app.currentUser = {
+            id: 'guest',
+            name: 'Pengguna Tamu',
+            role: 'cashier', // Guests get a restricted role
+            firebaseUid: firebaseUser.uid
+        };
+
+        document.getElementById('appContainer').classList.remove('hidden');
+        document.getElementById('bottomNav').classList.remove('hidden');
+        updateUiForRole();
+        showPage('dashboard');
+        return; // Bypass the PIN flow entirely for guests
+    }
+
     const allUsers = await getAllFromDB('users');
     if (allUsers.length === 0) {
         console.log("No local users found. Initiating first-time PIN setup for owner.");
@@ -846,7 +864,7 @@ export function checkAccess(allowedRoles) {
 }
 
 export function logout() {
-    showConfirmationModal('Logout Akun Utama', 'Semua pengguna lokal akan dihapus dari perangkat ini. Anda yakin ingin melanjutkan?', () => {
+    showConfirmationModal('Logout Akun Utama', 'Ini akan mengakhiri sesi Anda. Anda yakin ingin melanjutkan?', () => {
         window.app.currentUser = null;
         signOut(window.auth); // onAuthStateChanged will handle UI reset
     }, 'Ya, Logout', 'bg-orange-500');
@@ -1130,6 +1148,20 @@ export async function handleEmailLogin(event) {
         }
     } finally {
         setAuthButtonLoading('loginButton', false);
+    }
+}
+
+export async function handleGuestLogin() {
+    const buttonId = 'guestLoginButton';
+    setAuthButtonLoading(buttonId, true);
+    try {
+        await signInAnonymously(window.auth);
+        // onAuthStateChanged will handle the rest of the flow, no need to turn off loader on success
+    } catch (error) {
+        console.error("Anonymous sign-in failed:", error);
+        const errorEl = document.getElementById('loginError');
+        if (errorEl) errorEl.textContent = 'Gagal masuk sebagai tamu. Coba lagi nanti.';
+        setAuthButtonLoading(buttonId, false);
     }
 }
 
