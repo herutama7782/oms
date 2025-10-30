@@ -691,20 +691,11 @@ export async function initiatePinLoginFlow(firebaseUser) {
     }
 
     if (firebaseUser.isAnonymous) {
-        // Handle guest login: create a temporary user session and show the app
-        console.log("Anonymous user detected:", firebaseUser.uid);
-        window.app.currentUser = {
-            id: 'guest',
-            name: 'Pengguna Tamu',
-            role: 'cashier', // Guests get a restricted role
-            firebaseUid: firebaseUser.uid
-        };
-
-        document.getElementById('appContainer').classList.remove('hidden');
-        document.getElementById('bottomNav').classList.remove('hidden');
-        updateUiForRole();
-        showPage('dashboard');
-        return; // Bypass the PIN flow entirely for guests
+        // This block is now unreachable as guest login is disabled.
+        // Kept for safety, but can be removed.
+        console.warn("Anonymous user detected, but guest login is disabled. Forcing logout.");
+        signOut(window.auth);
+        return;
     }
 
     const allUsers = await getAllFromDB('users');
@@ -1148,20 +1139,6 @@ export async function handleEmailLogin(event) {
         }
     } finally {
         setAuthButtonLoading('loginButton', false);
-    }
-}
-
-export async function handleGuestLogin() {
-    const buttonId = 'guestLoginButton';
-    setAuthButtonLoading(buttonId, true);
-    try {
-        await signInAnonymously(window.auth);
-        // onAuthStateChanged will handle the rest of the flow, no need to turn off loader on success
-    } catch (error) {
-        console.error("Anonymous sign-in failed:", error);
-        const errorEl = document.getElementById('loginError');
-        if (errorEl) errorEl.textContent = 'Gagal masuk sebagai tamu. Coba lagi nanti.';
-        setAuthButtonLoading(buttonId, false);
     }
 }
 

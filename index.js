@@ -150,7 +150,6 @@ const functions = {
     showForgotPasswordView: settings.showForgotPasswordView,
     handleEmailLogin: settings.handleEmailLogin,
     handleForgotPassword: settings.handleForgotPassword,
-    handleGuestLogin: settings.handleGuestLogin,
     // peripherals.js
     openCameraModal: peripherals.openCameraModal,
     closeCameraModal: peripherals.closeCameraModal,
