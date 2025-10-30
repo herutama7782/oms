@@ -22,7 +22,9 @@ const APP_SHELL_URLS = [
 ];
 
 self.addEventListener('install', event => {
+  // skipWaiting() memaksa Service Worker yang sedang menunggu untuk menjadi yang aktif.
   self.skipWaiting();
+  
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
@@ -46,7 +48,12 @@ self.addEventListener('activate', event => {
           }
         })
       );
-    }).then(() => self.clients.claim())
+    }).then(() => {
+        // clients.claim() memungkinkan Service Worker yang aktif untuk mulai mengontrol
+        // semua klien yang terbuka yang berada dalam cakupannya.
+        console.log('Service Worker activated and claiming clients.');
+        return self.clients.claim();
+    })
   );
 });
 

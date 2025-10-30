@@ -265,6 +265,40 @@ function listenForAuthStateChanges() {
     });
 }
 
+function registerServiceWorker() {
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js')
+            .then(registration => {
+                console.log('ServiceWorker registration successful:', registration.scope);
+
+                // This logic handles the update flow
+                registration.addEventListener('updatefound', () => {
+                    const newWorker = registration.installing;
+                    if (newWorker) {
+                        newWorker.addEventListener('statechange', () => {
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                // New update available
+                                const toast = document.getElementById('toast');
+                                if (toast) {
+                                    toast.innerHTML = `Pembaruan tersedia! <button id="reload-button" class="ml-4 font-bold underline">Muat Ulang</button>`;
+                                    toast.classList.add('show');
+                                    
+                                    document.getElementById('reload-button').onclick = () => {
+                                        newWorker.postMessage({ action: 'skipWaiting' });
+                                        window.location.reload();
+                                    };
+                                }
+                            }
+                        });
+                    }
+                });
+            })
+            .catch(err => {
+                console.log('ServiceWorker registration failed: ', err);
+            });
+    }
+}
+
 
 // --- DOMContentLoaded ---
 async function waitForLibraries() {
@@ -291,6 +325,8 @@ async function waitForLibraries() {
 
 window.addEventListener('DOMContentLoaded', async () => {
     try {
+        registerServiceWorker(); // Register SW as early as possible
+        
         await loadHtmlPartials();
         
         await waitForLibraries();
