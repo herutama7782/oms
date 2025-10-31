@@ -1,9 +1,60 @@
+import { GoogleGenAI } from "https://esm.run/@google/genai";
 import { getAllFromDB, getFromDB, putToDB } from './db.js';
 import { showToast, showConfirmationModal } from './ui.js';
 import { queueSyncAction } from './sync.js';
 import { formatCurrency } from './ui.js';
 import { getLocalDateString } from './ui.js';
 
+
+// --- HELPERS ---
+function getReportSummaryData(transactions, products) {
+    const productMap = new Map(products.map(p => [p.id, p]));
+
+    let omzet = 0;
+    let hpp = 0;
+    let totalOperationalCost = 0;
+
+    transactions.forEach(t => {
+        const subtotalAfterDiscount = t.subtotal - (t.totalDiscount || 0);
+        omzet += subtotalAfterDiscount;
+
+        t.items.forEach(item => {
+            const product = productMap.get(item.id);
+            const purchasePrice = product ? (product.purchasePrice || 0) : 0;
+            hpp += purchasePrice * item.quantity;
+        });
+        
+        (t.fees || []).forEach(fee => {
+            totalOperationalCost += fee.amount;
+        });
+    });
+
+    const grossProfit = omzet - hpp;
+    const netProfit = grossProfit - totalOperationalCost;
+    const cashFlow = grossProfit;
+    const totalTransactions = transactions.length;
+    const average = totalTransactions > 0 ? omzet / totalTransactions : 0;
+
+    return { omzet, hpp, grossProfit, netProfit, totalOperationalCost, cashFlow, totalTransactions, average };
+}
+
+function getTopSellingProductsData(transactions) {
+    const productSales = {};
+
+    transactions.forEach(t => {
+        t.items.forEach(item => {
+            if (!productSales[item.name]) {
+                productSales[item.name] = { quantity: 0, revenue: 0 };
+            }
+            productSales[item.name].quantity += item.quantity;
+            productSales[item.name].revenue += item.effectivePrice * item.quantity;
+        });
+    });
+
+    return Object.entries(productSales)
+        .sort(([,a], [,b]) => b.quantity - a.quantity)
+        .slice(0, 5);
+}
 
 // --- REPORTS ---
 export async function generateReport() {
@@ -41,6 +92,7 @@ export async function generateReport() {
             document.getElementById('reportSummary').style.display = 'none';
             document.getElementById('reportDetails').style.display = 'none';
             document.getElementById('topSellingProductsCard').style.display = 'none';
+            document.getElementById('aiAnalysisCard').style.display = 'none';
             return;
         }
 
@@ -51,6 +103,7 @@ export async function generateReport() {
         document.getElementById('reportSummary').style.display = 'block';
         document.getElementById('reportDetails').style.display = 'block';
         document.getElementById('topSellingProductsCard').style.display = 'block';
+        document.getElementById('aiAnalysisCard').style.display = 'block';
     } catch (error) {
         console.error("Failed to generate report:", error);
         showToast('Gagal membuat laporan. Coba lagi.');
@@ -63,41 +116,16 @@ export async function generateReport() {
 
 
 function displayReportSummary(transactions, products) {
-    const productMap = new Map(products.map(p => [p.id, p]));
+    const summary = getReportSummaryData(transactions, products);
 
-    let omzet = 0;
-    let hpp = 0;
-    let totalOperationalCost = 0;
-
-    transactions.forEach(t => {
-        const subtotalAfterDiscount = t.subtotal - (t.totalDiscount || 0);
-        omzet += subtotalAfterDiscount;
-
-        t.items.forEach(item => {
-            const product = productMap.get(item.id);
-            const purchasePrice = product ? (product.purchasePrice || 0) : 0;
-            hpp += purchasePrice * item.quantity;
-        });
-        
-        (t.fees || []).forEach(fee => {
-            totalOperationalCost += fee.amount;
-        });
-    });
-
-    const grossProfit = omzet - hpp;
-    const netProfit = grossProfit - totalOperationalCost;
-    const cashFlow = grossProfit;
-    const totalTransactions = transactions.length;
-    const average = totalTransactions > 0 ? omzet / totalTransactions : 0;
-
-    (document.getElementById('reportOmzet')).textContent = `Rp ${formatCurrency(omzet)}`;
-    (document.getElementById('reportHpp')).textContent = `Rp ${formatCurrency(hpp)}`;
-    (document.getElementById('reportGrossProfit')).textContent = `Rp ${formatCurrency(grossProfit)}`;
-    (document.getElementById('reportOperationalCost')).textContent = `Rp ${formatCurrency(totalOperationalCost)}`;
-    (document.getElementById('reportNetProfit')).textContent = `Rp ${formatCurrency(netProfit)}`;
-    (document.getElementById('reportCashFlow')).textContent = `Rp ${formatCurrency(cashFlow)}`;
-    (document.getElementById('reportTotalTransactions')).textContent = totalTransactions.toString();
-    (document.getElementById('reportAverage')).textContent = `Rp ${formatCurrency(average)}`;
+    (document.getElementById('reportOmzet')).textContent = `Rp ${formatCurrency(summary.omzet)}`;
+    (document.getElementById('reportHpp')).textContent = `Rp ${formatCurrency(summary.hpp)}`;
+    (document.getElementById('reportGrossProfit')).textContent = `Rp ${formatCurrency(summary.grossProfit)}`;
+    (document.getElementById('reportOperationalCost')).textContent = `Rp ${formatCurrency(summary.totalOperationalCost)}`;
+    (document.getElementById('reportNetProfit')).textContent = `Rp ${formatCurrency(summary.netProfit)}`;
+    (document.getElementById('reportCashFlow')).textContent = `Rp ${formatCurrency(summary.cashFlow)}`;
+    (document.getElementById('reportTotalTransactions')).textContent = summary.totalTransactions.toString();
+    (document.getElementById('reportAverage')).textContent = `Rp ${formatCurrency(summary.average)}`;
 }
 
 function displayReportDetails(transactions) {
@@ -269,21 +297,7 @@ async function processItemReturn(transactionId, itemIndex) {
 
 
 function displayTopSellingProducts(transactions) {
-    const productSales = {};
-
-    transactions.forEach(t => {
-        t.items.forEach(item => {
-            if (!productSales[item.name]) {
-                productSales[item.name] = { quantity: 0, revenue: 0 };
-            }
-            productSales[item.name].quantity += item.quantity;
-            productSales[item.name].revenue += item.effectivePrice * item.quantity;
-        });
-    });
-
-    const sortedProducts = Object.entries(productSales)
-        .sort(([,a], [,b]) => b.quantity - a.quantity)
-        .slice(0, 5);
+    const sortedProducts = getTopSellingProductsData(transactions);
     
     const listEl = document.getElementById('topSellingProductsList');
     if (sortedProducts.length === 0) {
@@ -664,5 +678,89 @@ export function closeCashierReportModal() {
     if (modal) {
         modal.classList.add('hidden');
         window.app.currentCashierReportData = null;
+    }
+}
+
+// --- AI ANALYSIS ---
+export async function analyzeWithAI() {
+    const aiResultEl = document.getElementById('aiAnalysisResult');
+    const aiLoadingEl = document.getElementById('aiAnalysisLoading');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+
+    if (!window.app.currentReportData || window.app.currentReportData.length === 0) {
+        showToast('Generate laporan terlebih dahulu sebelum menganalisa.');
+        return;
+    }
+
+    aiResultEl.innerHTML = '';
+    aiLoadingEl.style.display = 'flex';
+    analyzeBtn.disabled = true;
+
+    try {
+        // Check if an API key has been selected using the aistudio helper
+        if (!window.aistudio || typeof window.aistudio.hasSelectedApiKey !== 'function' || !(await window.aistudio.hasSelectedApiKey())) {
+             aiResultEl.innerHTML = `<p class="text-orange-500 p-3 bg-orange-50 rounded-lg">API Key belum dipilih. Silakan masuk ke halaman <strong>Pengaturan</strong> untuk memilih API Key Gemini Anda.</p>`;
+             throw new Error("API Key not selected");
+        }
+        
+        // Per guidelines, create a new instance right before the call
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+        const modelName = await getFromDB('settings', 'aiModelName').then(s => s?.value) || 'gemini-2.5-pro';
+
+        const products = await getAllFromDB('products');
+        const summary = getReportSummaryData(window.app.currentReportData, products);
+        const topProducts = getTopSellingProductsData(window.app.currentReportData);
+        
+        const dateFrom = document.getElementById('dateFrom').value;
+        const dateTo = document.getElementById('dateTo').value;
+
+        let prompt = `Anda adalah seorang analis bisnis ahli untuk toko ritel UMKM di Indonesia.
+Analisa data penjualan berikut untuk periode ${dateFrom} hingga ${dateTo}.
+
+**Ringkasan Data:**
+- Total Omzet: Rp ${formatCurrency(summary.omzet)}
+- Total Laba Bersih: Rp ${formatCurrency(summary.netProfit)}
+- Total Transaksi: ${summary.totalTransactions}
+- Rata-rata per Transaksi: Rp ${formatCurrency(summary.average)}
+
+**5 Produk Terlaris (berdasarkan kuantitas):**
+${topProducts.map(([name, data], i) => `${i+1}. ${name}: ${data.quantity} terjual (Omzet Rp ${formatCurrency(data.revenue)})`).join('\n')}
+
+Berdasarkan data di atas, berikan:
+1.  **Ringkasan Performa:** Analisa singkat mengenai performa penjualan pada periode ini (apakah baik, kurang, atau biasa saja, dan kenapa).
+2.  **Wawasan Utama:** 2-3 poin penting atau tren yang paling menonjol dari data. Contoh: "Produk X sangat dominan", "Laba per item tampaknya rendah", dll.
+3.  **Saran Konkret:** 3-4 saran yang bisa langsung diterapkan oleh pemilik toko untuk meningkatkan penjualan atau profitabilitas. Contoh: "Buat paket bundling Kopi Susu dan Roti Coklat", "Naikkan harga produk Y sedikit", "Lakukan promosi untuk produk Z yang penjualannya rendah".
+
+Format jawaban dalam bentuk Markdown yang jelas dan mudah dibaca. Gunakan Bahasa Indonesia.`;
+        
+        const response = await ai.models.generateContent({
+            model: modelName,
+            contents: prompt,
+        });
+
+        const resultText = response.text;
+        
+        // A simple markdown-to-html renderer to make it look nicer.
+        let htmlResult = resultText
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/<\/strong>\s*:/g, '</strong>:')
+            .replace(/(\r\n|\n|\r)/g, '<br>');
+        
+        htmlResult = htmlResult.replace(/<br>\s*([0-9]+\.)/g, '<br><br>$1');
+        
+        aiResultEl.innerHTML = `<div class="text-sm text-gray-700 whitespace-pre-wrap font-sans bg-gray-50 p-4 rounded-lg leading-relaxed">${htmlResult}</div>`;
+        
+    } catch (error) {
+        console.error("AI analysis failed:", error);
+        
+        if (error.message && (error.message.includes("API key not valid") || error.message.includes("Requested entity was not found"))) {
+             aiResultEl.innerHTML = `<p class="text-red-500 p-3 bg-red-50 rounded-lg">API Key tidak valid atau telah dicabut. Silakan pilih kembali API Key yang valid di halaman Pengaturan.</p>`;
+        } else if (error.message !== "API Key not selected") {
+            aiResultEl.innerHTML = `<p class="text-red-500 p-3 bg-red-50 rounded-lg">Gagal mendapatkan analisa AI. Pastikan model AI benar, API Key valid, dan koneksi internet stabil.<br><br><strong>Error:</strong> ${error.message}</p>`;
+        }
+    } finally {
+        aiLoadingEl.style.display = 'none';
+        analyzeBtn.disabled = false;
     }
 }

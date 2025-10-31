@@ -6,6 +6,7 @@ import {
     signInAnonymously
 } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
 import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+import { GoogleGenAI } from "https://esm.run/@google/genai";
 
 import { putSettingToDB, getSettingFromDB, getAllFromDB, putToDB, clearAllStores, getFromDB, getFromDBByIndex } from './db.js';
 import { showToast, showConfirmationModal, loadDashboard, showPage, updateUiForRole } from './ui.js';
@@ -43,7 +44,8 @@ export async function saveStoreSettings() {
         { key: 'lowStockThreshold', value: parseInt((document.getElementById('lowStockThreshold')).value) || 5 },
         { key: 'autoPrintReceipt', value: document.getElementById('autoPrintReceipt').checked },
         { key: 'printerPaperSize', value: document.getElementById('printerPaperSize').value },
-        { key: 'autoOpenCashDrawer', value: document.getElementById('autoOpenCashDrawer').checked }
+        { key: 'autoOpenCashDrawer', value: document.getElementById('autoOpenCashDrawer').checked },
+        { key: 'aiModelName', value: (document.getElementById('aiModelName')).value.trim() }
     ];
 
     try {
@@ -80,12 +82,17 @@ export async function loadSettings() {
             autoOpenCashDrawerToggle.checked = settingsMap.get('autoOpenCashDrawer') || false;
         }
 
+        (document.getElementById('aiModelName')).value = settingsMap.get('aiModelName') || 'gemini-2.5-pro';
+
         window.app.lowStockThreshold = settingsMap.get('lowStockThreshold') || 5;
         
         window.app.currentStoreLogoData = settingsMap.get('storeLogo') || null;
         if (window.app.currentStoreLogoData) {
             (document.getElementById('storeLogoPreview')).innerHTML = `<img src="${window.app.currentStoreLogoData}" alt="Logo Preview" class="image-preview">`;
         }
+        
+        checkApiKeyStatus();
+
     } catch (error) {
         console.error("Failed to load settings:", error);
     }
@@ -608,6 +615,51 @@ export async function reconcileCartFees() {
     
     window.app.cart.fees = reconciledFees;
 }
+
+// --- AI & API KEY ---
+export async function selectApiKey() {
+    if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+        try {
+            await window.aistudio.openSelectKey();
+            // Per guideline, assume success after call to handle race condition.
+            showToast('Pemilihan API Key telah dimulai.');
+            // Update status immediately for better UX
+            const statusEl = document.getElementById('apiKeyStatus');
+            if (statusEl) {
+                 statusEl.innerHTML = `<i class="fas fa-check-circle text-green-500"></i> Terpilih`;
+            }
+            // And re-check for confirmation after a short delay
+            setTimeout(checkApiKeyStatus, 1500);
+        } catch (e) {
+             showToast('Gagal membuka dialog pemilihan API Key.');
+             console.error("openSelectKey failed:", e);
+        }
+    } else {
+        showToast('Fungsi pemilihan API Key tidak tersedia di lingkungan ini.');
+    }
+}
+
+export async function checkApiKeyStatus() {
+    const statusEl = document.getElementById('apiKeyStatus');
+    if (!statusEl) return;
+
+    if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
+        try {
+            const hasKey = await window.aistudio.hasSelectedApiKey();
+            if (hasKey) {
+                statusEl.innerHTML = `<i class="fas fa-check-circle text-green-500"></i> Terpilih`;
+            } else {
+                statusEl.innerHTML = `<i class="fas fa-exclamation-triangle text-yellow-500"></i> Belum Dipilih`;
+            }
+        } catch (e) {
+            console.error("hasSelectedApiKey failed:", e);
+            statusEl.innerHTML = `<i class="fas fa-times-circle text-red-500"></i> Gagal Cek`;
+        }
+    } else {
+         statusEl.innerHTML = `Status N/A`;
+    }
+}
+
 
 // --- PIN & AUTH FLOW ---
 

@@ -97,6 +97,7 @@ const functions = {
     returnItem: report.returnItem,
     generateCashierReport: report.generateCashierReport,
     closeCashierReportModal: report.closeCashierReportModal,
+    analyzeWithAI: report.analyzeWithAI,
     // contact.js
     switchContactTab: contact.switchContactTab,
     showContactModal: contact.showContactModal,
@@ -133,6 +134,7 @@ const functions = {
     closeImportProductsModal: settings.closeImportProductsModal,
     handleProductImport: settings.handleProductImport,
     clearAllData: settings.clearAllData,
+    selectApiKey: settings.selectApiKey,
     // Auth & User Management (from settings.js)
     logout: settings.logout,
     lockScreen: settings.lockScreen,

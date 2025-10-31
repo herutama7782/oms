@@ -357,6 +357,23 @@
                     <!-- Report transactions will be loaded here -->
                 </div>
             </div>
+
+            <!-- AI Analysis Card -->
+            <div id="aiAnalysisCard" class="card p-4 mt-4" style="display: none;">
+                <h2 class="text-lg font-semibold mb-3">Analisa & Saran Penjualan (AI)</h2>
+                <div class="space-y-3">
+                    <button id="analyzeBtn" onclick="analyzeWithAI()" class="btn bg-purple-600 text-white w-full py-2">
+                        <i class="fas fa-magic"></i> Analisa dengan AI
+                    </button>
+                    <div id="aiAnalysisLoading" style="display: none;" class="flex flex-col items-center justify-center p-4">
+                        <div class="spinner"></div>
+                        <p class="mt-2 text-gray-600">AI sedang menganalisa data...</p>
+                    </div>
+                    <div id="aiAnalysisResult" class="mt-2">
+                        <!-- AI result will be shown here -->
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- View for Cashier -->
@@ -384,225 +401,159 @@
             <div class="space-y-3">
                 <div>
                     <label class="text-sm text-gray-600">Logo Toko (Opsional)</label>
-                    <div class="image-upload-container clickable" onclick="document.getElementById('storeLogoInput').click()">
-                        <input type="file" id="storeLogoInput" accept="image/*" style="display: none;" onchange="previewStoreLogo(event)">
+                    <div class="image-upload-container clickable" onclick="document.getElementById('storeLogo').click()">
+                        <input type="file" id="storeLogo" accept="image/*" class="hidden" onchange="previewStoreLogo(event)">
                         <div id="storeLogoPreview" class="upload-placeholder">
                             <i class="fas fa-image text-3xl mb-2"></i>
                             <p>Tap untuk upload logo</p>
                         </div>
                     </div>
+                     <div class="flex items-center mt-2">
+                        <input type="checkbox" id="showLogoOnReceipt" class="h-4 w-4 rounded text-blue-600 border-gray-300 focus:ring-blue-500">
+                        <label for="showLogoOnReceipt" class="ml-2 text-sm text-gray-600">Tampilkan logo di struk</label>
+                    </div>
                 </div>
-                <div class="flex justify-between items-center mt-3">
-                    <label for="showLogoOnReceipt" class="text-sm text-gray-600 cursor-pointer">Tampilkan Logo di Struk</label>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                      <input type="checkbox" id="showLogoOnReceipt" class="sr-only peer">
-                      <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                    </label>
-                </div>
-                <div>
-                    <label class="text-sm text-gray-600">Nama Toko</label>
+                 <div>
+                    <label for="storeName" class="text-sm text-gray-600">Nama Toko</label>
                     <input type="text" id="storeName" class="input-field w-full" placeholder="Nama Toko Anda">
                 </div>
                 <div>
-                    <label class="text-sm text-gray-600">Alamat</label>
-                    <textarea id="storeAddress" class="input-field w-full" rows="2" placeholder="Alamat Toko"></textarea>
+                    <label for="storeAddress" class="text-sm text-gray-600">Alamat Toko</label>
+                    <textarea id="storeAddress" class="input-field w-full" rows="2" placeholder="Alamat lengkap toko"></textarea>
                 </div>
-                <div>
-                    <label class="text-sm text-gray-600">Teks Footer Struk (Opsional)</label>
-                    <textarea id="storeFooterText" class="input-field w-full" rows="2" placeholder="Contoh: Terima Kasih!"></textarea>
+                 <div>
+                    <label for="storeFeedbackPhone" class="text-sm text-gray-600">No. Kritik & Saran</label>
+                    <input type="tel" id="storeFeedbackPhone" class="input-field w-full" placeholder="08123456789 (opsional)">
                 </div>
-                <div>
-                    <label class="text-sm text-gray-600">Telepon Kritik & Saran (Opsional)</label>
-                    <input type="tel" id="storeFeedbackPhone" class="input-field w-full" placeholder="e.g., 1500959">
+                 <div>
+                    <label for="storeFooterText" class="text-sm text-gray-600">Teks Footer Struk</label>
+                    <input type="text" id="storeFooterText" class="input-field w-full" placeholder="Terima kasih telah berbelanja!">
                 </div>
+            </div>
+        </div>
 
-                <div class="border-t my-4"></div>
-                <h3 class="text-md font-semibold mb-2">Pengaturan Cetak RawBT</h3>
-                
-                <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg text-center mb-3">
-                    <p class="text-xs text-blue-700 mb-2">
-                        Fitur ini memerlukan aplikasi 
-                        <a href="https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter" target="_blank" class="text-blue-600 underline font-bold">RawBT</a> 
-                        ter-install dari Play Store.
-                    </p>
-                     <div class="grid grid-cols-2 gap-2">
-                        <button id="testPrintBtn" onclick="testPrint()" class="btn bg-gray-600 text-white w-full py-2 text-sm">
-                            <i class="fas fa-print"></i> Test Cetak
-                        </button>
-                        <button onclick="showPrintHelpModal()" class="btn bg-blue-500 text-white w-full py-2 text-sm">
-                            <i class="fas fa-question-circle"></i> Bantuan
-                        </button>
-                    </div>
+        <!-- Product & Printer Settings -->
+        <div class="card p-4 mb-4">
+            <h2 class="text-lg font-semibold mb-3">Produk & Printer</h2>
+            <div class="space-y-3">
+                 <div>
+                    <label for="lowStockThreshold" class="text-sm text-gray-600">Ambang Batas Stok Rendah</label>
+                    <input type="number" id="lowStockThreshold" class="input-field w-full" placeholder="5">
                 </div>
-
-                <div id="autoPrintContainer" class="flex justify-between items-center">
-                    <label for="autoPrintReceipt" class="text-sm text-gray-600 cursor-pointer">Cetak Struk Otomatis</label>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                      <input type="checkbox" id="autoPrintReceipt" class="sr-only peer">
-                      <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                    </label>
-                </div>
-
-                <div class="mt-2">
-                    <label class="text-sm text-gray-600">Ukuran Kertas Printer</label>
+                 <div>
+                    <label for="printerPaperSize" class="text-sm text-gray-600">Ukuran Kertas Printer</label>
                     <select id="printerPaperSize" class="input-field w-full">
-                        <option value="80mm">80mm (Standar)</option>
-                        <option value="58mm">58mm (Kecil)</option>
+                        <option value="80mm">80mm</option>
+                        <option value="58mm">58mm</option>
                     </select>
                 </div>
-
-                <div class="flex justify-between items-center mt-3">
-                    <div class="pr-4">
-                        <label for="autoOpenCashDrawer" class="text-sm text-gray-600 cursor-pointer">Buka Laci Kas Otomatis</label>
-                        <p class="text-xs text-gray-500">Buka laci kas setelah cetak berhasil.</p>
-                    </div>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                      <input type="checkbox" id="autoOpenCashDrawer" class="sr-only peer">
-                      <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                    </label>
+                 <div id="autoPrintContainer" class="flex items-center">
+                    <input type="checkbox" id="autoPrintReceipt" class="h-4 w-4 rounded text-blue-600 border-gray-300 focus:ring-blue-500">
+                    <label for="autoPrintReceipt" class="ml-2 text-sm text-gray-600">Cetak struk otomatis setelah transaksi</label>
                 </div>
-                
-                <div class="border-t my-4"></div>
-                
-                <div>
-                    <label class="text-sm text-gray-600">Ambang Batas Stok Rendah</label>
-                    <input type="number" id="lowStockThreshold" class="input-field w-full" placeholder="Contoh: 5">
+                <div class="flex items-center">
+                    <input type="checkbox" id="autoOpenCashDrawer" class="h-4 w-4 rounded text-blue-600 border-gray-300 focus:ring-blue-500">
+                    <label for="autoOpenCashDrawer" class="ml-2 text-sm text-gray-600">Buka laci kasir otomatis saat cetak</label>
                 </div>
-                <button onclick="saveStoreSettings()" class="btn bg-blue-500 text-white w-full py-2">
-                    <i class="fas fa-save"></i> Simpan
-                </button>
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="testPrintBtn" onclick="testPrint()" class="btn bg-gray-200 text-gray-700 w-full py-2 text-sm">
+                        <i class="fas fa-print"></i> Test Cetak
+                    </button>
+                    <button onclick="showPrintHelpModal()" class="btn bg-gray-200 text-gray-700 w-full py-2 text-sm">
+                        <i class="fas fa-question-circle"></i> Bantuan Cetak
+                    </button>
+                </div>
             </div>
         </div>
-
-        <!-- Tax and Fees Management -->
+        
+        <!-- Tax & Fee Settings -->
         <div class="card p-4 mb-4">
-            <h2 class="text-lg font-semibold mb-3">Kelola Pajak & Biaya</h2>
-            <div class="space-y-3 p-3 bg-gray-50 rounded-lg mb-4 border">
-                <h3 class="font-semibold text-md">Tambah Biaya Baru</h3>
+            <h2 class="text-lg font-semibold mb-3">Pajak & Biaya Tambahan</h2>
+             <div class="space-y-3 mb-4">
                 <div>
-                    <label class="text-sm text-gray-600">Nama Biaya</label>
-                    <input type="text" id="feeName" placeholder="Contoh: PPN, Service Charge" class="input-field w-full">
-                </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="text-sm text-gray-600">Tipe</label>
-                        <select id="feeType" class="input-field w-full">
-                            <option value="percentage">Persen (%)</option>
-                            <option value="fixed">Fixed (Rp)</option>
-                        </select>
-                    </div>
-                     <div>
-                        <label class="text-sm text-gray-600">Nilai</label>
-                        <input type="number" id="feeValue" placeholder="e.g., 11 or 5000" class="input-field w-full">
+                    <label class="text-sm text-gray-600">Daftar Biaya</label>
+                    <div id="feesList" class="space-y-2 max-h-48 overflow-y-auto border p-2 rounded-lg bg-gray-50">
+                        <!-- Fees loaded here -->
                     </div>
                 </div>
-                 <div class="flex justify-between items-center mt-2">
-                    <label for="feeIsDefault" class="text-sm text-gray-600 cursor-pointer">Terapkan Otomatis</label>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                      <input type="checkbox" id="feeIsDefault" class="sr-only peer">
-                      <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                    </label>
+                <div>
+                    <label class="text-sm text-gray-600">Tambah Biaya Baru</label>
+                    <div class="p-3 bg-gray-50 rounded-lg space-y-2">
+                        <input type="text" id="feeName" class="input-field w-full" placeholder="Nama Biaya (e.g., PPN, Biaya Layanan)">
+                        <div class="grid grid-cols-2 gap-2">
+                            <select id="feeType" class="input-field w-full">
+                                <option value="percentage">Persentase (%)</option>
+                                <option value="fixed">Tetap (Rp)</option>
+                            </select>
+                            <input type="number" id="feeValue" class="input-field w-full" placeholder="Nilai">
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="feeIsDefault" class="h-4 w-4 rounded text-blue-600 border-gray-300 focus:ring-blue-500">
+                            <label for="feeIsDefault" class="ml-2 text-sm text-gray-600">Terapkan otomatis ke semua transaksi</label>
+                        </div>
+                         <button onclick="addFee()" class="btn bg-blue-500 text-white w-full py-2 mt-2">Tambah Biaya</button>
+                    </div>
                 </div>
-                <button onclick="addFee()" class="btn bg-blue-500 text-white w-full py-2 mt-2">
-                    <i class="fas fa-plus"></i> Tambah
-                </button>
             </div>
-            <div id="feesList" class="space-y-2">
-                <!-- Fees will be listed here -->
-            </div>
-        </div>
-
-        <!-- User Management (NEW) -->
-        <div id="userManagementCard" class="card p-4 mb-4" style="display: none;">
-            <h2 class="text-lg font-semibold mb-3">Manajemen Pengguna</h2>
-            <button onclick="showManageUsersModal()" class="btn bg-gray-600 text-white w-full py-2">
-                <i class="fas fa-users-cog"></i> Kelola Pengguna
-            </button>
         </div>
         
         <!-- Data Management -->
-        <div id="dataManagementCard" class="card p-4 mb-4" style="display: none;">
+        <div id="dataManagementCard" class="card p-4 mb-4">
             <h2 class="text-lg font-semibold mb-3">Manajemen Data</h2>
-            <div class="space-y-2">
-                <button onclick="showImportProductsModal()" class="btn bg-cyan-500 text-white w-full py-2">
-                    <i class="fas fa-file-csv"></i> Import Produk (.CSV)
+            <div class="grid grid-cols-2 gap-2">
+                 <button onclick="showImportProductsModal()" class="btn bg-gray-200 text-gray-700 w-full py-2 text-sm">
+                    <i class="fas fa-file-csv"></i> Import Produk
                 </button>
-                <button onclick="exportData()" class="btn bg-green-500 text-white w-full py-2">
-                    <i class="fas fa-download"></i> Export Backup Data (.JSON)
+                <button onclick="importData()" class="btn bg-gray-200 text-gray-700 w-full py-2 text-sm">
+                    <i class="fas fa-upload"></i> Import Semua
                 </button>
-                <button onclick="importData()" class="btn bg-purple-500 text-white w-full py-2">
-                    <i class="fas fa-upload"></i> Import Backup Data (.JSON)
+                <button onclick="exportData()" class="btn bg-gray-200 text-gray-700 w-full py-2 text-sm">
+                    <i class="fas fa-download"></i> Export Semua
                 </button>
-                <input type="file" id="importFile" style="display: none;" accept=".json" onchange="handleImport(event)">
-                <button id="clearDataBtn" onclick="clearAllData()" class="btn bg-red-500 text-white w-full py-2" style="display: none;">
-                    <i class="fas fa-trash"></i> Hapus Semua Data
+                 <button id="clearDataBtn" onclick="clearAllData()" class="btn bg-red-100 text-red-700 w-full py-2 text-sm">
+                    <i class="fas fa-trash-alt"></i> Hapus Data
                 </button>
             </div>
+            <input type="file" id="importFile" class="hidden" accept=".json" onchange="handleImport(event)">
         </div>
 
-        <!-- Barcode/Label Generator -->
+        <!-- Gemini AI Config -->
         <div class="card p-4 mb-4">
-            <h2 class="text-lg font-semibold mb-3">Cetak Label Harga & Barcode</h2>
+            <h2 class="text-lg font-semibold mb-3">Konfigurasi AI Gemini</h2>
             <div class="space-y-3">
                 <div>
-                    <label class="text-sm text-gray-600">Nama Produk (Opsional)</label>
-                    <input type="text" id="product-name" class="input-field w-full" placeholder="Contoh: Kopi Susu">
+                    <label for="aiModelName" class="text-sm text-gray-600">Model AI</label>
+                    <input type="text" id="aiModelName" class="input-field w-full" placeholder="e.g., gemini-2.5-pro">
                 </div>
                 <div>
-                    <label class="text-sm text-gray-600">Harga Produk (Opsional)</label>
-                    <input type="number" id="product-price" class="input-field w-full" placeholder="Contoh: 18000">
-                </div>
-                <div>
-                    <label class="text-sm text-gray-600">Teks/Angka untuk Barcode</label>
-                    <input type="text" id="barcode-code" class="input-field w-full" placeholder="e.g., 1234567890">
-                </div>
-                <button id="generateBarcodeLabelBtn" class="btn bg-blue-500 text-white w-full py-2">
-                    <i class="fas fa-tags mr-2"></i>Buat Label
-                </button>
-               
-                <div id="barcodeLabelOutput" class="hidden text-center p-4 border rounded-lg bg-gray-100">
-                    <div id="labelContent" class="p-2 bg-white inline-block shadow-md">
-                        <!-- Explicit styling for better PNG/Print consistency -->
-                        <div class="flex flex-col items-center justify-center" style="width: 210px;"> <!-- Approx 55mm paper width for preview -->
-                            <p id="output-product-name" class="font-bold text-sm break-words w-full text-center mb-0"></p>
-                            <p id="output-product-price" class="font-semibold text-sm break-words w-full text-center mb-2"></p>
-                            <div class="my-0">
-                               <svg id="barcode"></svg>
-                            </div>
-                            <p id="output-barcode-text" class="font-mono text-xs break-words w-full text-center mt-0"></p>
-                        </div>
+                    <label class="text-sm text-gray-600">API Key</label>
+                    <div class="flex items-center gap-2">
+                        <span id="apiKeyStatus" class="flex-grow text-sm p-3 bg-gray-100 rounded-lg">Memeriksa...</span>
+                        <button onclick="selectApiKey()" class="btn bg-blue-500 text-white px-4 py-2 flex-shrink-0">
+                            Pilih Key
+                        </button>
                     </div>
-                </div>
-        
-                <div id="download-buttons" class="hidden grid grid-cols-2 gap-2 mt-2">
-                    <button id="downloadPngBtn" class="btn bg-green-500 text-white w-full py-2">
-                        <i class="fas fa-download mr-2"></i>Unduh PNG
-                    </button>
-                    <button id="printLabelBtn" class="btn bg-gray-600 text-white w-full py-2">
-                        <i class="fas fa-print mr-2"></i>Cetak Label
-                    </button>
+                    <p class="text-xs text-gray-500 mt-2">API Key Anda dipilih dan digunakan secara aman melalui dialog Google. Info <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" class="text-blue-500 underline">billing</a>.</p>
                 </div>
             </div>
         </div>
 
-        <!-- About -->
-        <div class="card p-4 mb-4">
-            <h2 class="text-lg font-semibold mb-3">Tentang</h2>
-            <p class="text-sm text-gray-600 mb-2">POS Mobile v1.3</p>
-            <p class="text-sm text-gray-600">Sistem Point of Sale sederhana untuk usaha kecil dan menengah.</p>
+        <!-- User Management -->
+        <div id="userManagementCard" class="card p-4 mb-4">
+            <h2 class="text-lg font-semibold mb-3">Manajemen Pengguna</h2>
+            <button onclick="showManageUsersModal()" class="btn bg-gray-200 text-gray-700 w-full py-2">Kelola Akun Kasir & Manajer</button>
         </div>
         
-        <!-- Session Management -->
+        <!-- Session & Account -->
         <div id="sessionManagementCard" class="card p-4 mb-4">
-            <h2 class="text-lg font-semibold mb-3">Sesi & Keamanan</h2>
+            <h2 class="text-lg font-semibold mb-3">Sesi & Akun</h2>
             <div class="space-y-2">
-                <button onclick="lockScreen()" class="btn bg-yellow-500 text-white w-full py-2">
-                    <i class="fas fa-lock"></i> Kunci Layar / Ganti Pengguna
-                </button>
-                <button id="fullLogoutBtn" onclick="logout()" class="btn bg-orange-500 text-white w-full py-2">
-                    <i class="fas fa-sign-out-alt"></i> Logout Akun Utama
-                </button>
+                <button onclick="lockScreen()" class="btn bg-yellow-500 text-white w-full py-2">Kunci Layar</button>
+                <button id="fullLogoutBtn" onclick="logout()" class="btn bg-red-500 text-white w-full py-2">Logout dari Perangkat</button>
             </div>
         </div>
+
+        <button onclick="saveStoreSettings()" class="btn bg-blue-500 text-white w-full py-3 mt-4">Simpan Pengaturan</button>
+
     </div>
 </div>
