@@ -1,6 +1,7 @@
-const CACHE_NAME = 'pos-mobile-cache-v5'; // Bump version to cache Firebase SDKs
+const CACHE_NAME = 'pos-mobile-cache-v6';
+
 const APP_SHELL_URLS = [
-  '/',
+  // Cache untuk offline fallback (jangan cache '/')
   '/index.html',
   '/index.css',
   '/index.js',
@@ -22,90 +23,77 @@ const APP_SHELL_URLS = [
 ];
 
 self.addEventListener('install', event => {
-  // skipWaiting() memaksa Service Worker yang sedang menunggu untuk menjadi yang aktif.
+  // Aktifkan cepat
   self.skipWaiting();
-  
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => {
-        console.log('Precaching App Shell');
-        // Use addAll with a catch to prevent install failure if one resource fails
-        return cache.addAll(APP_SHELL_URLS).catch(err => {
-          console.error('Failed to cache app shell resources:', err);
-        });
+    caches.open(CACHE_NAME).then(cache =>
+      cache.addAll(APP_SHELL_URLS).catch(err => {
+        console.error('Precaching error:', err);
       })
+    )
   );
 });
 
 self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(cacheNames => {
-      return Promise.all(
-        cacheNames.map(cacheName => {
-          if (cacheName !== CACHE_NAME) {
-            console.log('Service Worker: clearing old cache');
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    }).then(() => {
-        // clients.claim() memungkinkan Service Worker yang aktif untuk mulai mengontrol
-        // semua klien yang terbuka yang berada dalam cakupannya.
-        console.log('Service Worker activated and claiming clients.');
-        return self.clients.claim();
-    })
-  );
+  event.waitUntil((async () => {
+    const names = await caches.keys();
+    await Promise.all(names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n)));
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET') {
+  if (event.request.method !== 'GET') return;
+
+  // 1) HTML / navigasi: network-first agar update langsung terambil
+  if (event.request.mode === 'navigate' || event.request.destination === 'document') {
+    event.respondWith((async () => {
+      try {
+        // Pastikan ambil versi terbaru
+        return await fetch(event.request, { cache: 'no-store' });
+      } catch (e) {
+        // Offline fallback
+        return (await caches.match('/index.html')) || Response.error();
+      }
+    })());
     return;
   }
 
-  // For CDN assets, use a stale-while-revalidate strategy
-  if (event.request.url.includes('cdn.tailwindcss.com') || 
-      event.request.url.includes('cdnjs.cloudflare.com') ||
-      event.request.url.includes('unpkg.com') ||
-      event.request.url.includes('cdn.jsdelivr.net') ||
-      event.request.url.includes('www.gstatic.com') // Cache Firebase SDKs
-     ) {
-    event.respondWith(
-      caches.open(CACHE_NAME).then(cache => {
-        return cache.match(event.request).then(response => {
-          const fetchPromise = fetch(event.request).then(networkResponse => {
-            cache.put(event.request, networkResponse.clone());
-            return networkResponse;
-          });
-          return response || fetchPromise;
-        });
-      })
-    );
+  const url = new URL(event.request.url);
+
+  // 2) CDN assets: stale-while-revalidate
+  const cdnHosts = [
+    'cdn.tailwindcss.com',
+    'cdnjs.cloudflare.com',
+    'unpkg.com',
+    'cdn.jsdelivr.net',
+    'www.gstatic.com'
+  ];
+  if (cdnHosts.some(h => url.host.includes(h))) {
+    event.respondWith(caches.open(CACHE_NAME).then(async cache => {
+      const cached = await cache.match(event.request);
+      const fetchPromise = fetch(event.request).then(r => {
+        if (r && r.ok) cache.put(event.request, r.clone());
+        return r;
+      }).catch(() => cached);
+      return cached || fetchPromise;
+    }));
     return;
   }
 
-  // For app shell assets, use cache-first
-  event.respondWith(
-    caches.match(event.request)
-      .then(cachedResponse => {
-        if (cachedResponse) {
-          return cachedResponse;
-        }
+  // 3) Same-origin static: stale-while-revalidate
+  if (url.origin === self.location.origin) {
+    event.respondWith(caches.open(CACHE_NAME).then(async cache => {
+      const cached = await cache.match(event.request);
+      const fetchPromise = fetch(event.request).then(r => {
+        if (r && r.ok) cache.put(event.request, r.clone());
+        return r;
+      }).catch(() => cached);
+      return cached || fetchPromise;
+    }));
+    return;
+  }
 
-        return fetch(event.request).then(
-          networkResponse => {
-            if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-              return networkResponse;
-            }
-
-            const responseToCache = networkResponse.clone();
-            caches.open(CACHE_NAME)
-              .then(cache => {
-                cache.put(event.request, responseToCache);
-              });
-            
-            return networkResponse;
-          }
-        );
-      })
-  );
+  // 4) Default: network-first
+  event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
 });
