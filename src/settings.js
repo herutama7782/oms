@@ -1,11 +1,4 @@
-import {
-    signInWithEmailAndPassword,
-    createUserWithEmailAndPassword,
-    sendPasswordResetEmail,
-    signOut,
-    signInAnonymously
-} from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
-import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+// FIX: Firebase imports are removed. The compat library loaded in index.html creates a global `firebase` object.
 
 import { putSettingToDB, getSettingFromDB, getAllFromDB, putToDB, clearAllStores, getFromDB, getFromDBByIndex } from './db.js';
 import { showToast, showConfirmationModal, loadDashboard, showPage, updateUiForRole } from './ui.js';
@@ -694,7 +687,7 @@ export async function initiatePinLoginFlow(firebaseUser) {
         // This block is now unreachable as guest login is disabled.
         // Kept for safety, but can be removed.
         console.warn("Anonymous user detected, but guest login is disabled. Forcing logout.");
-        signOut(window.auth);
+        firebase.auth().signOut();
         return;
     }
 
@@ -732,8 +725,9 @@ export async function handleInitialPinSetup() {
         // Try to get name from Firestore, but don't fail if offline
         try {
             if (window.app.isOnline) {
-                const userDocRef = doc(window.db_firestore, 'users', firebaseUser.uid);
-                const userDoc = await getDoc(userDocRef);
+                // FIX: Use compat API for Firestore
+                const userDocRef = firebase.firestore().doc(window.db_firestore, 'users', firebaseUser.uid);
+                const userDoc = await firebase.firestore().getDoc(userDocRef);
                 if (userDoc.exists()) {
                     userName = userDoc.data().name || userName;
                 }
@@ -857,7 +851,8 @@ export function checkAccess(allowedRoles) {
 export function logout() {
     showConfirmationModal('Logout Akun Utama', 'Ini akan mengakhiri sesi Anda. Anda yakin ingin melanjutkan?', () => {
         window.app.currentUser = null;
-        signOut(window.auth); // onAuthStateChanged will handle UI reset
+        // FIX: Use compat API
+        firebase.auth().signOut(); // onAuthStateChanged will handle UI reset
     }, 'Ya, Logout', 'bg-orange-500');
 }
 
@@ -1127,7 +1122,8 @@ export async function handleEmailLogin(event) {
     errorEl.textContent = '';
 
     try {
-        await signInWithEmailAndPassword(window.auth, email, password);
+        // FIX: Use compat API
+        await firebase.auth().signInWithEmailAndPassword(email, password);
         // onAuthStateChanged will handle the rest
     } catch (error) {
         if (error.code === 'auth/invalid-credential' || error.code === 'auth/invalid-login-credentials' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
@@ -1152,7 +1148,8 @@ export async function handleForgotPassword(event) {
     successEl.textContent = '';
 
     try {
-        await sendPasswordResetEmail(window.auth, email);
+        // FIX: Use compat API
+        await firebase.auth().sendPasswordResetEmail(email);
         successEl.textContent = 'Link reset password telah dikirim ke email Anda.';
     } catch (error) {
         console.error("Forgot password failed:", error.code);

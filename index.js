@@ -1,7 +1,5 @@
 // Main application entry point
-import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+// FIX: Firebase imports are removed. The compat library loaded in index.html creates a global `firebase` object.
 
 // Import all modules
 import * as audio from './src/audio.js';
@@ -242,7 +240,8 @@ async function initializeAppDependencies() {
 }
 
 function listenForAuthStateChanges() {
-    onAuthStateChanged(window.auth, async (firebaseUser) => {
+    // FIX: Use the compat version of onAuthStateChanged
+    window.auth.onAuthStateChanged(async (firebaseUser) => {
         const loadingOverlay = document.getElementById('loadingOverlay');
         window.app.firebaseUser = firebaseUser;
 
@@ -305,7 +304,8 @@ function registerServiceWorker() {
 async function waitForLibraries() {
     return new Promise(resolve => {
         const check = () => {
-            if (window.EscPosEncoder && window.Html5Qrcode && window.Chart && 
+            // FIX: Check for the global `firebase` object instead of just Chart.js etc.
+            if (window.firebase && window.EscPosEncoder && window.Html5Qrcode && window.Chart && 
                 window.html2canvas && window.JsBarcode) {
                 
                 if (!window.app.isPrinterReady) window.app.isPrinterReady = true;
@@ -341,13 +341,14 @@ window.addEventListener('DOMContentLoaded', async () => {
             appId: "1:944626340482:web:61d4a8c5c3c1a3b3e1c2e1"
         };
         
-        const firebaseApp = initializeApp(firebaseConfig);
-        window.auth = getAuth(firebaseApp);
+        // FIX: Use global `firebase` object for initialization
+        const firebaseApp = firebase.initializeApp(firebaseConfig);
+        window.auth = firebase.auth();
         
         try {
-            window.db_firestore = initializeFirestore(firebaseApp, {
-                localCache: persistentLocalCache({})
-            });
+            // FIX: Use compat API for firestore and enabling persistence
+            window.db_firestore = firebase.firestore();
+            await window.db_firestore.enablePersistence();
             console.log('Firestore offline persistence enabled.');
         } catch (err) {
             console.error("Firestore initialization with persistence failed:", err);
@@ -355,7 +356,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                  console.warn('Firestore persistence failed: multiple tabs open or other issue.');
             }
              // Fallback to in-memory persistence
-            window.db_firestore = initializeFirestore(firebaseApp, {});
+            window.db_firestore = firebase.firestore();
         }
 
         await db.initDB();

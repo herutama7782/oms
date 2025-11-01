@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pos-mobile-cache-v9';
+const CACHE_NAME = 'pos-mobile-cache-v10';
 
 const APP_SHELL_URLS = [
   // Fallback root dan ikon manifest
@@ -38,16 +38,13 @@ const APP_SHELL_URLS = [
   'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js',
   'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js',
   'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js',
-  
-  // FIX: Menggunakan URL Chart.js yang spesifik dan non-redirect
   'https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.js',
-
   'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
   
-  // Firebase SDKs
-  'https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js',
-  'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js',
-  'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js'
+  // FIX: Menggunakan Firebase 'compat' (bundled) untuk keandalan offline
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js'
 ];
 
 self.addEventListener('install', event => {
