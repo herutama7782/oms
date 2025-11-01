@@ -725,11 +725,18 @@ export async function handleInitialPinSetup() {
         // Try to get name from Firestore, but don't fail if offline
         try {
             if (window.app.isOnline) {
-                // FIX: Use compat API for Firestore
-                const userDocRef = firebase.firestore().doc(window.db_firestore, 'users', firebaseUser.uid);
-                const userDoc = await firebase.firestore().getDoc(userDocRef);
-                if (userDoc.exists()) {
-                    userName = userDoc.data().name || userName;
+                // BUG FIX: Use the correct compat API for Firestore.
+                // The previous code was mixing modular (v9+) and compat (v8) APIs.
+                // Correct compat syntax is .collection('...').doc('...').get()
+                const userDocRef = window.db_firestore.collection('users').doc(firebaseUser.uid);
+                const userDoc = await userDocRef.get();
+                
+                // For compat, `exists` is a property, and `data()` is a function.
+                if (userDoc.exists) {
+                    const data = userDoc.data();
+                    if (data && data.name) {
+                        userName = data.name;
+                    }
                 }
             }
         } catch (e) {

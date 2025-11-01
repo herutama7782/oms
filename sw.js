@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pos-mobile-cache-v10';
+const CACHE_NAME = 'pos-mobile-cache-v11';
 
 const APP_SHELL_URLS = [
   // Fallback root dan ikon manifest
