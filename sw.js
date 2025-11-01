@@ -1,7 +1,7 @@
-const CACHE_NAME = 'pos-mobile-cache-v6';
+const CACHE_NAME = 'pos-mobile-cache-v7';
 
 const APP_SHELL_URLS = [
-  // Cache untuk offline fallback (jangan cache '/')
+  // Cache untuk offline fallback
   '/index.html',
   '/index.css',
   '/index.js',
@@ -19,7 +19,21 @@ const APP_SHELL_URLS = [
   '/src/ui.js',
   '/src/html/pages.html',
   '/src/html/modals.html',
-  'https://i.imgur.com/awbpnPX.png'
+  'https://i.imgur.com/awbpnPX.png',
+
+  // --- DEPENDENSI EKSTERNAL YANG KRUSIAL ---
+  'https://cdn.tailwindcss.com',
+  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
+  'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js',
+  'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js',
+  'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js',
+  'https://cdn.jsdelivr.net/npm/chart.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+  
+  // Firebase SDKs
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js'
 ];
 
 self.addEventListener('install', event => {
