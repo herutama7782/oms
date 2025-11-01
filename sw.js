@@ -1,6 +1,11 @@
-const CACHE_NAME = 'pos-mobile-cache-v8';
+const CACHE_NAME = 'pos-mobile-cache-v9';
 
 const APP_SHELL_URLS = [
+  // Fallback root dan ikon manifest
+  '/',
+  '/icon-192.png',
+  '/icon-512.png',
+
   // Cache untuk offline fallback
   '/index.html',
   '/index.css',
@@ -25,7 +30,7 @@ const APP_SHELL_URLS = [
   'https://cdn.tailwindcss.com',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
   
-  // Font Awesome webfonts (INI YANG HILANG SEBELUMNYA)
+  // Font Awesome webfonts
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-solid-900.woff2',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-regular-400.woff2',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-brands-400.woff2',
@@ -33,7 +38,10 @@ const APP_SHELL_URLS = [
   'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js',
   'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js',
   'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js',
-  'https://cdn.jsdelivr.net/npm/chart.js',
+  
+  // FIX: Menggunakan URL Chart.js yang spesifik dan non-redirect
+  'https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.js',
+
   'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
   
   // Firebase SDKs
@@ -105,15 +113,16 @@ self.addEventListener('fetch', event => {
       try {
           const networkResponse = await fetch(event.request);
           // Jika berhasil, simpan di cache untuk penggunaan berikutnya
-          if (networkResponse && networkResponse.ok) {
+          // Hanya cache response yang sukses (status 200) untuk menghindari caching error
+          if (networkResponse && networkResponse.status === 200) {
               await cache.put(event.request, networkResponse.clone());
           }
           return networkResponse;
       } catch (error) {
           // Gagal fetch dari network dan tidak ada di cache
           console.error('Fetch failed and not in cache:', event.request.url, error);
-          // Return error response
-          return Response.error();
+          // Return response error yang valid
+          return new Response('', { status: 503, statusText: 'Service Unavailable' });
       }
   })());
 });
