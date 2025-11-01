@@ -635,15 +635,21 @@ export async function selectApiKey() {
              console.error("openSelectKey failed:", e);
         }
     } else {
-        showToast('Fungsi pemilihan API Key tidak tersedia di lingkungan ini.');
+        showToast('Fitur AI tidak dapat digunakan di lingkungan ini.');
     }
 }
 
 export async function checkApiKeyStatus() {
     const statusEl = document.getElementById('apiKeyStatus');
-    if (!statusEl) return;
+    const selectKeyBtn = document.querySelector('button[onclick="selectApiKey()"]');
+    const apiKeyHelpText = document.getElementById('apiKeyHelpText');
+
+    if (!statusEl || !selectKeyBtn || !apiKeyHelpText) return;
 
     if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
+        selectKeyBtn.disabled = false;
+        selectKeyBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        apiKeyHelpText.innerHTML = `API Key Anda dipilih dan digunakan secara aman melalui dialog Google. Info <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" class="text-blue-500 underline">billing</a>.`;
         try {
             const hasKey = await window.aistudio.hasSelectedApiKey();
             if (hasKey) {
@@ -656,7 +662,10 @@ export async function checkApiKeyStatus() {
             statusEl.innerHTML = `<i class="fas fa-times-circle text-red-500"></i> Gagal Cek`;
         }
     } else {
-         statusEl.innerHTML = `Status N/A`;
+         statusEl.innerHTML = `<i class="fas fa-times-circle text-red-500"></i> Tidak Tersedia`;
+         selectKeyBtn.disabled = true;
+         selectKeyBtn.classList.add('opacity-50', 'cursor-not-allowed');
+         apiKeyHelpText.textContent = 'Fitur AI dan pemilihan API Key tidak tersedia di lingkungan ini. Aplikasi harus dijalankan dalam platform yang didukung untuk menggunakan fitur ini.';
     }
 }
 

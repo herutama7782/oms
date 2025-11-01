@@ -697,8 +697,14 @@ export async function analyzeWithAI() {
     analyzeBtn.disabled = true;
 
     try {
-        // Check if an API key has been selected using the aistudio helper
-        if (!window.aistudio || typeof window.aistudio.hasSelectedApiKey !== 'function' || !(await window.aistudio.hasSelectedApiKey())) {
+        // Check if the AI environment is available first
+        if (!window.aistudio || typeof window.aistudio.hasSelectedApiKey !== 'function') {
+            aiResultEl.innerHTML = `<p class="text-orange-500 p-3 bg-orange-50 rounded-lg">Fitur Analisa AI tidak tersedia di lingkungan ini. Aplikasi harus dijalankan dalam platform yang didukung.</p>`;
+            throw new Error("AI environment not available");
+        }
+        
+        // Then, check if an API key has been selected
+        if (!(await window.aistudio.hasSelectedApiKey())) {
              aiResultEl.innerHTML = `<p class="text-orange-500 p-3 bg-orange-50 rounded-lg">API Key belum dipilih. Silakan masuk ke halaman <strong>Pengaturan</strong> untuk memilih API Key Gemini Anda.</p>`;
              throw new Error("API Key not selected");
         }
@@ -756,7 +762,7 @@ Format jawaban dalam bentuk Markdown yang jelas dan mudah dibaca. Gunakan Bahasa
         
         if (error.message && (error.message.includes("API key not valid") || error.message.includes("Requested entity was not found"))) {
              aiResultEl.innerHTML = `<p class="text-red-500 p-3 bg-red-50 rounded-lg">API Key tidak valid atau telah dicabut. Silakan pilih kembali API Key yang valid di halaman Pengaturan.</p>`;
-        } else if (error.message !== "API Key not selected") {
+        } else if (error.message !== "API Key not selected" && error.message !== "AI environment not available") {
             aiResultEl.innerHTML = `<p class="text-red-500 p-3 bg-red-50 rounded-lg">Gagal mendapatkan analisa AI. Pastikan model AI benar, API Key valid, dan koneksi internet stabil.<br><br><strong>Error:</strong> ${error.message}</p>`;
         }
     } finally {
