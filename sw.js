@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pos-mobile-cache-v11';
+const CACHE_NAME = 'pos-mobile-cache-v12';
 
 const APP_SHELL_URLS = [
   // Fallback root dan ikon manifest
@@ -30,10 +30,13 @@ const APP_SHELL_URLS = [
   'https://cdn.tailwindcss.com',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
   
-  // Font Awesome webfonts
+  // Font Awesome webfonts (LENGKAP .woff2 dan .ttf)
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-solid-900.woff2',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-regular-400.woff2',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-brands-400.woff2',
+  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-solid-900.ttf',
+  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-regular-400.ttf',
+  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/webfonts/fa-brands-400.ttf',
 
   'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js',
   'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js',
