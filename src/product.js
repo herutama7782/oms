@@ -1,9 +1,9 @@
 
 
 import { getAllFromDB, getFromDB, putToDB } from "./db.js";
-import { showToast, showConfirmationModal, formatCurrency, formatReceiptDate } from "./ui.js";
+// REMOVED: import { showToast, showConfirmationModal, formatCurrency, formatReceiptDate } from "./ui.js";
+// REMOVED: import { loadDashboard } from "./ui.js";
 import { queueSyncAction } from "./sync.js";
-import { loadDashboard } from "./ui.js";
 
 // --- SANITIZATION HELPERS ---
 function sanitizeProduct(product) {
@@ -321,7 +321,7 @@ export async function addNewCategory() {
     const input = document.getElementById('newCategoryName');
     const name = input.value.trim();
     if (!name) {
-        showToast('Nama kategori tidak boleh kosong');
+        window.showToast('Nama kategori tidak boleh kosong');
         return;
     }
     try {
@@ -329,12 +329,12 @@ export async function addNewCategory() {
         const addedId = await putToDB('categories', newCategory);
         
         await queueSyncAction('CREATE_CATEGORY', { ...newCategory, id: addedId });
-        showToast('Kategori berhasil ditambahkan');
+        window.showToast('Kategori berhasil ditambahkan');
         input.value = '';
         await loadCategoriesForManagement();
         await populateCategoryDropdowns(['productCategory', 'editProductCategory', 'productCategoryFilter']);
     } catch (error) {
-        showToast('Gagal menambahkan. Kategori mungkin sudah ada.');
+        window.showToast('Gagal menambahkan. Kategori mungkin sudah ada.');
         console.error("Add category error:", error);
     }
 }
@@ -344,13 +344,13 @@ export async function deleteCategory(id, name) {
     const isUsed = products.some(p => p.category === name);
 
     if (isUsed) {
-        showToast(`Kategori "${name}" tidak dapat dihapus karena sedang digunakan oleh produk.`);
+        window.showToast(`Kategori "${name}" tidak dapat dihapus karena sedang digunakan oleh produk.`);
         return;
     }
 
     closeManageCategoryModal();
 
-    showConfirmationModal(
+    window.showConfirmationModal(
         'Hapus Kategori',
         `Apakah Anda yakin ingin menghapus kategori "${name}"?`,
         async () => {
@@ -360,7 +360,7 @@ export async function deleteCategory(id, name) {
             store.delete(id);
             transaction.oncomplete = async () => {
                 await queueSyncAction('DELETE_CATEGORY', sanitizeCategory(categoryToDelete));
-                showToast('Kategori berhasil dihapus');
+                window.showToast('Kategori berhasil dihapus');
                 await populateCategoryDropdowns(['productCategory', 'editProductCategory', 'productCategoryFilter']);
             };
         },
@@ -403,10 +403,10 @@ function renderProductGridItem(p) {
         <h3 class="font-semibold text-sm">${p.name}</h3>
         ${hasDiscount
             ? `<div>
-                 <p class="text-xs text-gray-500 line-through">Rp ${formatCurrency(p.price)}</p>
-                 <p class="text-blue-500 font-bold">Rp ${formatCurrency(discountedPrice)}</p>
+                 <p class="text-xs text-gray-500 line-through">Rp ${window.formatCurrency(p.price)}</p>
+                 <p class="text-blue-500 font-bold">Rp ${window.formatCurrency(discountedPrice)}</p>
                </div>`
-            : `<p class="text-blue-500 font-bold">Rp ${formatCurrency(p.price)}</p>`
+            : `<p class="text-blue-500 font-bold">Rp ${window.formatCurrency(p.price)}</p>`
         }
         <p class="text-xs text-gray-500">Stok: ${stockDisplay}${lowStockIndicator}</p>
     </div>`;
@@ -456,11 +456,11 @@ function renderProductListItem(p) {
                     <div class="flex justify-between items-center">
                         <div>
                             ${hasDiscount
-                                ? `<p class="text-xs text-gray-400 line-through">Rp ${formatCurrency(p.price)}</p>
-                                   <p class="text-blue-500 font-bold">Rp ${formatCurrency(discountedPrice)}</p>`
-                                : `<p class="text-blue-500 font-bold">Rp ${formatCurrency(p.price)}</p>`
+                                ? `<p class="text-xs text-gray-400 line-through">Rp ${window.formatCurrency(p.price)}</p>
+                                   <p class="text-blue-500 font-bold">Rp ${window.formatCurrency(discountedPrice)}</p>`
+                                : `<p class="text-blue-500 font-bold">Rp ${window.formatCurrency(p.price)}</p>`
                             }
-                            <p class="text-xs text-gray-500">Beli: Rp ${formatCurrency(p.purchasePrice)}</p>
+                            <p class="text-xs text-gray-500">Beli: Rp ${window.formatCurrency(p.purchasePrice)}</p>
                         </div>
                         <div class="text-right">
                             <div class="flex justify-end items-center gap-2 mb-1">
@@ -671,7 +671,7 @@ export async function increaseStock(productId) {
         if (!product) return;
 
         if (product.stock === null) {
-            showToast('Stok tidak dapat diubah untuk produk tak terbatas.');
+            window.showToast('Stok tidak dapat diubah untuk produk tak terbatas.');
             return;
         }
 
@@ -705,7 +705,7 @@ export async function increaseStock(productId) {
         }
         
         if (window.app.currentPage === 'dashboard') {
-            loadDashboard(); // Background update
+            window.loadDashboard(); // Background update
         }
     } catch (error) {
         console.error('Failed to increase stock:', error);
@@ -718,7 +718,7 @@ export async function decreaseStock(productId) {
         if (!product) return;
 
         if (product.stock === null) {
-            showToast('Stok tidak dapat diubah untuk produk tak terbatas.');
+            window.showToast('Stok tidak dapat diubah untuk produk tak terbatas.');
             return;
         }
 
@@ -759,7 +759,7 @@ export async function decreaseStock(productId) {
         }
 
         if (window.app.currentPage === 'dashboard') {
-            loadDashboard();
+            window.loadDashboard();
         }
     } catch (error) {
         console.error('Failed to decrease stock:', error);
@@ -836,7 +836,7 @@ export async function previewImage(event) {
             (document.getElementById('imagePreview')).innerHTML = `<img src="${window.app.currentImageData}" alt="Preview" class="image-preview">`;
         } catch (e) {
             console.error("Error resizing image", e);
-            showToast("Gagal memproses gambar.");
+            window.showToast("Gagal memproses gambar.");
         }
     }
 }
@@ -892,12 +892,12 @@ export async function addProduct() {
 
     if (variations.length > 0) {
         if (!variations.every(v => v.name)) {
-            showToast('Setiap variasi harus memiliki Nama.');
+            window.showToast('Setiap variasi harus memiliki Nama.');
             return;
         }
     } else {
         if (!name) {
-            showToast('Nama produk wajib diisi.');
+            window.showToast('Nama produk wajib diisi.');
             return;
         }
     }
@@ -905,7 +905,7 @@ export async function addProduct() {
     if (barcode) {
         const products = await getAllFromDB('products');
         if (products.some(p => p.barcode === barcode)) {
-            showToast('Barcode ini sudah digunakan oleh produk lain.');
+            window.showToast('Barcode ini sudah digunakan oleh produk lain.');
             return;
         }
     } else {
@@ -964,14 +964,14 @@ export async function addProduct() {
             });
         }
 
-        showToast('Produk berhasil ditambahkan');
+        window.showToast('Produk berhasil ditambahkan');
         closeAddProductModal();
         // Force reload from DB to include new item
         loadProductsList(true, false);
         loadProductsGrid(true, false);
     } catch (error) {
         console.error('Failed to add product:', error);
-        showToast('Gagal menambahkan produk. Cek kembali data Anda.');
+        window.showToast('Gagal menambahkan produk. Cek kembali data Anda.');
     }
 }
 
@@ -1055,7 +1055,7 @@ export async function editProduct(id) {
         }
     } catch (error) {
         console.error('Failed to fetch product for editing:', error);
-        showToast('Gagal memuat data produk.');
+        window.showToast('Gagal memuat data produk.');
     }
 }
 
@@ -1081,7 +1081,7 @@ export async function previewEditImage(event) {
             (document.getElementById('editImagePreview')).innerHTML = `<img src="${window.app.currentEditImageData}" alt="Preview" class="image-preview">`;
         } catch (e) {
             console.error("Error resizing image", e);
-            showToast("Gagal memproses gambar.");
+            window.showToast("Gagal memproses gambar.");
         }
     }
 }
@@ -1138,12 +1138,12 @@ export async function updateProduct() {
 
     if (variations.length > 0) {
         if (!variations.every(v => v.name)) {
-            showToast('Setiap variasi harus memiliki Nama.');
+            window.showToast('Setiap variasi harus memiliki Nama.');
             return;
         }
     } else {
         if (!name) {
-            showToast('Nama produk wajib diisi.');
+            window.showToast('Nama produk wajib diisi.');
             return;
         }
     }
@@ -1151,7 +1151,7 @@ export async function updateProduct() {
     if (barcode) {
         const products = await getAllFromDB('products');
         if (products.some(p => p.barcode === barcode && p.id !== id)) {
-            showToast('Barcode ini sudah digunakan oleh produk lain.');
+            window.showToast('Barcode ini sudah digunakan oleh produk lain.');
             return;
         }
     } else {
@@ -1228,7 +1228,7 @@ export async function updateProduct() {
             
             await putToDB('products', product);
             await queueSyncAction('UPDATE_PRODUCT', sanitizeProduct(product));
-            showToast('Produk berhasil diperbarui');
+            window.showToast('Produk berhasil diperbarui');
             closeEditProductModal();
             // Force reload
             loadProductsList(true, false);
@@ -1236,12 +1236,12 @@ export async function updateProduct() {
         }
     } catch (error) {
         console.error('Failed to update product:', error);
-        showToast('Gagal memperbarui produk.');
+        window.showToast('Gagal memperbarui produk.');
     }
 }
 
 export function deleteProduct(id) {
-    showConfirmationModal(
+    window.showConfirmationModal(
         'Hapus Produk',
         'Apakah Anda yakin ingin menghapus produk ini? Tindakan ini tidak dapat dibatalkan.',
         async () => {
@@ -1252,14 +1252,14 @@ export function deleteProduct(id) {
                 store.delete(id);
                 transaction.oncomplete = async () => {
                     await queueSyncAction('DELETE_PRODUCT', sanitizeProduct(productToDelete));
-                    showToast('Produk berhasil dihapus');
+                    window.showToast('Produk berhasil dihapus');
                     // Force reload
                     loadProductsList(true, false);
                     loadProductsGrid(true, false);
                 };
             } catch (error) {
                 console.error('Failed to delete product:', error);
-                showToast('Gagal menghapus produk.');
+                window.showToast('Gagal menghapus produk.');
             }
         },
         'Ya, Hapus',
@@ -1289,7 +1289,7 @@ export async function showStockHistoryModal(productId, productName) {
         allHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
 
         list.innerHTML = allHistory.map(log => {
-            const date = formatReceiptDate(log.date);
+            const date = window.formatReceiptDate(log.date);
             const isPositive = log.changeAmount > 0;
             const colorClass = isPositive ? 'text-green-600' : 'text-red-600';
             const sign = isPositive ? '+' : '';

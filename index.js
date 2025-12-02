@@ -1,5 +1,4 @@
 
-
 // Main application entry point
 // FIX: Firebase imports are removed. The compat library loaded in index.html creates a global `firebase` object.
 
@@ -69,8 +68,16 @@ const functions = {
     showPage: ui.showPage,
     handleNavClick: ui.handleNavClick,
     loadDashboard: ui.loadDashboard,
+    showConfirmationModal: ui.showConfirmationModal,
     closeConfirmationModal: ui.closeConfirmationModal,
     updateDashboardSummaries: ui.updateDashboardSummaries,
+    updateUiForRole: ui.updateUiForRole,
+    showToast: ui.showToast,
+    formatCurrency: ui.formatCurrency,
+    updatePendingBadge: ui.updatePendingBadge,
+    executeConfirm: ui.executeConfirm,
+    formatReceiptDate: ui.formatReceiptDate,
+    getLocalDateString: ui.getLocalDateString,
     // product.js
     loadProductsList: product.loadProductsList,
     loadMoreProductsList: product.loadMoreProductsList, // NEW
@@ -98,6 +105,7 @@ const functions = {
     toggleUnlimitedStock: product.toggleUnlimitedStock,
     showStockHistoryModal: product.showStockHistoryModal,
     closeStockHistoryModal: product.closeStockHistoryModal,
+    searchProducts: product.searchProducts,
     // cart.js
     addToCart: cart.addToCart,
     addVariationToCart: cart.addVariationToCart,

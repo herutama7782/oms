@@ -3,9 +3,9 @@
 // FIX: Firebase imports are removed. The compat library loaded in index.html creates a global `firebase` object.
 
 import { putSettingToDB, getSettingFromDB, getAllFromDB, putToDB, clearAllStores, getFromDB, getFromDBByIndex } from './db.js';
-import { showToast, showConfirmationModal, loadDashboard, showPage, updateUiForRole } from './ui.js';
+// REMOVED: import { showToast, showConfirmationModal, loadDashboard, showPage, updateUiForRole } from './ui.js';
 import { queueSyncAction } from './sync.js';
-import { formatCurrency } from './ui.js';
+// REMOVED: import { formatCurrency } from './ui.js'; 
 import { loadProductsList, loadProductsGrid } from './product.js';
 
 let pinLockoutInterval = null;
@@ -57,12 +57,12 @@ export async function saveStoreSettings() {
         
         transaction.oncomplete = () => {
             window.app.lowStockThreshold = settings.find(s => s.key === 'lowStockThreshold').value;
-            showToast('Pengaturan berhasil disimpan');
-            loadDashboard();
+            window.showToast('Pengaturan berhasil disimpan');
+            window.loadDashboard();
         };
     } catch(error) {
         console.error("Failed to save settings:", error);
-        showToast("Gagal menyimpan pengaturan.");
+        window.showToast("Gagal menyimpan pengaturan.");
     }
 }
 
@@ -143,13 +143,13 @@ export function previewStoreLogo(event) {
 }
 
 export async function resetDonationCounter() {
-    showConfirmationModal(
+    window.showConfirmationModal(
         'Reset Donasi',
         'Anda yakin ingin mereset total donasi terkumpul di Dasbor? Perhitungan akan dimulai dari 0 mulai sekarang.',
         async () => {
             await putSettingToDB({ key: 'lastDonationResetDate', value: new Date().toISOString() });
-            showToast('Counter donasi berhasil direset.');
-            loadDashboard();
+            window.showToast('Counter donasi berhasil direset.');
+            window.loadDashboard();
         },
         'Ya, Reset',
         'bg-pink-500'
@@ -241,15 +241,15 @@ export async function exportData(isAuto = false) {
         }
         
         if (isAuto) {
-            showToast('Backup otomatis tersimpan di Download.');
+            window.showToast('Backup otomatis tersimpan di Download.');
         } else {
-            showToast('Export data berhasil.');
+            window.showToast('Export data berhasil.');
         }
         
         await putSettingToDB({ key: 'lastExportDate', value: new Date().toISOString() });
     } catch (error) {
         console.error('Export failed:', error);
-        showToast('Gagal mengexport data.');
+        window.showToast('Gagal mengexport data.');
     }
 }
 
@@ -264,7 +264,7 @@ export function handleImport(event) {
         reader.onload = (e) => {
             try {
                 const data = JSON.parse(e.target.result);
-                showConfirmationModal(
+                window.showConfirmationModal(
                     'Import Data',
                     'Ini akan menimpa semua data saat ini. Apakah Anda yakin ingin melanjutkan?',
                     async () => {
@@ -289,7 +289,7 @@ export function handleImport(event) {
                         if (data.expenses) data.expenses.forEach(e => transaction.objectStore('expenses').put(e));
                         
                         transaction.oncomplete = () => {
-                            showToast('Data berhasil diimport. Aplikasi akan dimuat ulang.');
+                            window.showToast('Data berhasil diimport. Aplikasi akan dimuat ulang.');
                             setTimeout(() => location.reload(), 2000);
                         };
                     },
@@ -298,7 +298,7 @@ export function handleImport(event) {
                 );
             } catch (error) {
                 console.error('Import parse error:', error);
-                showToast('Format file tidak valid.');
+                window.showToast('Format file tidak valid.');
             }
         };
         reader.readAsText(file);
@@ -306,12 +306,12 @@ export function handleImport(event) {
 }
 
 export function clearAllData() {
-    showConfirmationModal(
+    window.showConfirmationModal(
         'Hapus Semua Data',
         'PERINGATAN: Ini akan menghapus semua produk, transaksi, dan pengaturan secara permanen. Tindakan ini tidak dapat dibatalkan. Apakah Anda benar-benar yakin?',
         async () => {
             await clearAllStores();
-            showToast('Semua data berhasil dihapus. Aplikasi akan dimuat ulang.');
+            window.showToast('Semua data berhasil dihapus. Aplikasi akan dimuat ulang.');
             setTimeout(() => location.reload(), 2000);
         },
         'Ya, Hapus Semua',
@@ -372,7 +372,7 @@ export async function handleProductImport(event) {
             parsedRows = parsedRows.filter(row => row.length > 0 && row.some(cell => cell.trim() !== ''));
 
             if (parsedRows.length < 2) {
-                showToast('File CSV kosong atau hanya berisi header.');
+                window.showToast('File CSV kosong atau hanya berisi header.');
                 return;
             }
 
@@ -381,11 +381,11 @@ export async function handleProductImport(event) {
             
             const requiredHeaders = ['nama', 'harga_jual'];
             if (!requiredHeaders.every(h => header.includes(h))) {
-                showToast(`Header CSV tidak valid. Wajib ada: ${requiredHeaders.join(', ')}`);
+                window.showToast(`Header CSV tidak valid. Wajib ada: ${requiredHeaders.join(', ')}`);
                 return;
             }
 
-            showToast('Memulai proses import...', 2000);
+            window.showToast('Memulai proses import...', 2000);
             closeImportProductsModal();
 
             const existingProducts = await getAllFromDB('products');
@@ -410,7 +410,7 @@ export async function handleProductImport(event) {
             // Note: Image download logic removed to improve reliability and speed of import.
             // Columns 'diskon_persen' and 'gambar' are removed from template, but logic handles them if present for backward compatibility.
             
-            showToast('Menyimpan data ke database...', 5000);
+            window.showToast('Menyimpan data ke database...', 5000);
 
             for (const [index, rowData] of productsData.entries()) {
                 try {
@@ -504,15 +504,15 @@ export async function handleProductImport(event) {
             if (addedCount > 0) summary += ` ${addedCount} produk ditambah.`;
             if (updatedCount > 0) summary += ` ${updatedCount} produk diperbarui.`;
             if (errorCount > 0) summary += ` ${errorCount} baris gagal (cek konsol).`;
-            showToast(summary, 5000);
+            window.showToast(summary, 5000);
             
             if(window.app.currentPage === 'produk') loadProductsList();
             loadProductsGrid();
-            if(window.app.currentPage === 'dashboard') loadDashboard();
+            if(window.app.currentPage === 'dashboard') window.loadDashboard();
 
         } catch (error) {
             console.error('Import failed:', error);
-            showToast('Gagal memproses file. Pastikan formatnya benar.');
+            window.showToast('Gagal memproses file. Pastikan formatnya benar.');
         } finally {
             event.target.value = '';
         }
@@ -534,7 +534,7 @@ export async function addFee() {
     const isDefault = isDefaultInput.checked;
 
     if (!name || isNaN(value) || value < 0) {
-        showToast('Nama dan Nilai Biaya harus diisi dengan benar.');
+        window.showToast('Nama dan Nilai Biaya harus diisi dengan benar.');
         return;
     }
 
@@ -550,14 +550,14 @@ export async function addFee() {
     try {
         const addedId = await putToDB('fees', newFee);
         await queueSyncAction('CREATE_FEE', { ...newFee, id: addedId });
-        showToast('Biaya berhasil ditambahkan.');
+        window.showToast('Biaya berhasil ditambahkan.');
         nameInput.value = '';
         valueInput.value = '';
         isDefaultInput.checked = false;
         await loadFees();
     } catch (error) {
         console.error('Failed to add fee:', error);
-        showToast('Gagal menambahkan biaya.');
+        window.showToast('Gagal menambahkan biaya.');
     }
 }
 
@@ -573,7 +573,7 @@ export async function loadFees() {
     feesListEl.innerHTML = fees.map(fee => {
         const valueDisplay = fee.type === 'percentage'
             ? `${fee.value}%`
-            : `Rp ${formatCurrency(fee.value)}`;
+            : `Rp ${window.formatCurrency(fee.value)}`;
         
         const defaultBadge = fee.isDefault ? '<span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">Otomatis</span>' : '';
 
@@ -594,19 +594,19 @@ export async function loadFees() {
 
 
 export async function deleteFee(id) {
-    showConfirmationModal('Hapus Biaya', 'Yakin ingin menghapus biaya ini?', async () => {
+    window.showConfirmationModal('Hapus Biaya', 'Yakin ingin menghapus biaya ini?', async () => {
          try {
             const feeToDelete = await getFromDB('fees', id);
             const tx = window.app.db.transaction('fees', 'readwrite');
             tx.objectStore('fees').delete(id);
             tx.oncomplete = async () => {
                 await queueSyncAction('DELETE_FEE', sanitizeFee(feeToDelete));
-                showToast('Biaya berhasil dihapus.');
+                window.showToast('Biaya berhasil dihapus.');
                 loadFees();
             };
         } catch (error) {
             console.error('Failed to delete fee:', error);
-            showToast('Gagal menghapus biaya.');
+            window.showToast('Gagal menghapus biaya.');
         }
     });
 }
@@ -625,7 +625,7 @@ export async function showFeeSelectionModal() {
                 <label class="flex items-center justify-between p-3 bg-gray-50 rounded-lg cursor-pointer">
                     <div>
                         <span class="font-semibold">${fee.name}</span>
-                        <p class="text-sm text-gray-500">${fee.type === 'percentage' ? `${fee.value}%` : `Rp ${formatCurrency(fee.value)}`}</p>
+                        <p class="text-sm text-gray-500">${fee.type === 'percentage' ? `${fee.value}%` : `Rp ${window.formatCurrency(fee.value)}`}</p>
                     </div>
                     <input type="checkbox" data-fee-id="${fee.id}" class="h-5 w-5 rounded text-blue-600 border-gray-300 focus:ring-blue-500" ${isChecked ? 'checked' : ''}>
                 </label>
@@ -651,7 +651,7 @@ export async function applySelectedFees() {
     
     window.updateCartDisplay();
     closeFeeSelectionModal();
-    showToast('Pajak & biaya berhasil diperbarui.');
+    window.showToast('Pajak & biaya berhasil diperbarui.');
 }
 
 
@@ -848,8 +848,8 @@ export async function handleInitialPinSetup() {
         document.getElementById('setDevicePinModal').classList.add('hidden');
         document.getElementById('appContainer').classList.remove('hidden');
         document.getElementById('bottomNav').classList.remove('hidden');
-        updateUiForRole();
-        showPage('dashboard');
+        window.updateUiForRole();
+        window.showPage('dashboard');
 
     } catch (error) {
         console.error('Failed to set up initial PIN:', error);
@@ -892,8 +892,8 @@ export async function handlePinInput(digit) {
             document.getElementById('loginModal').classList.add('hidden');
             document.getElementById('appContainer').classList.remove('hidden');
             document.getElementById('bottomNav').classList.remove('hidden');
-            updateUiForRole();
-            showPage('dashboard');
+            window.updateUiForRole();
+            window.showPage('dashboard');
         } else {
             // Incorrect PIN
             const failedAttempts = parseInt(localStorage.getItem('pinFailedAttempts') || '0') + 1;
@@ -913,7 +913,7 @@ export async function handlePinInput(digit) {
                 // Don't reset failed attempts here; it will be reset when the lockout ends
             } else {
                 pinDisplay.classList.add('animate-shake');
-                showToast(`PIN salah. Sisa percobaan: ${FAILED_ATTEMPTS_LIMIT - failedAttempts}`);
+                window.showToast(`PIN salah. Sisa percobaan: ${FAILED_ATTEMPTS_LIMIT - failedAttempts}`);
             }
             setTimeout(resetPinInput, 500);
         }
@@ -945,7 +945,7 @@ export function checkAccess(allowedRoles) {
 }
 
 export function logout() {
-    showConfirmationModal('Logout Akun Utama', 'Ini akan mengakhiri sesi Anda. Anda yakin ingin melanjutkan?', () => {
+    window.showConfirmationModal('Logout Akun Utama', 'Ini akan mengakhiri sesi Anda. Anda yakin ingin melanjutkan?', () => {
         window.app.currentUser = null;
         // FIX: Use compat API
         firebase.auth().signOut(); // onAuthStateChanged will handle UI reset
@@ -1043,7 +1043,7 @@ export async function showUserFormModal(userId = null) {
             
             // A manager cannot edit an owner
             if (currentUser.role === 'manager' && user.role === 'owner') {
-                 showToast('Manajer tidak dapat mengedit data Pemilik.');
+                 window.showToast('Manajer tidak dapat mengedit data Pemilik.');
                  return;
             }
         }
@@ -1066,31 +1066,31 @@ export async function saveUser() {
     const currentUser = window.app.currentUser;
 
     if (!name) {
-        showToast('Nama pengguna tidak boleh kosong.');
+        window.showToast('Nama pengguna tidak boleh kosong.');
         return;
     }
 
     if (!id && pin.length !== 4) {
-        showToast('PIN baru wajib diisi dan harus 4 digit.');
+        window.showToast('PIN baru wajib diisi dan harus 4 digit.');
         return;
     }
     
     if (id && pin && pin.length !== 4) {
-        showToast('Jika diisi, PIN harus 4 digit.');
+        window.showToast('Jika diisi, PIN harus 4 digit.');
         return;
     }
     
     if (pin) {
         const existingUserWithPin = await getFromDBByIndex('users', 'pin', pin);
         if (existingUserWithPin && existingUserWithPin.id !== id) {
-            showToast('PIN ini sudah digunakan oleh pengguna lain.');
+            window.showToast('PIN ini sudah digunakan oleh pengguna lain.');
             return;
         }
     }
     
     // A manager cannot create an owner
     if (currentUser.role === 'manager' && role === 'owner') {
-        showToast('Manajer tidak dapat membuat pengguna dengan peran Pemilik.');
+        window.showToast('Manajer tidak dapat membuat pengguna dengan peran Pemilik.');
         return;
     }
 
@@ -1101,7 +1101,7 @@ export async function saveUser() {
         if (id) { // Update
             userData = await getFromDB('users', id);
             if (!userData) {
-                showToast('Pengguna tidak ditemukan.');
+                window.showToast('Pengguna tidak ditemukan.');
                 return;
             }
             userData.name = name;
@@ -1125,34 +1125,34 @@ export async function saveUser() {
 
         const savedId = await putToDB('users', userData);
         
-        showToast(`Pengguna berhasil ${id ? 'diperbarui' : 'ditambahkan'}.`);
+        window.showToast(`Pengguna berhasil ${id ? 'diperbarui' : 'ditambahkan'}.`);
         closeUserFormModal();
         await loadUsersForManagement();
     } catch (error) {
         console.error('Failed to save user:', error);
-        showToast('Gagal menyimpan pengguna. Cek kembali data Anda.');
+        window.showToast('Gagal menyimpan pengguna. Cek kembali data Anda.');
     }
 }
 
 export function deleteUser(userId) {
     const currentUser = window.app.currentUser;
     if (userId === currentUser.id) {
-        showToast('Anda tidak dapat menghapus akun Anda sendiri.');
+        window.showToast('Anda tidak dapat menghapus akun Anda sendiri.');
         return;
     }
 
-    showConfirmationModal('Hapus Pengguna', 'Yakin ingin menghapus pengguna ini?', async () => {
+    window.showConfirmationModal('Hapus Pengguna', 'Yakin ingin menghapus pengguna ini?', async () => {
         try {
             const userToDelete = await getFromDB('users', userId);
             const tx = window.app.db.transaction('users', 'readwrite');
             tx.objectStore('users').delete(userId);
             tx.oncomplete = async () => {
-                showToast('Pengguna berhasil dihapus.');
+                window.showToast('Pengguna berhasil dihapus.');
                 await loadUsersForManagement();
             };
         } catch (error) {
             console.error('Failed to delete user:', error);
-            showToast('Gagal menghapus pengguna.');
+            window.showToast('Gagal menghapus pengguna.');
         }
     }, 'Ya, Hapus', 'bg-red-500');
 }
@@ -1474,7 +1474,7 @@ export function startCountdown() {
 }
 
 export function extendProAccess() {
-    showConfirmationModal(
+    window.showConfirmationModal(
         'Aktifkan Akses PRO',
         'Masa aktif akun TRIAL akan segera berakhir. langkah selanjutnya diperlukan Registrasi untuk melanjutkan Akses akun anda. Apakah Anda yakin ingin melanjutkan Akses PRO?',
         () => {
@@ -1488,7 +1488,7 @@ export function extendProAccess() {
             }
             
             startCountdown();
-            showToast('Akses PRO berhasil diaktifkan (60 Detik).');
+            window.showToast('Akses PRO berhasil diaktifkan (60 Detik).');
         },
         'Aktifkan',
         'bg-purple-600'

@@ -1,6 +1,5 @@
 
 import { getAllFromDB, getFromDB, putToDB } from './db.js';
-import { showToast, showConfirmationModal, formatCurrency, getLocalDateString, updateDashboardSummaries, showPage } from './ui.js';
 import { queueSyncAction } from './sync.js';
 
 let currentContactTab = 'customer';
@@ -73,7 +72,7 @@ async function fetchAndRenderContacts(query = '') {
         renderContactsList(filtered);
     } catch (e) {
         console.error("Error loading contacts:", e);
-        showToast("Gagal memuat kontak");
+        window.showToast("Gagal memuat kontak");
     }
 }
 
@@ -114,9 +113,9 @@ function renderContactsList(contacts) {
              const balanceColor = type === 'customer' ? 'text-teal-600' : 'text-red-600';
              const balanceLabel = type === 'customer' ? 'Piutang' : 'Hutang';
              if (balance > 0) {
-                balanceHtml = `<p class="text-sm font-semibold ${balanceColor}">${balanceLabel}: Rp ${formatCurrency(balance)}</p>`;
+                balanceHtml = `<p class="text-sm font-semibold ${balanceColor}">${balanceLabel}: Rp ${window.formatCurrency(balance)}</p>`;
              } else if (balance < 0) {
-                 balanceHtml = `<p class="text-sm font-semibold text-green-600">Deposit: Rp ${formatCurrency(Math.abs(balance))}</p>`;
+                 balanceHtml = `<p class="text-sm font-semibold text-green-600">Deposit: Rp ${window.formatCurrency(Math.abs(balance))}</p>`;
              }
         } else {
             balanceHtml = `<p class="text-sm text-green-600">Lunas</p>`;
@@ -201,7 +200,7 @@ export async function saveContact() {
     const type = document.getElementById('contactType').value;
 
     if (!name) {
-        showToast('Nama kontak wajib diisi');
+        window.showToast('Nama kontak wajib diisi');
         return;
     }
 
@@ -210,22 +209,16 @@ export async function saveContact() {
         
         // Validation: Check for duplicate Name + Phone
         const isDuplicate = allContacts.some(c => {
-            // If editing, skip the current contact
             if (id && String(c.id) === String(id)) return false;
-
             const dbName = c.name.toLowerCase();
             const inputName = name.toLowerCase();
             const dbPhone = (c.phone || '').trim();
-            
-            // Check strict equality for duplicates
-            if (phone === '') {
-                 return dbName === inputName && dbPhone === '';
-            }
+            if (phone === '') return dbName === inputName && dbPhone === '';
             return dbName === inputName && dbPhone === phone;
         });
 
         if (isDuplicate) {
-            showToast('Gagal: Kontak dengan nama dan nomor telepon yang sama sudah ada.');
+            window.showToast('Gagal: Kontak dengan nama dan nomor telepon yang sama sudah ada.');
             return;
         }
 
@@ -237,84 +230,106 @@ export async function saveContact() {
             });
             
             if (isBarcodeDuplicate) {
-                showToast('Gagal: Barcode sudah digunakan oleh kontak lain.');
+                window.showToast('Gagal: Barcode sudah digunakan kontak lain.');
                 return;
             }
         }
 
-        const contact = {
-            name, 
-            phone, 
-            barcode: barcode || null, // Ensure empty string is null to avoid unique constraint errors
-            address, 
-            notes, 
+        const contactData = {
+            name,
+            phone,
+            barcode,
+            address,
+            notes,
             type,
             updatedAt: new Date().toISOString()
         };
-        
-        if (!id) {
-            contact.createdAt = new Date().toISOString();
+
+        if (id) {
+            contactData.id = parseInt(id);
+            // Preserve created date and points
+            const oldContact = await getFromDB('contacts', contactData.id);
+            if (oldContact) {
+                contactData.createdAt = oldContact.createdAt;
+                contactData.points = oldContact.points || 0;
+            }
+            
+            await putToDB('contacts', contactData);
+            await queueSyncAction('UPDATE_CONTACT', contactData);
+            window.showToast('Kontak diperbarui');
         } else {
-            contact.id = parseInt(id);
-            // Preserve points if editing
-            const old = await getFromDB('contacts', parseInt(id));
-            if(old) contact.points = old.points || 0;
+            contactData.createdAt = new Date().toISOString();
+            contactData.points = 0;
+            const newId = await putToDB('contacts', contactData);
+            await queueSyncAction('CREATE_CONTACT', { ...contactData, id: newId });
+            window.showToast('Kontak ditambahkan');
         }
 
-        const savedId = await putToDB('contacts', contact);
-        await queueSyncAction(id ? 'UPDATE_CONTACT' : 'CREATE_CONTACT', { ...contact, id: savedId });
-        showToast('Kontak berhasil disimpan');
         closeContactModal();
-        loadContactsPage();
-    } catch (e) {
-        console.error(e);
-        showToast('Gagal menyimpan kontak');
+        fetchAndRenderContacts(); // Refresh list
+
+    } catch (error) {
+        console.error('Error saving contact:', error);
+        window.showToast('Gagal menyimpan kontak.');
     }
 }
 
-export async function deleteContact(id) {
-    showConfirmationModal('Hapus Kontak', 'Yakin hapus kontak ini? Semua riwayat hutang/piutang juga akan terhapus.', async () => {
-        try {
-            // FIX: Fetch data BEFORE starting transaction to avoid "transaction finished" error
-            const contact = await getFromDB('contacts', id);
-            const ledgers = await getAllFromDB('ledgers', 'contactId', id);
-            
-            const tx = window.app.db.transaction(['contacts', 'ledgers'], 'readwrite');
-            const contactStore = tx.objectStore('contacts');
-            const ledgerStore = tx.objectStore('ledgers');
-            
-            contactStore.delete(id);
-            
-            ledgers.forEach(l => {
-                ledgerStore.delete(l.id);
-            });
-            
-            tx.oncomplete = async () => {
-                await queueSyncAction('DELETE_CONTACT', contact || { id });
-                showToast('Kontak dihapus');
-                if (window.app.currentContactId === id) closeLedgerModal();
-                loadContactsPage();
-                updateDashboardSummaries();
-            };
-        } catch(e) {
-            console.error(e);
-            showToast('Gagal menghapus');
-        }
-    }, 'Ya, Hapus', 'bg-red-500');
+export function deleteContact(id) {
+    window.showConfirmationModal(
+        'Hapus Kontak',
+        'PERINGATAN: Menghapus kontak akan menghapus juga semua riwayat hutang/piutang terkait. Anda yakin?',
+        async () => {
+            try {
+                // Delete ledgers first
+                const ledgers = await getAllFromDB('ledgers', 'contactId', id);
+                const txLedger = window.app.db.transaction('ledgers', 'readwrite');
+                for (const l of ledgers) {
+                    txLedger.objectStore('ledgers').delete(l.id);
+                }
+                
+                // Delete contact
+                const contactToDelete = await getFromDB('contacts', id);
+                const tx = window.app.db.transaction('contacts', 'readwrite');
+                tx.objectStore('contacts').delete(id);
+                
+                tx.oncomplete = async () => {
+                    await queueSyncAction('DELETE_CONTACT', contactToDelete);
+                    window.showToast('Kontak dihapus');
+                    fetchAndRenderContacts();
+                };
+            } catch (e) {
+                console.error("Delete contact error", e);
+                window.showToast('Gagal menghapus kontak');
+            }
+        },
+        'Ya, Hapus',
+        'bg-red-500'
+    );
 }
 
 export async function resetContactPoints(id) {
-     showConfirmationModal('Reset Poin', 'Yakin ingin mereset poin pelanggan ini menjadi 0?', async () => {
-        const contact = await getFromDB('contacts', id);
-        if(contact) {
-            contact.points = 0;
-            contact.updatedAt = new Date().toISOString();
-            await putToDB('contacts', contact);
-            await queueSyncAction('UPDATE_CONTACT', contact);
-            showToast('Poin direset');
-            loadContactsPage();
-        }
-     }, 'Ya, Reset', 'bg-yellow-500');
+    window.showConfirmationModal(
+        'Reset Poin',
+        'Apakah Anda yakin ingin mereset poin pelanggan ini menjadi 0?',
+        async () => {
+            try {
+                const contact = await getFromDB('contacts', id);
+                if (contact) {
+                    contact.points = 0;
+                    contact.updatedAt = new Date().toISOString();
+                    await putToDB('contacts', contact);
+                    await queueSyncAction('UPDATE_CONTACT', contact);
+                    window.showToast('Poin berhasil direset.');
+                    fetchAndRenderContacts();
+                }
+            } catch (e) {
+                console.error("Reset points error", e);
+                window.showToast('Gagal mereset poin.');
+            }
+        },
+        'Ya, Reset',
+        'bg-yellow-500'
+    );
 }
 
 // --- LEDGER FUNCTIONS ---
@@ -322,221 +337,235 @@ export async function resetContactPoints(id) {
 export async function showLedgerModal(contactId) {
     currentLedgerContactId = contactId;
     const modal = document.getElementById('ledgerModal');
-    const contact = await getFromDB('contacts', contactId);
-    const ledgers = await getAllFromDB('ledgers', 'contactId', contactId);
-    
-    if (!contact) return;
+    const historyList = document.getElementById('ledgerHistory');
+    const contactNameEl = document.getElementById('ledgerContactName');
+    const contactTypeEl = document.getElementById('ledgerContactType');
+    const contactDetailsEl = document.getElementById('ledgerContactDetails');
+    const addDebitButton = document.getElementById('addDebitButton');
 
-    document.getElementById('ledgerContactName').textContent = contact.name;
-    document.getElementById('ledgerContactType').textContent = contact.type === 'customer' ? 'Pelanggan' : 'Supplier';
-    document.getElementById('ledgerContactType').className = `text-sm font-semibold ${contact.type === 'customer' ? 'text-teal-600' : 'text-red-600'}`;
-    
-    let balance = 0;
-    ledgers.forEach(l => {
-        balance += l.type === 'debit' ? l.amount : -l.amount;
-    });
+    try {
+        const contact = await getFromDB('contacts', contactId);
+        if (!contact) return;
 
-    const typeLabel = contact.type === 'customer' ? 'Piutang' : 'Hutang';
-    document.getElementById('ledgerContactDetails').innerHTML = `
-        <p>Total ${typeLabel}: <span class="font-bold ${balance > 0 ? 'text-red-600' : 'text-green-600'}">Rp ${formatCurrency(balance)}</span></p>
-        ${contact.phone ? `<p><i class="fas fa-phone mr-1"></i>${contact.phone}</p>` : ''}
-    `;
+        contactNameEl.textContent = contact.name;
+        contactTypeEl.textContent = contact.type === 'customer' ? 'Pelanggan' : 'Supplier';
+        
+        let details = [];
+        if (contact.phone) details.push(`<i class="fas fa-phone mr-1"></i> ${contact.phone}`);
+        if (contact.address) details.push(`<i class="fas fa-map-marker-alt mr-1"></i> ${contact.address}`);
+        contactDetailsEl.innerHTML = details.join(' &nbsp;|&nbsp; ');
 
-    const listEl = document.getElementById('ledgerHistory');
-    listEl.innerHTML = ledgers.sort((a, b) => new Date(b.date) - new Date(a.date)).map(l => {
-        const isDebit = l.type === 'debit'; // Debit adds to debt/receivable
-        const color = isDebit ? 'text-red-600' : 'text-green-600';
-        const sign = isDebit ? '+' : '-';
-        const date = new Date(l.date).toLocaleDateString('id-ID');
-        const hasDueDate = l.dueDate;
-        const dueDateText = hasDueDate ? `<br><span class="text-xs text-orange-500"><i class="fas fa-clock mr-1"></i>Jatuh Tempo: ${new Date(l.dueDate).toLocaleDateString('id-ID')}</span>` : '';
+        // Update add buttons based on type
+        if (contact.type === 'customer') {
+            addDebitButton.innerHTML = `<i class="fas fa-minus-circle"></i> Tambah Piutang (Bon)`;
+        } else {
+            addDebitButton.innerHTML = `<i class="fas fa-minus-circle"></i> Tambah Hutang`;
+        }
 
-        return `
-            <div class="flex justify-between items-center border-b py-2 relative group">
-                <div>
-                    <p class="font-semibold text-sm">${l.description || 'Tanpa Keterangan'}</p>
-                    <p class="text-xs text-gray-500">${date} ${dueDateText}</p>
-                </div>
-                <div class="text-right clickable p-2" onclick="showLedgerActions(event, ${l.id}, ${contactId})">
-                    <p class="font-bold text-sm ${color}">${sign} Rp ${formatCurrency(l.amount)}</p>
-                    <i class="fas fa-ellipsis-v text-gray-400 text-xs"></i>
-                </div>
+        const ledgers = await getAllFromDB('ledgers', 'contactId', contactId);
+        
+        // Calculate balance
+        let balance = 0;
+        ledgers.sort((a, b) => new Date(b.date) - new Date(a.date)); // Newest first
+
+        // For display logic:
+        // Customer: Debit = Bon/Piutang (+), Credit = Bayar (-)
+        // Supplier: Debit = Hutang Kita (+), Credit = Kita Bayar (-)
+        // So Balance > 0 means "Belum Lunas"
+        
+        ledgers.forEach(l => {
+            if (l.type === 'debit') balance += l.amount;
+            else balance -= l.amount;
+        });
+
+        // Add summary header inside history
+        let html = `
+            <div class="bg-blue-50 p-3 rounded-lg mb-3 flex justify-between items-center">
+                <span class="text-sm font-semibold text-gray-700">Sisa ${contact.type === 'customer' ? 'Piutang' : 'Hutang'}:</span>
+                <span class="text-xl font-bold ${balance > 0 ? 'text-red-600' : 'text-green-600'}">Rp ${window.formatCurrency(balance)}</span>
             </div>
         `;
-    }).join('');
-    
-    const debitBtn = document.getElementById('addDebitButton');
-    if(debitBtn) {
-        debitBtn.innerHTML = contact.type === 'customer' 
-            ? `<i class="fas fa-plus-circle"></i> Tambah Piutang` 
-            : `<i class="fas fa-plus-circle"></i> Tambah Hutang`;
-    }
 
-    modal.classList.remove('hidden');
+        if (ledgers.length === 0) {
+            html += `<p class="text-gray-500 text-center py-4">Belum ada riwayat transaksi.</p>`;
+        } else {
+            html += ledgers.map(l => {
+                const isDebit = l.type === 'debit';
+                const color = isDebit ? 'text-red-600' : 'text-green-600';
+                const icon = isDebit ? 'fa-arrow-up' : 'fa-arrow-down';
+                const sign = isDebit ? '+' : '-';
+                
+                // Show due date if exists and is debit
+                let dueDateHtml = '';
+                if (isDebit && l.dueDate) {
+                    const isOverdue = new Date(l.dueDate) < new Date() && balance > 0; // Simple check, ideally check per-invoice but balance is aggregate
+                    const dueClass = isOverdue ? 'text-red-500 font-bold' : 'text-gray-500';
+                    dueDateHtml = `<br><small class="${dueClass}"><i class="far fa-clock"></i> JT: ${new Date(l.dueDate).toLocaleDateString('id-ID')}</small>`;
+                }
+
+                return `
+                    <div class="flex justify-between items-center border-b py-2 last:border-0 relative group">
+                        <div>
+                            <p class="font-semibold text-gray-800">${l.description || '-'}</p>
+                            <p class="text-xs text-gray-500">
+                                ${new Date(l.date).toLocaleString('id-ID')}
+                                ${dueDateHtml}
+                            </p>
+                        </div>
+                        <div class="text-right">
+                            <span class="font-bold ${color}">${sign} Rp ${window.formatCurrency(l.amount)}</span>
+                            <button onclick="event.stopPropagation(); showLedgerActions(event, ${l.id}, '${l.description || ''}', ${l.amount}, '${l.dueDate || ''}')" class="ml-2 text-gray-400 hover:text-gray-600 p-1">
+                                <i class="fas fa-ellipsis-v"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        historyList.innerHTML = html;
+        modal.classList.remove('hidden');
+
+    } catch (e) {
+        console.error("Show ledger modal error", e);
+        window.showToast('Gagal memuat data buku besar.');
+    }
 }
 
 export function closeLedgerModal() {
     document.getElementById('ledgerModal').classList.add('hidden');
     currentLedgerContactId = null;
+    // Refresh main list to update balance
+    fetchAndRenderContacts();
+    window.updateDashboardSummaries();
 }
 
 export function showAddLedgerEntryModal(entryId = null, type = 'debit') {
-    editingLedgerEntryId = entryId;
     currentLedgerType = type;
+    editingLedgerEntryId = entryId;
     
-    const modal = document.getElementById('addLedgerEntryModal');
     const title = document.getElementById('addLedgerEntryTitle');
     const amountInput = document.getElementById('ledgerAmount');
     const descInput = document.getElementById('ledgerDescription');
-    const dateInput = document.getElementById('ledgerDueDate');
-    const dateContainer = document.getElementById('ledgerDueDateContainer');
-    
+    const dueDateInput = document.getElementById('ledgerDueDate');
+    const dueDateContainer = document.getElementById('ledgerDueDateContainer');
+
     amountInput.value = '';
     descInput.value = '';
-    dateInput.value = '';
-    
-    if (type === 'debit') {
-        title.textContent = entryId ? 'Edit Catatan Hutang/Piutang' : 'Tambah Hutang/Piutang';
-        dateContainer.style.display = 'block';
+    dueDateInput.value = '';
+
+    // If type is credit (Payment), hide due date
+    if (type === 'credit') {
+        dueDateContainer.classList.add('hidden');
+        title.textContent = 'Catat Pembayaran';
     } else {
-        title.textContent = entryId ? 'Edit Catatan Pembayaran' : 'Catat Pembayaran';
-        dateContainer.style.display = 'none';
+        dueDateContainer.classList.remove('hidden');
+        title.textContent = 'Tambah Catatan (Hutang/Piutang)';
     }
 
     if (entryId) {
-        getFromDB('ledgers', entryId).then(l => {
-            if(l) {
-                amountInput.value = l.amount;
-                descInput.value = l.description;
-                if(l.dueDate) dateInput.value = l.dueDate.split('T')[0];
-            }
-        });
+        // Edit mode (not fully implemented in UI flow yet but prepared)
     }
 
-    modal.classList.remove('hidden');
+    document.getElementById('addLedgerEntryModal').classList.remove('hidden');
 }
 
 export function closeAddLedgerEntryModal() {
     document.getElementById('addLedgerEntryModal').classList.add('hidden');
-    editingLedgerEntryId = null;
 }
 
 export async function saveLedgerEntry() {
     const amount = parseFloat(document.getElementById('ledgerAmount').value);
     const description = document.getElementById('ledgerDescription').value.trim();
-    const dueDateVal = document.getElementById('ledgerDueDate').value;
-    
+    const dueDate = document.getElementById('ledgerDueDate').value;
+
     if (isNaN(amount) || amount <= 0) {
-        showToast('Jumlah harus lebih dari 0');
+        window.showToast('Jumlah harus lebih dari 0.');
         return;
     }
     if (!description) {
-        showToast('Keterangan wajib diisi');
+        window.showToast('Keterangan wajib diisi.');
         return;
     }
 
-    const entry = {
-        contactId: currentLedgerContactId,
-        amount,
-        description,
-        type: currentLedgerType,
-        date: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        // Track who made this entry for Cashier Reporting
-        userId: window.app.currentUser ? window.app.currentUser.id : null 
-    };
-    
-    if (currentLedgerType === 'debit' && dueDateVal) {
-        entry.dueDate = new Date(dueDateVal).toISOString();
-    } else {
-        entry.dueDate = null;
-    }
-
     try {
-        if (editingLedgerEntryId) {
-            entry.id = editingLedgerEntryId;
-            const old = await getFromDB('ledgers', editingLedgerEntryId);
-            if(old) entry.date = old.date;
-        } else {
-            entry.createdAt = new Date().toISOString();
+        const entry = {
+            contactId: currentLedgerContactId,
+            amount,
+            description,
+            type: currentLedgerType,
+            date: new Date().toISOString(),
+            userId: window.app.currentUser ? window.app.currentUser.id : null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+
+        if (currentLedgerType === 'debit' && dueDate) {
+            entry.dueDate = new Date(dueDate).toISOString();
         }
 
-        const savedId = await putToDB('ledgers', entry);
-        await queueSyncAction(editingLedgerEntryId ? 'UPDATE_LEDGER' : 'CREATE_LEDGER', { ...entry, id: savedId });
+        const id = await putToDB('ledgers', entry);
+        await queueSyncAction('CREATE_LEDGER', { ...entry, id });
         
-        showToast('Berhasil disimpan');
+        window.showToast('Transaksi berhasil dicatat.');
         closeAddLedgerEntryModal();
-        showLedgerModal(currentLedgerContactId);
-        loadContactsPage(); 
-        updateDashboardSummaries();
+        showLedgerModal(currentLedgerContactId); // Refresh history
+
     } catch (e) {
-        console.error(e);
-        showToast('Gagal menyimpan');
+        console.error("Save ledger error", e);
+        window.showToast('Gagal menyimpan transaksi.');
     }
 }
 
-export function showLedgerActions(event, entryId, contactId) {
-    event.stopPropagation();
+// Popover Actions for Ledger Item
+export function showLedgerActions(event, id, description, amount, currentDueDate) {
     const popover = document.getElementById('ledgerActionsPopover');
+    if (!popover) return;
+
+    window.app.activePopover = popover;
+
+    // Position
     const rect = event.target.getBoundingClientRect();
     popover.style.top = `${rect.bottom + window.scrollY}px`;
-    popover.style.left = `${rect.left - 100}px`;
+    popover.style.left = `${rect.left - 100}px`; // Shift left to keep on screen
+
+    let actionsHtml = ``;
     
-    popover.innerHTML = `
-        <a onclick="editLedgerEntry(${entryId})" class="text-blue-600"><i class="fas fa-edit mr-2"></i>Edit</a>
-        <a onclick="deleteLedgerEntry(${entryId})" class="text-red-600"><i class="fas fa-trash mr-2"></i>Hapus</a>
-        <a onclick="showEditDueDateModal(${entryId})" class="text-orange-600"><i class="fas fa-clock mr-2"></i>Atur Jatuh Tempo</a>
-    `;
+    // Only allow editing due date for debits
+    if (currentDueDate || (!currentDueDate && description.toLowerCase().includes('transaksi'))) { 
+       // Logic bit fuzzy, basically if it's a debit we might want to set due date
+       // But for now let's just allow edit/delete generally
+    }
     
+    actionsHtml += `<a onclick="showEditDueDateModal(${id}, '${currentDueDate}')" class="text-gray-700"><i class="far fa-calendar-alt mr-2"></i>Atur Jatuh Tempo</a>`;
+    actionsHtml += `<a onclick="deleteLedgerEntry(${id})" class="text-red-600"><i class="fas fa-trash mr-2"></i>Hapus</a>`;
+
+    popover.innerHTML = actionsHtml;
     popover.classList.remove('hidden');
-    window.app.activePopover = popover;
 }
 
 export function closeLedgerActions() {
     const popover = document.getElementById('ledgerActionsPopover');
-    if(popover) popover.classList.add('hidden');
+    if (popover) popover.classList.add('hidden');
     window.app.activePopover = null;
 }
 
-export function editLedgerEntry(entryId) {
-    getFromDB('ledgers', entryId).then(l => {
-        if(l) {
-            showAddLedgerEntryModal(entryId, l.type);
-            closeLedgerActions();
-        }
-    });
-}
-
-export function deleteLedgerEntry(entryId) {
+export function showEditDueDateModal(id, currentDueDateStr) {
     closeLedgerActions();
-    showConfirmationModal('Hapus Transaksi', 'Yakin menghapus catatan ini?', async () => {
-        try {
-            const entry = await getFromDB('ledgers', entryId);
-            const tx = window.app.db.transaction('ledgers', 'readwrite');
-            tx.objectStore('ledgers').delete(entryId);
-            tx.oncomplete = async () => {
-                await queueSyncAction('DELETE_LEDGER', entry);
-                showToast('Dihapus');
-                showLedgerModal(currentLedgerContactId);
-                loadContactsPage();
-                updateDashboardSummaries();
-            };
-        } catch(e) {
-            console.error(e);
-        }
-    }, 'Ya, Hapus', 'bg-red-500');
-}
-
-export function showEditDueDateModal(entryId) {
-    closeLedgerActions();
-    document.getElementById('editDueDateEntryId').value = entryId;
-    getFromDB('ledgers', entryId).then(l => {
-        if(l && l.dueDate) {
-            document.getElementById('newDueDate').value = l.dueDate.split('T')[0];
-        } else {
-            document.getElementById('newDueDate').value = '';
-        }
-    });
+    document.getElementById('editDueDateEntryId').value = id;
+    const dateInput = document.getElementById('newDueDate');
+    
+    if (currentDueDateStr && currentDueDateStr !== 'undefined') {
+        const date = new Date(currentDueDateStr);
+        // Format to YYYY-MM-DD
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        dateInput.value = `${year}-${month}-${day}`;
+    } else {
+        dateInput.value = '';
+    }
+    
     document.getElementById('editDueDateModal').classList.remove('hidden');
 }
 
@@ -545,91 +574,130 @@ export function closeEditDueDateModal() {
 }
 
 export async function saveDueDate() {
-    const entryId = parseInt(document.getElementById('editDueDateEntryId').value);
+    const id = parseInt(document.getElementById('editDueDateEntryId').value);
     const dateVal = document.getElementById('newDueDate').value;
     
-    if (!entryId) return;
-    
     try {
-        const entry = await getFromDB('ledgers', entryId);
+        const entry = await getFromDB('ledgers', id);
         if (entry) {
             entry.dueDate = dateVal ? new Date(dateVal).toISOString() : null;
             entry.updatedAt = new Date().toISOString();
             await putToDB('ledgers', entry);
             await queueSyncAction('UPDATE_LEDGER', entry);
-            showToast('Jatuh tempo diperbarui');
+            
+            window.showToast('Jatuh tempo diperbarui.');
             closeEditDueDateModal();
             showLedgerModal(currentLedgerContactId);
         }
     } catch (e) {
-        console.error(e);
-        showToast('Gagal update');
+        console.error("Save due date error", e);
+        window.showToast('Gagal update jatuh tempo');
     }
 }
 
+export function deleteLedgerEntry(id) {
+    closeLedgerActions();
+    window.showConfirmationModal('Hapus Transaksi', 'Hapus catatan ini? Saldo akan disesuaikan.', async () => {
+        try {
+            const entry = await getFromDB('ledgers', id);
+            const tx = window.app.db.transaction('ledgers', 'readwrite');
+            tx.objectStore('ledgers').delete(id);
+            tx.oncomplete = async () => {
+                await queueSyncAction('DELETE_LEDGER', entry);
+                window.showToast('Catatan dihapus.');
+                showLedgerModal(currentLedgerContactId);
+            };
+        } catch (e) {
+            console.error("Delete ledger error", e);
+        }
+    }, 'Ya, Hapus', 'bg-red-500');
+}
+
+// --- DUE DATE NOTIFICATIONS ---
+
 export async function checkDueDateNotifications() {
+    const notifCard = document.getElementById('dueDateNotificationCard');
+    const countEl = document.getElementById('dueDateCount');
+    if (!notifCard || !countEl) return;
+
     try {
+        // Get all debits with due dates
         const ledgers = await getAllFromDB('ledgers');
-        const today = new Date();
-        today.setHours(0,0,0,0);
-        
+        const contacts = await getAllFromDB('contacts');
+        const contactMap = new Map(contacts.map(c => [c.id, c]));
+
+        const now = new Date();
+        const threeDaysFromNow = new Date();
+        threeDaysFromNow.setDate(now.getDate() + 3);
+
         const dueItems = ledgers.filter(l => {
-            if (!l.dueDate || l.type !== 'debit') return false;
-            const d = new Date(l.dueDate);
-            d.setHours(0,0,0,0);
-            // Show if due within 3 days or overdue
-            const diffDays = (d - today) / (1000 * 60 * 60 * 24);
-            return diffDays <= 3; 
-        });
-        
-        const card = document.getElementById('dueDateNotificationCard');
-        const countEl = document.getElementById('dueDateCount');
-        
+            if (l.type !== 'debit' || !l.dueDate) return false;
+            
+            // Check if already paid (this is complex in a simple ledger system without linking payments to specific invoices)
+            // Strategy: We only show notifications if the CONTACT has an outstanding balance > 0
+            // AND the specific item is due. This is an approximation.
+            const contact = contactMap.get(l.contactId);
+            if (!contact) return false;
+            
+            // Re-calculate contact balance to be sure
+            // (In a real app, balance should be cached on contact object or calculated more efficiently)
+            // Here we skip balance check for individual notification existence, but user verification happens in list
+            
+            const dueDate = new Date(l.dueDate);
+            return dueDate <= threeDaysFromNow;
+        }).map(l => ({
+            ...l,
+            contactName: contactMap.get(l.contactId)?.name || 'Unknown'
+        }));
+
         if (dueItems.length > 0) {
-            window.app.dueItemsList = dueItems;
             countEl.textContent = dueItems.length;
-            card.classList.remove('hidden');
-            card.onclick = showDueDateModal;
+            notifCard.classList.remove('hidden');
+            notifCard.onclick = () => showDueDateModal(dueItems);
+            window.app.dueItemsList = dueItems;
         } else {
-            card.classList.add('hidden');
+            notifCard.classList.add('hidden');
         }
 
     } catch (e) {
-        console.error("Error checking due dates", e);
+        console.error("Check due date error", e);
     }
 }
 
-export async function showDueDateModal() {
-    const modal = document.getElementById('dueDateModal');
-    const list = document.getElementById('dueDateList');
-    const items = window.app.dueItemsList || [];
+export function showDueDateModal(items = []) {
+    const listItems = items.length > 0 ? items : window.app.dueItemsList;
+    const listEl = document.getElementById('dueDateList');
     
-    if (items.length === 0) return;
-    
-    const contacts = await getAllFromDB('contacts');
-    const contactMap = new Map(contacts.map(c => [c.id, c.name]));
-    
-    list.innerHTML = items.map(item => {
-        const name = contactMap.get(item.contactId) || 'Unknown';
-        const date = new Date(item.dueDate).toLocaleDateString('id-ID');
-        const isOverdue = new Date(item.dueDate) < new Date().setHours(0,0,0,0);
+    if (listItems.length === 0) {
+        listEl.innerHTML = '<p class="text-center text-gray-500">Tidak ada tagihan jatuh tempo.</p>';
+    } else {
+        listItems.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
         
-        return `
-            <div class="card p-3 border ${isOverdue ? 'border-red-300 bg-red-50' : 'border-yellow-300 bg-yellow-50'}">
-                <div class="flex justify-between">
-                    <h3 class="font-bold">${name}</h3>
-                    <span class="text-sm font-semibold">Rp ${formatCurrency(item.amount)}</span>
+        listEl.innerHTML = listItems.map(item => {
+            const dueDate = new Date(item.dueDate);
+            const isOverdue = dueDate < new Date();
+            const statusClass = isOverdue ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800';
+            const statusText = isOverdue ? 'Terlambat' : 'Segera';
+
+            return `
+                <div class="card p-3 border-l-4 ${isOverdue ? 'border-red-500' : 'border-yellow-500'} clickable" onclick="viewLedgerFromDueDateModal(${item.contactId})">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="font-bold text-gray-800">${item.contactName}</p>
+                            <p class="text-sm text-gray-600">${item.description}</p>
+                            <p class="text-xs text-gray-500 mt-1"><i class="far fa-clock"></i> ${dueDate.toLocaleDateString('id-ID')}</p>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-xs font-bold px-2 py-1 rounded-full ${statusClass}">${statusText}</span>
+                            <p class="font-bold text-red-600 mt-2">Rp ${window.formatCurrency(item.amount)}</p>
+                        </div>
+                    </div>
                 </div>
-                <p class="text-sm">${item.description}</p>
-                <div class="flex justify-between items-center mt-2">
-                    <span class="text-xs ${isOverdue ? 'text-red-600 font-bold' : 'text-yellow-700'}">Jatuh Tempo: ${date}</span>
-                    <button onclick="viewLedgerFromDueDateModal(${item.contactId})" class="text-blue-600 text-xs underline">Lihat Detail</button>
-                </div>
-            </div>
-        `;
-    }).join('');
+            `;
+        }).join('');
+    }
     
-    modal.classList.remove('hidden');
+    document.getElementById('dueDateModal').classList.remove('hidden');
 }
 
 export function closeDueDateModal() {
@@ -638,6 +706,5 @@ export function closeDueDateModal() {
 
 export function viewLedgerFromDueDateModal(contactId) {
     closeDueDateModal();
-    showPage('kontak');
     showLedgerModal(contactId);
 }

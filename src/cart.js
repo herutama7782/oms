@@ -1,13 +1,13 @@
 
 
 import { getFromDB, getSettingFromDB, putToDB, getAllFromDB } from './db.js';
-import { showToast, showConfirmationModal, formatCurrency, updatePendingBadge } from './ui.js';
+// REMOVED: import { showToast, showConfirmationModal, formatCurrency, updatePendingBadge } from './ui.js';
 import { playTone } from './audio.js';
 import { printReceipt } from './peripherals.js';
 import { queueSyncAction } from './sync.js';
 import { applyDefaultFees } from './settings.js';
 import { loadProductsGrid, logStockChange } from './product.js';
-import { loadDashboard } from './ui.js';
+// REMOVED: import { loadDashboard } from './ui.js';
 
 // State for payment method in the modal
 let currentPaymentMethod = 'cash';
@@ -155,7 +155,7 @@ export async function addToCart(productId) {
     try {
         const product = await getFromDB('products', productId);
         if (!product) {
-            showToast('Produk tidak ditemukan.');
+            window.showToast('Produk tidak ditemukan.');
             return;
         }
 
@@ -166,7 +166,7 @@ export async function addToCart(productId) {
         }
 
         if (product.stock !== null && product.stock === 0) {
-            showToast('Produk habis.');
+            window.showToast('Produk habis.');
             return;
         }
 
@@ -181,7 +181,7 @@ export async function addToCart(productId) {
                 existingItem.effectivePrice = priceInfo.effectivePrice;
                 existingItem.isWholesale = priceInfo.isWholesale;
             } else {
-                showToast(`Stok ${product.name} tidak mencukupi.`);
+                window.showToast(`Stok ${product.name} tidak mencukupi.`);
                 return;
             }
         } else {
@@ -202,11 +202,11 @@ export async function addToCart(productId) {
         }
         
         playTone(1200, 0.1, 0.3, 'square');
-        showToast(`${product.name} ditambahkan ke keranjang`);
+        window.showToast(`${product.name} ditambahkan ke keranjang`);
         updateCartDisplay(); // Update display to reflect potential price change
     } catch (error) {
         console.error('Failed to add to cart:', error);
-        showToast('Gagal menambahkan produk ke keranjang.');
+        window.showToast('Gagal menambahkan produk ke keranjang.');
     }
 }
 
@@ -224,7 +224,7 @@ export async function updateCartItemQuantity(itemId, change) {
         const variation = product?.variations?.[variationIndex];
 
         if (!variation) {
-            showToast('Variasi produk tidak ditemukan, hapus dari keranjang.');
+            window.showToast('Variasi produk tidak ditemukan, hapus dari keranjang.');
             window.app.cart.items = window.app.cart.items.filter(i => i.id !== itemId);
         } else {
             const newQuantity = item.quantity + change;
@@ -235,7 +235,7 @@ export async function updateCartItemQuantity(itemId, change) {
                 item.effectivePrice = priceInfo.effectivePrice;
                 item.isWholesale = priceInfo.isWholesale;
             } else if (variation.stock !== null && newQuantity > variation.stock) {
-                showToast(`Stok variasi ${variation.name} tidak mencukupi. Sisa ${variation.stock}.`);
+                window.showToast(`Stok variasi ${variation.name} tidak mencukupi. Sisa ${variation.stock}.`);
             } else {
                 window.app.cart.items = window.app.cart.items.filter(i => i.id !== itemId);
             }
@@ -246,7 +246,7 @@ export async function updateCartItemQuantity(itemId, change) {
         const product = await getFromDB('products', productId);
 
         if (!product) {
-            showToast('Produk tidak ditemukan, hapus dari keranjang.');
+            window.showToast('Produk tidak ditemukan, hapus dari keranjang.');
             window.app.cart.items = window.app.cart.items.filter(i => i.id !== productId);
         } else {
             if (newQuantity > 0 && (product.stock === null || newQuantity <= product.stock)) {
@@ -256,7 +256,7 @@ export async function updateCartItemQuantity(itemId, change) {
                 item.effectivePrice = priceInfo.effectivePrice;
                 item.isWholesale = priceInfo.isWholesale;
             } else if (product.stock !== null && newQuantity > product.stock) {
-                showToast(`Stok tidak mencukupi. Sisa ${product.stock}.`);
+                window.showToast(`Stok tidak mencukupi. Sisa ${product.stock}.`);
             } else {
                 window.app.cart.items = window.app.cart.items.filter(i => i.id !== productId);
             }
@@ -285,7 +285,7 @@ export function updateCartDisplay() {
             <div class="cart-item flex items-center justify-between">
                 <div>
                     <p class="font-semibold">${item.name}</p>
-                    <p class="text-sm text-gray-600">Rp ${formatCurrency(item.effectivePrice)}</p>
+                    <p class="text-sm text-gray-600">Rp ${window.formatCurrency(item.effectivePrice)}</p>
                 </div>
                 <div class="flex items-center gap-2">
                     <button onclick="updateCartItemQuantity('${item.id}', -1)" class="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center clickable"><i class="fas fa-minus text-xs"></i></button>
@@ -320,29 +320,29 @@ export function updateCartDisplay() {
         const feeElement = document.createElement('div');
         feeElement.className = 'flex justify-between';
         feeElement.innerHTML = `
-            <span>${fee.name} (${fee.type === 'percentage' ? `${fee.value}%` : `Rp ${formatCurrency(fee.value)}`}):</span>
-            <span>Rp ${formatCurrency(feeAmount)}</span>
+            <span>${fee.name} (${fee.type === 'percentage' ? `${fee.value}%` : `Rp ${window.formatCurrency(fee.value)}`}):</span>
+            <span>Rp ${window.formatCurrency(feeAmount)}</span>
         `;
         cartFeesEl.appendChild(feeElement);
     });
     
     const total = subtotal + totalFees;
 
-    cartSubtotalEl.textContent = `Rp ${formatCurrency(subtotal)}`;
-    cartTotalEl.textContent = `Rp ${formatCurrency(total)}`;
+    cartSubtotalEl.textContent = `Rp ${window.formatCurrency(subtotal)}`;
+    cartTotalEl.textContent = `Rp ${window.formatCurrency(total)}`;
 
     updateCartFabBadge();
 }
 
 export function clearCart() {
     if (window.app.cart.items.length === 0 && !window.app.cart.customerId) return;
-    showConfirmationModal('Kosongkan Keranjang', 'Apakah Anda yakin ingin mengosongkan keranjang?', () => {
+    window.showConfirmationModal('Kosongkan Keranjang', 'Apakah Anda yakin ingin mengosongkan keranjang?', () => {
         window.app.cart.items = [];
         window.app.cart.customerId = null;
         window.app.cart.customerName = null;
         applyDefaultFees();
         updateCartDisplay();
-        showToast('Keranjang dikosongkan.');
+        window.showToast('Keranjang dikosongkan.');
     });
 }
 
@@ -370,7 +370,7 @@ export function showVariationSelectionModal(product) {
                     <p class="font-semibold">${variation.name}</p>
                     <p class="text-sm text-gray-500">Stok: ${stockDisplay}</p>
                 </div>
-                <p class="font-bold text-blue-600">Rp ${formatCurrency(variation.price)}</p>
+                <p class="font-bold text-blue-600">Rp ${window.formatCurrency(variation.price)}</p>
             </div>
         `;
     }).join('');
@@ -389,7 +389,7 @@ export async function addVariationToCart(productId, variationIndex) {
     try {
         const product = await getFromDB('products', productId);
         if (!product || !product.variations || !product.variations[variationIndex]) {
-            showToast('Variasi produk tidak valid.');
+            window.showToast('Variasi produk tidak valid.');
             return;
         }
         
@@ -397,7 +397,7 @@ export async function addVariationToCart(productId, variationIndex) {
         const variationId = `${product.id}-${variationIndex}`;
 
         if (variation.stock !== null && (variation.stock || 0) <= 0) {
-            showToast(`Stok untuk variasi ${variation.name} habis.`);
+            window.showToast(`Stok untuk variasi ${variation.name} habis.`);
             return;
         }
 
@@ -411,7 +411,7 @@ export async function addVariationToCart(productId, variationIndex) {
                 existingItem.effectivePrice = priceInfo.effectivePrice;
                 existingItem.isWholesale = priceInfo.isWholesale;
             } else {
-                showToast(`Stok untuk variasi ${variation.name} tidak mencukupi.`);
+                window.showToast(`Stok untuk variasi ${variation.name} tidak mencukupi.`);
                 return;
             }
         } else {
@@ -434,13 +434,13 @@ export async function addVariationToCart(productId, variationIndex) {
         }
 
         playTone(1200, 0.1, 0.3, 'square');
-        showToast(`${product.name} (${variation.name}) ditambahkan ke keranjang`);
+        window.showToast(`${product.name} (${variation.name}) ditambahkan ke keranjang`);
         closeVariationSelectionModal();
         updateCartDisplay();
 
     } catch (error) {
         console.error('Failed to add variation to cart:', error);
-        showToast('Gagal menambahkan variasi ke keranjang.');
+        window.showToast('Gagal menambahkan variasi ke keranjang.');
     }
 }
 
@@ -497,9 +497,9 @@ export async function selectPaymentMethod(method) {
         
         // Check if customer is selected
         if (!window.app.cart.customerId) {
-            showToast('Apakah sudah menambahkan nama pelanggan ?');
+            window.showToast('Apakah sudah menambahkan nama pelanggan ?');
         } else {
-            showToast('Nama pelanggan sudah sesuai ?');
+            window.showToast('Nama pelanggan sudah sesuai ?');
         }
 
         cashInput.dispatchEvent(new Event('input')); 
@@ -531,7 +531,7 @@ export async function selectPaymentMethod(method) {
 
 export async function showPaymentModal() {
     if (window.app.cart.items.length === 0) {
-        showToast('Keranjang kosong. Tidak dapat melakukan pembayaran.');
+        window.showToast('Keranjang kosong. Tidak dapat melakukan pembayaran.');
         return;
     }
     const subtotal = window.app.cart.items.reduce((sum, item) => sum + Math.round(item.effectivePrice * item.quantity), 0);
@@ -556,8 +556,8 @@ export async function showPaymentModal() {
         finalTotal = Math.ceil(originalTotal / 1000) * 1000;
         donationAmount = finalTotal - originalTotal;
         
-        paymentTotalOriginalEl.textContent = `Rp ${formatCurrency(originalTotal)}`;
-        document.getElementById('paymentDonation').textContent = `Rp ${formatCurrency(donationAmount)}`;
+        paymentTotalOriginalEl.textContent = `Rp ${window.formatCurrency(originalTotal)}`;
+        document.getElementById('paymentDonation').textContent = `Rp ${window.formatCurrency(donationAmount)}`;
         donationLine.classList.remove('hidden');
         if (paymentTotalOriginalEl) paymentTotalOriginalEl.parentElement.classList.remove('hidden');
         if (donationToggle) donationToggle.checked = true;
@@ -567,7 +567,7 @@ export async function showPaymentModal() {
         if (donationToggle) donationToggle.checked = false;
     }
 
-    (document.getElementById('paymentTotal')).textContent = `Rp ${formatCurrency(finalTotal)}`;
+    (document.getElementById('paymentTotal')).textContent = `Rp ${window.formatCurrency(finalTotal)}`;
     (document.getElementById('paymentModal')).classList.remove('hidden');
     
     // Reset to default cash payment method
@@ -607,7 +607,7 @@ export function handleDonationToggle() {
     }
 
     // Update UI
-    document.getElementById('paymentTotal').textContent = `Rp ${formatCurrency(newTotal)}`;
+    document.getElementById('paymentTotal').textContent = `Rp ${window.formatCurrency(newTotal)}`;
 
     // Trigger change calculation
     const cashInput = document.getElementById('cashPaidInput');
@@ -653,14 +653,14 @@ export async function updatePaymentChange(e) {
     const change = cashPaid - total;
     
     if (change >= 0) {
-        changeEl.textContent = `Rp ${formatCurrency(change)}`;
+        changeEl.textContent = `Rp ${window.formatCurrency(change)}`;
         changeEl.classList.remove('text-red-500');
         changeEl.classList.add('text-green-500');
         changeLabelEl.textContent = 'Kembalian:';
         completeButton.disabled = false;
         completeButton.classList.remove('disabled:bg-blue-300');
     } else {
-        changeEl.textContent = `Rp ${formatCurrency(Math.abs(change))}`;
+        changeEl.textContent = `Rp ${window.formatCurrency(Math.abs(change))}`;
         
         if (currentPaymentMethod === 'debt') {
             // Negative change allowed for Debt (Piutang)
@@ -687,7 +687,7 @@ export async function completeTransaction() {
 
     // Validate Debt Customer First
     if (currentPaymentMethod === 'debt' && !window.app.cart.customerId) {
-        showToast('Harap pilih pelanggan untuk transaksi piutang.');
+        window.showToast('Harap pilih pelanggan untuk transaksi piutang.');
         return;
     }
 
@@ -885,7 +885,7 @@ export async function completeTransaction() {
         
     } catch (error) {
         console.error("Transaction failed:", error);
-        showToast('Transaksi gagal. Silakan coba lagi.');
+        window.showToast('Transaksi gagal. Silakan coba lagi.');
     } finally {
         button.disabled = false;
         buttonText.classList.remove('hidden');
@@ -910,15 +910,15 @@ export function startNewTransaction() {
     applyDefaultFees();
     updateCartDisplay();
     loadProductsGrid();
-    if(window.app.currentPage === 'dashboard') loadDashboard();
+    if(window.app.currentPage === 'dashboard') window.loadDashboard();
     window.app.currentReceiptTransaction = null;
-    showToast('Siap untuk transaksi berikutnya.');
+    window.showToast('Siap untuk transaksi berikutnya.');
 }
 
 // --- PENDING TRANSACTIONS ---
 export async function holdTransaction() {
     if (window.app.cart.items.length === 0) {
-        showToast('Keranjang kosong, tidak ada yang bisa ditahan.');
+        window.showToast('Keranjang kosong, tidak ada yang bisa ditahan.');
         return;
     }
 
@@ -939,13 +939,13 @@ export async function holdTransaction() {
         await applyDefaultFees();
         updateCartDisplay();
         hideCartModal();
-        updatePendingBadge();
+        window.updatePendingBadge();
         
-        showToast('Transaksi berhasil ditahan.');
+        window.showToast('Transaksi berhasil ditahan.');
 
     } catch (error) {
         console.error('Failed to hold transaction:', error);
-        showToast('Gagal menahan transaksi.');
+        window.showToast('Gagal menahan transaksi.');
     }
 }
 
@@ -975,7 +975,7 @@ export async function showPendingTransactionsModal() {
                     <div class="flex justify-between items-center">
                         <div>
                             <p class="font-semibold">Disimpan pada ${time}</p>
-                            <p class="text-sm text-gray-500">${tx.cart.items.length} item - Total Rp ${formatCurrency(total)}</p>
+                            <p class="text-sm text-gray-500">${tx.cart.items.length} item - Total Rp ${window.formatCurrency(total)}</p>
                         </div>
                         <div class="flex gap-2">
                             <button onclick="deletePendingTransaction(${tx.id})" class="btn bg-red-100 text-red-700 px-3 py-1 text-xs">Hapus</button>
@@ -999,7 +999,7 @@ async function proceedWithResume(id) {
     try {
         const pendingTx = await getFromDB('pending_transactions', id);
         if (!pendingTx) {
-            showToast('Transaksi tertahan tidak ditemukan.');
+            window.showToast('Transaksi tertahan tidak ditemukan.');
             return;
         }
 
@@ -1015,18 +1015,18 @@ async function proceedWithResume(id) {
         closePendingTransactionsModal();
         updateCartDisplay();
         showCartModal();
-        updatePendingBadge();
-        showToast('Transaksi berhasil dilanjutkan.');
+        window.updatePendingBadge();
+        window.showToast('Transaksi berhasil dilanjutkan.');
 
     } catch (error) {
         console.error('Failed to resume transaction:', error);
-        showToast('Gagal melanjutkan transaksi.');
+        window.showToast('Gagal melanjutkan transaksi.');
     }
 }
 
 export async function resumeTransaction(id) {
     if (window.app.cart.items.length > 0) {
-        showConfirmationModal(
+        window.showConfirmationModal(
             'Lanjutkan Transaksi?',
             'Keranjang saat ini berisi item. Melanjutkan akan mengganti isi keranjang saat ini. Lanjutkan?',
             async () => {
@@ -1041,7 +1041,7 @@ export async function resumeTransaction(id) {
 }
 
 export function deletePendingTransaction(id) {
-    showConfirmationModal(
+    window.showConfirmationModal(
         'Hapus Transaksi?',
         'Anda yakin ingin menghapus transaksi yang ditahan ini secara permanen?',
         async () => {
@@ -1050,13 +1050,13 @@ export function deletePendingTransaction(id) {
                 tx.objectStore('pending_transactions').delete(id);
                 await new Promise(resolve => tx.oncomplete = resolve);
 
-                showToast('Transaksi tertahan dihapus.');
-                updatePendingBadge();
+                window.showToast('Transaksi tertahan dihapus.');
+                window.updatePendingBadge();
                 // Refresh list inside modal
                 await showPendingTransactionsModal();
             } catch (error) {
                 console.error('Failed to delete pending transaction:', error);
-                showToast('Gagal menghapus transaksi.');
+                window.showToast('Gagal menghapus transaksi.');
             }
         },
         'Ya, Hapus',
