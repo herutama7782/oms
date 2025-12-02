@@ -50,6 +50,7 @@ window.app = {
     currentUser: null, // For multi-user support
     firebaseUser: null, // For Firebase auth user,
     onLoginSuccess: null,
+    currentReportExpenses: [], // Store fetched expenses for report
 };
 
 // --- GLOBAL FUNCTIONS ---
@@ -116,6 +117,12 @@ const functions = {
     returnItem: report.returnItem,
     generateCashierReport: report.generateCashierReport,
     closeCashierReportModal: report.closeCashierReportModal,
+    showExpenseModal: report.showExpenseModal,
+    closeExpenseModal: report.closeExpenseModal,
+    showExpenseFormModal: report.showExpenseFormModal,
+    closeExpenseFormModal: report.closeExpenseFormModal,
+    saveExpense: report.saveExpense,
+    deleteExpense: report.deleteExpense,
     // contact.js
     switchContactTab: contact.switchContactTab,
     showContactModal: contact.showContactModal,

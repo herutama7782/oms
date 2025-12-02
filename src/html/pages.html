@@ -6,6 +6,8 @@
 
 
 
+
+
 <!-- Dasbor Page -->
 <div id="dashboard" class="page active">
     <div class="p-4">
@@ -350,6 +352,11 @@
                 </div>
             </div>
 
+            <!-- Expense Management Button -->
+            <button onclick="showExpenseModal()" class="btn bg-orange-500 text-white w-full py-3 mb-4 font-semibold shadow-md">
+                <i class="fas fa-wallet mr-2"></i> Catat Pengeluaran Operasional
+            </button>
+
             <!-- Date Range -->
             <div class="card p-4 mb-4">
                 <div class="grid grid-cols-2 gap-3">
@@ -397,17 +404,22 @@
                     </div>
                     <!-- Laba Kotor -->
                     <div class="flex justify-between items-center border-b pb-2">
-                        <span class="font-semibold text-gray-800">Laba Kotor:</span>
+                        <span class="font-semibold text-gray-800">Laba Kotor Penjualan:</span>
                         <span class="font-bold text-green-600" id="reportGrossProfit">Rp 0</span>
                     </div>
-                    <!-- Biaya Operasional -->
+                    <!-- Fees -->
                     <div class="flex justify-between items-center pt-1">
-                        <span class="text-gray-600">(-) Total Biaya Operasional:</span>
+                        <span class="text-gray-600">(-) Biaya Transaksi & Layanan:</span>
                         <span class="font-semibold text-red-500" id="reportOperationalCost">Rp 0</span>
                     </div>
+                    <!-- New Expense Row -->
+                    <div class="flex justify-between items-center pt-1 border-b pb-2">
+                        <span class="text-gray-600">(-) Pengeluaran Toko (Listrik/Gaji):</span>
+                        <span class="font-semibold text-red-500" id="reportManualExpenses">Rp 0</span>
+                    </div>
                     <!-- Laba Bersih -->
-                    <div class="flex justify-between items-center border-b pb-2">
-                        <span class="font-semibold text-gray-800">Laba Bersih:</span>
+                    <div class="flex justify-between items-center border-b pb-2 pt-2">
+                        <span class="font-semibold text-gray-800">Laba Bersih Usaha:</span>
                         <span class="font-bold text-xl text-green-700" id="reportNetProfit">Rp 0</span>
                     </div>
                     

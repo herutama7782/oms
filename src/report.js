@@ -1,4 +1,5 @@
 
+
 import { getAllFromDB, getFromDB, putToDB } from './db.js';
 import { showToast, showConfirmationModal } from './ui.js';
 import { queueSyncAction } from './sync.js';
@@ -28,26 +29,28 @@ export async function generateReport() {
         const endDate = new Date(dateTo + 'T23:59:59.999').toISOString();
         const range = IDBKeyRange.bound(startDate, endDate);
 
-        // Fetch filtered transactions, ledgers, products, and contacts concurrently
-        const [filteredTransactions, products, filteredLedgers, contacts] = await Promise.all([
+        // Fetch filtered transactions, ledgers, products, expenses, and contacts concurrently
+        const [filteredTransactions, products, filteredLedgers, filteredExpenses, contacts] = await Promise.all([
             getAllFromDB('transactions', 'date', range),
             getAllFromDB('products'),
             getAllFromDB('ledgers', 'date', range),
+            getAllFromDB('expenses', 'date', range),
             getAllFromDB('contacts')
         ]);
         
         window.app.currentReportData = filteredTransactions;
         window.app.currentReportLedgers = filteredLedgers;
+        window.app.currentReportExpenses = filteredExpenses;
 
-        if (filteredTransactions.length === 0 && filteredLedgers.length === 0) {
-            showToast('Tidak ada transaksi atau catatan ditemukan pada rentang tanggal tersebut.');
+        if (filteredTransactions.length === 0 && filteredLedgers.length === 0 && filteredExpenses.length === 0) {
+            showToast('Tidak ada transaksi, catatan, atau pengeluaran ditemukan pada rentang tanggal tersebut.');
             document.getElementById('reportSummary').style.display = 'none';
             document.getElementById('reportDetails').style.display = 'none';
             document.getElementById('topSellingProductsCard').style.display = 'none';
             return;
         }
 
-        displayReportSummary(filteredTransactions, products, filteredLedgers, contacts);
+        displayReportSummary(filteredTransactions, products, filteredLedgers, filteredExpenses, contacts);
         displayReportDetails(filteredTransactions);
         displayTopSellingProducts(filteredTransactions);
 
@@ -65,12 +68,12 @@ export async function generateReport() {
 }
 
 
-function displayReportSummary(transactions, products, ledgers = [], contacts = []) {
+function displayReportSummary(transactions, products, ledgers = [], expenses = [], contacts = []) {
     const productMap = new Map(products.map(p => [p.id, p]));
 
     let omzet = 0;
     let hpp = 0;
-    let totalOperationalCost = 0;
+    let totalTransactionFees = 0; // Renamed from totalOperationalCost
     let totalDiskon = 0;
     let totalPenjualanGrosir = 0;
     let totalDonasi = 0;
@@ -94,8 +97,14 @@ function displayReportSummary(transactions, products, ledgers = [], contacts = [
         });
         
         (t.fees || []).forEach(fee => {
-            totalOperationalCost += fee.amount;
+            totalTransactionFees += fee.amount;
         });
+    });
+
+    // Calculate Manual Expenses
+    let totalManualExpenses = 0;
+    expenses.forEach(e => {
+        totalManualExpenses += e.amount;
     });
 
     // Calculate Ledger Totals (Receivable Payments & Debt Payments)
@@ -117,11 +126,13 @@ function displayReportSummary(transactions, products, ledgers = [], contacts = [
         }
     });
 
-    const grossProfit = omzet - hpp;
-    const netProfit = grossProfit - totalOperationalCost;
+    const grossProfit = omzet - hpp; // Laba Kotor Penjualan
+    // True Net Profit = Gross Profit - Transaction Fees - Manual Expenses
+    const netProfit = grossProfit - totalTransactionFees - totalManualExpenses;
     
     // "Estimasi Kas Masuk Bersih" = Net Profit + Receivable Payments - Debt Payments
     // This is a simplified cash flow estimation based on what flowed in vs out.
+    // Note: Manual Expenses are cash out, so they are already subtracted in netProfit.
     const cashFlow = netProfit + totalReceivablePayments - totalDebtPayments;
     
     const totalTransactions = transactions.length;
@@ -133,7 +144,8 @@ function displayReportSummary(transactions, products, ledgers = [], contacts = [
     (document.getElementById('reportTotalDiscount')).textContent = `Rp ${formatCurrency(totalDiskon)}`;
     (document.getElementById('reportHpp')).textContent = `Rp ${formatCurrency(hpp)}`;
     (document.getElementById('reportGrossProfit')).textContent = `Rp ${formatCurrency(grossProfit)}`;
-    (document.getElementById('reportOperationalCost')).textContent = `Rp ${formatCurrency(totalOperationalCost)}`;
+    (document.getElementById('reportOperationalCost')).textContent = `Rp ${formatCurrency(totalTransactionFees)}`;
+    (document.getElementById('reportManualExpenses')).textContent = `Rp ${formatCurrency(totalManualExpenses)}`;
     (document.getElementById('reportNetProfit')).textContent = `Rp ${formatCurrency(netProfit)}`;
     
     (document.getElementById('reportReceivablePayments')).textContent = `Rp ${formatCurrency(totalReceivablePayments)}`;
@@ -462,7 +474,7 @@ export function setupChartViewToggle() {
 
 
 export async function exportReportToCSV() {
-    if (window.app.currentReportData.length === 0) {
+    if (window.app.currentReportData.length === 0 && (!window.app.currentReportExpenses || window.app.currentReportExpenses.length === 0)) {
         showToast('Tidak ada data untuk diexport.');
         return;
     }
@@ -472,7 +484,7 @@ export async function exportReportToCSV() {
         const productMap = new Map(allProducts.map(p => [p.id, p]));
 
         // --- CALCULATION PHASE ---
-        let omzet = 0, hpp = 0, totalOperationalCost = 0, totalDiskon = 0,
+        let omzet = 0, hpp = 0, totalTransactionFees = 0, totalDiskon = 0,
             totalPenjualanGrosir = 0, totalDonasi = 0, totalReceivedCash = 0,
             totalReceivedQris = 0, totalChange = 0;
 
@@ -502,12 +514,17 @@ export async function exportReportToCSV() {
                 }
             });
             (t.fees || []).forEach(fee => {
-                totalOperationalCost += fee.amount;
+                totalTransactionFees += fee.amount;
             });
         });
         
+        // Expenses
+        let totalManualExpenses = 0;
+        const expenses = window.app.currentReportExpenses || [];
+        expenses.forEach(e => totalManualExpenses += e.amount);
+
         const grossProfit = omzet - hpp;
-        const netProfit = grossProfit - totalOperationalCost;
+        const netProfit = grossProfit - totalTransactionFees - totalManualExpenses;
         const cashInDrawer = totalReceivedCash - totalChange;
         
         let totalInventoryCost = 0;
@@ -559,8 +576,9 @@ export async function exportReportToCSV() {
         csvContent += `Total Diskon Diberikan,${totalDiskon}\n`;
         csvContent += `(-) Total Harga Pokok Penjualan (HPP),${hpp}\n`;
         csvContent += `Laba Kotor,${grossProfit}\n`;
-        csvContent += `(-) Total Biaya Operasional (Pajak/Biaya),${totalOperationalCost}\n`;
-        csvContent += `Laba Bersih,${netProfit}\n\n`;
+        csvContent += `(-) Total Biaya Transaksi & Layanan,${totalTransactionFees}\n`;
+        csvContent += `(-) Total Pengeluaran Operasional Toko,${totalManualExpenses}\n`;
+        csvContent += `Laba Bersih Usaha,${netProfit}\n\n`;
         csvContent += `Total Diterima (Tunai),${totalReceivedCash}\n`;
         csvContent += `Total Diterima (QRIS),${totalReceivedQris}\n`;
         csvContent += `(-) Total Kembalian (Tunai),${totalChange}\n`;
@@ -568,7 +586,18 @@ export async function exportReportToCSV() {
         csvContent += `Nilai Total Inventaris (Harga Beli),${totalInventoryCost}\n`;
         csvContent += `Nilai Total Inventaris (Harga Jual),${totalInventoryValue}\n\n\n`;
 
-        // SECTION 2: Ledger Report
+        // SECTION 2: Expense Details (New)
+        if (expenses.length > 0) {
+            csvContent += "Rincian Pengeluaran Toko\n";
+            csvContent += "Tanggal,Nama Pengeluaran,Kategori,Jumlah,Keterangan\n";
+            expenses.sort((a,b) => new Date(a.date) - new Date(b.date)).forEach(e => {
+                const date = new Date(e.date).toLocaleDateString('id-ID');
+                csvContent += [date, e.name, e.category || '-', e.amount, e.description || '-'].map(escapeCSV).join(',') + '\n';
+            });
+            csvContent += "\n\n";
+        }
+
+        // SECTION 3: Ledger Report
         csvContent += "Laporan Hutang & Piutang\n";
         csvContent += "Tipe,Nama Kontak,No. HP,Total Piutang/Hutang\n";
         contacts.forEach(c => {
@@ -581,7 +610,7 @@ export async function exportReportToCSV() {
         });
         csvContent += "\n\n";
 
-        // SECTION 3: Top Selling Products
+        // SECTION 4: Top Selling Products
         const productSales = {};
         window.app.currentReportData.forEach(t => t.items.forEach(item => {
             const name = item.name;
@@ -599,7 +628,7 @@ export async function exportReportToCSV() {
         }
         csvContent += "\n\n";
 
-        // SECTION 4: Detailed Transactions
+        // SECTION 5: Detailed Transactions
         csvContent += "Detail Transaksi\n";
         csvContent += "ID Transaksi,Tanggal,Metode Pembayaran,Donasi Transaksi,Nama Kasir,Nama Produk,Kategori,Jumlah,Harga Asli (Satuan),Tipe Harga,Harga Sebelum Diskon (Satuan),Total Diskon Item,Harga Final (Satuan),Total Omzet Item,Harga Beli (Satuan),Total HPP Item,Laba Item\n";
         window.app.currentReportData.forEach(t => {
@@ -619,7 +648,7 @@ export async function exportReportToCSV() {
         });
         csvContent += "\n\n";
 
-        // SECTION 5: Stock Opname List
+        // SECTION 6: Stock Opname List
         const soldQuantities = new Map();
         window.app.currentReportData.forEach(t => t.items.forEach(item => {
             soldQuantities.set(item.id, (soldQuantities.get(item.id) || 0) + item.quantity);
@@ -664,6 +693,143 @@ export async function exportReportToCSV() {
         showToast('Gagal mengekspor laporan.');
     }
 }
+
+// --- EXPENSE MANAGEMENT ---
+
+export async function showExpenseModal() {
+    await loadExpensesForModal();
+    document.getElementById('expenseListModal').classList.remove('hidden');
+}
+
+export function closeExpenseModal() {
+    document.getElementById('expenseListModal').classList.add('hidden');
+}
+
+export function showExpenseFormModal(expenseId = null) {
+    document.getElementById('expenseId').value = expenseId || '';
+    document.getElementById('expenseDate').value = getLocalDateString(new Date());
+    document.getElementById('expenseName').value = '';
+    document.getElementById('expenseAmount').value = '';
+    document.getElementById('expenseCategory').value = 'Operasional';
+    document.getElementById('expenseDescription').value = '';
+    
+    document.getElementById('expenseFormTitle').textContent = expenseId ? 'Edit Pengeluaran' : 'Tambah Pengeluaran';
+
+    if (expenseId) {
+        // Fetch existing data
+        getFromDB('expenses', expenseId).then(expense => {
+            if (expense) {
+                document.getElementById('expenseDate').value = getLocalDateString(new Date(expense.date));
+                document.getElementById('expenseName').value = expense.name;
+                document.getElementById('expenseAmount').value = expense.amount;
+                document.getElementById('expenseCategory').value = expense.category || 'Operasional';
+                document.getElementById('expenseDescription').value = expense.description || '';
+            }
+        });
+    }
+
+    closeExpenseModal(); // Close list modal
+    document.getElementById('expenseFormModal').classList.remove('hidden');
+}
+
+export function closeExpenseFormModal() {
+    document.getElementById('expenseFormModal').classList.add('hidden');
+    // Re-open list modal
+    showExpenseModal();
+}
+
+async function loadExpensesForModal() {
+    const listEl = document.getElementById('expenseList');
+    try {
+        const expenses = await getAllFromDB('expenses');
+        if (expenses.length === 0) {
+            listEl.innerHTML = `<p class="text-gray-500 text-center py-4">Belum ada catatan pengeluaran.</p>`;
+            return;
+        }
+
+        // Sort by date descending
+        expenses.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        listEl.innerHTML = expenses.map(e => `
+            <div class="flex justify-between items-center bg-gray-50 p-3 rounded-lg border">
+                <div>
+                    <p class="font-semibold">${e.name}</p>
+                    <p class="text-xs text-gray-500">${new Date(e.date).toLocaleDateString('id-ID')} - ${e.category || 'Umum'}</p>
+                </div>
+                <div class="text-right flex items-center gap-2">
+                    <span class="font-bold text-red-600 mr-2">Rp ${formatCurrency(e.amount)}</span>
+                    <button onclick="showExpenseFormModal(${e.id})" class="text-blue-500 clickable"><i class="fas fa-edit"></i></button>
+                    <button onclick="deleteExpense(${e.id})" class="text-red-500 clickable"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>
+        `).join('');
+    } catch (e) {
+        console.error("Error loading expenses", e);
+    }
+}
+
+export async function saveExpense() {
+    const id = document.getElementById('expenseId').value ? parseInt(document.getElementById('expenseId').value) : null;
+    const dateVal = document.getElementById('expenseDate').value;
+    const name = document.getElementById('expenseName').value.trim();
+    const amount = parseFloat(document.getElementById('expenseAmount').value);
+    const category = document.getElementById('expenseCategory').value;
+    const description = document.getElementById('expenseDescription').value.trim();
+
+    if (!dateVal || !name || isNaN(amount) || amount <= 0) {
+        showToast('Mohon lengkapi data wajib (Tanggal, Nama, Jumlah)');
+        return;
+    }
+
+    const expense = {
+        date: new Date(dateVal).toISOString(),
+        name,
+        amount,
+        category,
+        description,
+        updatedAt: new Date().toISOString()
+    };
+
+    try {
+        if (id) {
+            expense.id = id;
+            // Keep original createdAt
+            const old = await getFromDB('expenses', id);
+            if(old) expense.createdAt = old.createdAt;
+            
+            await putToDB('expenses', expense);
+            await queueSyncAction('UPDATE_EXPENSE', expense);
+            showToast('Pengeluaran diperbarui');
+        } else {
+            expense.createdAt = new Date().toISOString();
+            const newId = await putToDB('expenses', expense);
+            await queueSyncAction('CREATE_EXPENSE', { ...expense, id: newId });
+            showToast('Pengeluaran ditambahkan');
+        }
+        closeExpenseFormModal();
+    } catch (e) {
+        console.error("Error saving expense", e);
+        showToast('Gagal menyimpan');
+    }
+}
+
+export function deleteExpense(id) {
+    showConfirmationModal('Hapus Pengeluaran', 'Yakin ingin menghapus catatan ini?', async () => {
+        try {
+            const expense = await getFromDB('expenses', id);
+            const tx = window.app.db.transaction('expenses', 'readwrite');
+            tx.objectStore('expenses').delete(id);
+            tx.oncomplete = async () => {
+                await queueSyncAction('DELETE_EXPENSE', expense || { id });
+                showToast('Dihapus');
+                loadExpensesForModal();
+            };
+        } catch (e) {
+            console.error("Error deleting expense", e);
+        }
+    }, 'Ya, Hapus', 'bg-red-500');
+}
+
 
 // --- CASHIER DAILY REPORT ---
 export async function generateCashierReport() {

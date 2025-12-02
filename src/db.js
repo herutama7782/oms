@@ -24,7 +24,7 @@ export function initDB() {
             return;
         }
 
-        const request = indexedDB.open('POS_DB', 16); 
+        const request = indexedDB.open('POS_DB', 17); 
 
         request.onerror = function(event) {
             console.error("Database error:", event.target.error);
@@ -195,6 +195,12 @@ export function initDB() {
                     if (!ledgerStore.indexNames.contains('date')) {
                         ledgerStore.createIndex('date', 'date', { unique: false });
                     }
+                }
+            }
+            if (event.oldVersion < 17) {
+                if (!window.app.db.objectStoreNames.contains('expenses')) {
+                    const expenseStore = window.app.db.createObjectStore('expenses', { keyPath: 'id', autoIncrement: true });
+                    expenseStore.createIndex('date', 'date', { unique: false });
                 }
             }
         };
