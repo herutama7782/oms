@@ -1,12 +1,10 @@
 
-import { applyDefaultFees, reconcileCartFees } from './settings.js';
+import { applyDefaultFees, reconcileCartFees, loadSettings, checkAccess } from './settings.js';
 import { loadProductsGrid, loadProductsList } from './product.js';
 import { updateCartFabBadge } from './cart.js';
 import { loadContactsPage, checkDueDateNotifications } from './contact.js';
-import { loadSettings } from './settings.js';
 import { getAllFromDB, getSettingFromDB } from './db.js';
 import { displaySalesReport } from './report.js';
-import { checkAccess } from './settings.js';
 
 let isNavigating = false;
 

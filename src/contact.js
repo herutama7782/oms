@@ -368,11 +368,6 @@ export async function showLedgerModal(contactId) {
         let balance = 0;
         ledgers.sort((a, b) => new Date(b.date) - new Date(a.date)); // Newest first
 
-        // For display logic:
-        // Customer: Debit = Bon/Piutang (+), Credit = Bayar (-)
-        // Supplier: Debit = Hutang Kita (+), Credit = Kita Bayar (-)
-        // So Balance > 0 means "Belum Lunas"
-        
         ledgers.forEach(l => {
             if (l.type === 'debit') balance += l.amount;
             else balance -= l.amount;
@@ -392,13 +387,12 @@ export async function showLedgerModal(contactId) {
             html += ledgers.map(l => {
                 const isDebit = l.type === 'debit';
                 const color = isDebit ? 'text-red-600' : 'text-green-600';
-                const icon = isDebit ? 'fa-arrow-up' : 'fa-arrow-down';
                 const sign = isDebit ? '+' : '-';
                 
                 // Show due date if exists and is debit
                 let dueDateHtml = '';
                 if (isDebit && l.dueDate) {
-                    const isOverdue = new Date(l.dueDate) < new Date() && balance > 0; // Simple check, ideally check per-invoice but balance is aggregate
+                    const isOverdue = new Date(l.dueDate) < new Date() && balance > 0;
                     const dueClass = isOverdue ? 'text-red-500 font-bold' : 'text-gray-500';
                     dueDateHtml = `<br><small class="${dueClass}"><i class="far fa-clock"></i> JT: ${new Date(l.dueDate).toLocaleDateString('id-ID')}</small>`;
                 }
@@ -461,10 +455,6 @@ export function showAddLedgerEntryModal(entryId = null, type = 'debit') {
     } else {
         dueDateContainer.classList.remove('hidden');
         title.textContent = 'Tambah Catatan (Hutang/Piutang)';
-    }
-
-    if (entryId) {
-        // Edit mode (not fully implemented in UI flow yet but prepared)
     }
 
     document.getElementById('addLedgerEntryModal').classList.remove('hidden');
@@ -530,13 +520,6 @@ export function showLedgerActions(event, id, description, amount, currentDueDate
     popover.style.left = `${rect.left - 100}px`; // Shift left to keep on screen
 
     let actionsHtml = ``;
-    
-    // Only allow editing due date for debits
-    if (currentDueDate || (!currentDueDate && description.toLowerCase().includes('transaksi'))) { 
-       // Logic bit fuzzy, basically if it's a debit we might want to set due date
-       // But for now let's just allow edit/delete generally
-    }
-    
     actionsHtml += `<a onclick="showEditDueDateModal(${id}, '${currentDueDate}')" class="text-gray-700"><i class="far fa-calendar-alt mr-2"></i>Atur Jatuh Tempo</a>`;
     actionsHtml += `<a onclick="deleteLedgerEntry(${id})" class="text-red-600"><i class="fas fa-trash mr-2"></i>Hapus</a>`;
 
@@ -621,7 +604,6 @@ export async function checkDueDateNotifications() {
     if (!notifCard || !countEl) return;
 
     try {
-        // Get all debits with due dates
         const ledgers = await getAllFromDB('ledgers');
         const contacts = await getAllFromDB('contacts');
         const contactMap = new Map(contacts.map(c => [c.id, c]));
@@ -633,15 +615,8 @@ export async function checkDueDateNotifications() {
         const dueItems = ledgers.filter(l => {
             if (l.type !== 'debit' || !l.dueDate) return false;
             
-            // Check if already paid (this is complex in a simple ledger system without linking payments to specific invoices)
-            // Strategy: We only show notifications if the CONTACT has an outstanding balance > 0
-            // AND the specific item is due. This is an approximation.
             const contact = contactMap.get(l.contactId);
             if (!contact) return false;
-            
-            // Re-calculate contact balance to be sure
-            // (In a real app, balance should be cached on contact object or calculated more efficiently)
-            // Here we skip balance check for individual notification existence, but user verification happens in list
             
             const dueDate = new Date(l.dueDate);
             return dueDate <= threeDaysFromNow;
