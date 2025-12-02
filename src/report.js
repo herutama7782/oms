@@ -1,6 +1,8 @@
 
 
-import { getAllFromDB, getFromDB, putToDB } from './db.js';
+
+
+import { getAllFromDB, getFromDB, putToDB, getSettingFromDB } from './db.js';
 import { showToast, showConfirmationModal } from './ui.js';
 import { queueSyncAction } from './sync.js';
 import { formatCurrency } from './ui.js';
@@ -480,6 +482,8 @@ export function setupChartViewToggle() {
     const dailyBtn = document.getElementById('dailyViewBtn');
     const weeklyBtn = document.getElementById('weeklyViewBtn');
     const glider = document.getElementById('chartViewGlider');
+
+    if (!dailyBtn || !weeklyBtn || !glider) return;
 
     dailyBtn.addEventListener('click', () => {
         glider.style.transform = 'translateX(0%)';
@@ -1005,6 +1009,16 @@ export async function generateCashierReport() {
         };
 
         window.app.currentCashierReportData = reportData;
+        
+        // Auto Backup Logic
+        const autoBackup = await getSettingFromDB('autoBackupOnClose');
+        if (autoBackup !== false) { // Default true if setting not present
+            if (typeof window.exportData === 'function') {
+                // Call exportData with isAuto=true for silent backup to downloads
+                window.exportData(true);
+            }
+        }
+
         showCashierReportModal(reportData);
 
     } catch (error) {

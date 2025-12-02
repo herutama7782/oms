@@ -42,6 +42,7 @@ export async function saveStoreSettings() {
         { key: 'printerPaperSize', value: document.getElementById('printerPaperSize').value },
         { key: 'autoOpenCashDrawer', value: document.getElementById('autoOpenCashDrawer').checked },
         { key: 'enableDonationRounding', value: document.getElementById('enableDonationRounding').checked },
+        { key: 'autoBackupOnClose', value: document.getElementById('autoBackupOnClose').checked },
         { key: 'exportBackupReminder', value: document.getElementById('exportBackupReminder').checked },
         { key: 'exportBackupInterval', value: parseInt(document.getElementById('exportBackupInterval').value) || 7 },
         { key: 'pointSystemEnabled', value: document.getElementById('pointSystemEnabled').checked },
@@ -87,6 +88,12 @@ export async function loadSettings() {
         const enableDonationRoundingToggle = document.getElementById('enableDonationRounding');
         if (enableDonationRoundingToggle) {
             enableDonationRoundingToggle.checked = settingsMap.get('enableDonationRounding') || false;
+        }
+
+        const autoBackupOnCloseToggle = document.getElementById('autoBackupOnClose');
+        if (autoBackupOnCloseToggle) {
+            // Default to true for security if not set
+            autoBackupOnCloseToggle.checked = settingsMap.get('autoBackupOnClose') !== false;
         }
 
         const exportBackupReminderToggle = document.getElementById('exportBackupReminder');
@@ -150,7 +157,7 @@ export async function resetDonationCounter() {
 }
 
 // --- DATA MANAGEMENT ---
-export async function exportData() {
+export async function exportData(isAuto = false) {
     try {
         // Use a shallow copy for simple, flat objects.
         const sanitizeFlat = (items) => items.map(item => ({ ...item }));
@@ -198,6 +205,8 @@ export async function exportData() {
         const contacts = sanitizeFlat(await getAllFromDB('contacts'));
         const ledgers = sanitizeFlat(await getAllFromDB('ledgers'));
         const users = sanitizeFlat(await getAllFromDB('users'));
+        const stockHistory = sanitizeFlat(await getAllFromDB('stock_history'));
+        const expenses = sanitizeFlat(await getAllFromDB('expenses'));
         
         const data = {
             products,
@@ -208,12 +217,14 @@ export async function exportData() {
             contacts,
             ledgers,
             users,
+            stockHistory,
+            expenses,
             exportDate: new Date().toISOString()
         };
         
         const fileContent = JSON.stringify(data, null, 2);
         const date = new Date().toISOString().split('T')[0];
-        const fileName = `pos_backup_${date}.json`;
+        const fileName = isAuto ? `pos_backup_auto_${date}.json` : `pos_backup_${date}.json`;
 
         if (window.AndroidDownloader) {
             window.AndroidDownloader.downloadFile(fileContent, fileName, 'application/json');
@@ -228,7 +239,13 @@ export async function exportData() {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         }
-        showToast('Export data berhasil.');
+        
+        if (isAuto) {
+            showToast('Backup otomatis tersimpan di Download.');
+        } else {
+            showToast('Export data berhasil.');
+        }
+        
         await putSettingToDB({ key: 'lastExportDate', value: new Date().toISOString() });
     } catch (error) {
         console.error('Export failed:', error);
@@ -251,7 +268,7 @@ export function handleImport(event) {
                     'Import Data',
                     'Ini akan menimpa semua data saat ini. Apakah Anda yakin ingin melanjutkan?',
                     async () => {
-                        const storesToClear = ['products', 'transactions', 'settings', 'categories', 'fees', 'contacts', 'ledgers', 'users'];
+                        const storesToClear = ['products', 'transactions', 'settings', 'categories', 'fees', 'contacts', 'ledgers', 'users', 'stock_history', 'expenses'];
                         const transaction = window.app.db.transaction(storesToClear, 'readwrite');
                         
                         storesToClear.forEach(storeName => {
@@ -268,6 +285,8 @@ export function handleImport(event) {
                         if (data.contacts) data.contacts.forEach(c => transaction.objectStore('contacts').put(c));
                         if (data.ledgers) data.ledgers.forEach(l => transaction.objectStore('ledgers').put(l));
                         if (data.users) data.users.forEach(u => transaction.objectStore('users').put(u));
+                        if (data.stockHistory) data.stockHistory.forEach(s => transaction.objectStore('stock_history').put(s));
+                        if (data.expenses) data.expenses.forEach(e => transaction.objectStore('expenses').put(e));
                         
                         transaction.oncomplete = () => {
                             showToast('Data berhasil diimport. Aplikasi akan dimuat ulang.');
