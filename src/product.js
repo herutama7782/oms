@@ -369,182 +369,306 @@ export async function deleteCategory(id, name) {
     );
 }
 
-// --- PRODUCT MANAGEMENT ---
+// --- PRODUCT MANAGEMENT (PAGINATION OPTIMIZED) ---
 
-export function loadProductsGrid() {
-    const grid = document.getElementById('productsGrid');
-    getAllFromDB('products').then(products => {
-        if (products.length === 0) {
-            grid.innerHTML = `
-                <div class="col-span-3 empty-state">
-                    <div class="empty-state-icon"><i class="fas fa-box-open"></i></div>
-                    <h3 class="empty-state-title">Belum Ada Produk</h3>
-                    <p class="empty-state-description">Silakan tambahkan produk terlebih dahulu di halaman Produk</p>
-                    <button onclick="showPage('produk')" class="empty-state-action">
-                        <i class="fas fa-plus mr-2"></i>Tambah Produk
-                    </button>
-                </div>
-            `;
-            return;
+function renderProductGridItem(p) {
+    const stockDisplay = p.stock === null ? '∞' : p.stock;
+    const lowStockIndicator = p.stock !== null && p.stock > 0 && p.stock <= window.app.lowStockThreshold ? ` <i class="fas fa-exclamation-triangle text-yellow-500 text-xs" title="Stok Rendah"></i>` : '';
+    
+    let itemClasses = 'product-item clickable';
+    if (p.stock !== null && p.stock === 0) {
+        itemClasses += ' opacity-60 pointer-events-none';
+    } else if (p.stock !== null && p.stock > 0 && p.stock <= window.app.lowStockThreshold) {
+        itemClasses += ' low-stock-warning';
+    }
+
+    let hasDiscount = (p.discount && p.discount.value > 0) || (p.discountPercentage > 0);
+    let discountedPrice = p.price;
+    let discountText = '';
+    if(hasDiscount) {
+        const discount = p.discount || { type: 'percentage', value: p.discountPercentage };
+        if (discount.type === 'percentage') {
+            discountedPrice = p.price * (1 - discount.value / 100);
+            discountText = `-${discount.value}%`;
+        } else {
+            discountedPrice = Math.max(0, p.price - discount.value);
+            discountText = `-Rp`;
         }
-        grid.innerHTML = products.map(p => {
-            const stockDisplay = p.stock === null ? '∞' : p.stock;
-            const lowStockIndicator = p.stock !== null && p.stock > 0 && p.stock <= window.app.lowStockThreshold ? ` <i class="fas fa-exclamation-triangle text-yellow-500 text-xs" title="Stok Rendah"></i>` : '';
-            
-            let itemClasses = 'product-item clickable';
-            if (p.stock !== null && p.stock === 0) {
-                itemClasses += ' opacity-60 pointer-events-none';
-            } else if (p.stock !== null && p.stock > 0 && p.stock <= window.app.lowStockThreshold) {
-                itemClasses += ' low-stock-warning';
-            }
+    }
 
-            let hasDiscount = (p.discount && p.discount.value > 0) || (p.discountPercentage > 0);
-            let discountedPrice = p.price;
-            let discountText = '';
-            if(hasDiscount) {
-                const discount = p.discount || { type: 'percentage', value: p.discountPercentage };
-                if (discount.type === 'percentage') {
-                    discountedPrice = p.price * (1 - discount.value / 100);
-                    discountText = `-${discount.value}%`;
-                } else {
-                    discountedPrice = Math.max(0, p.price - discount.value);
-                    discountText = `-Rp`;
-                }
-            }
-
-            return `
-            <div class="${itemClasses} relative" onclick="addToCart(${p.id})" data-name="${p.name.toLowerCase()}" data-category="${p.category ? p.category.toLowerCase() : ''}" data-barcode="${p.barcode || ''}">
-                ${hasDiscount ? `<span class="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full z-10">${discountText}</span>` : ''}
-                ${p.image ? `<img src="${p.image}" alt="${p.name}" class="product-image">` : `<div class="bg-gray-100 rounded-lg p-4 mb-2"><i class="fas fa-box text-3xl text-gray-400"></i></div>`}
-                <h3 class="font-semibold text-sm">${p.name}</h3>
-                ${hasDiscount
-                    ? `<div>
-                         <p class="text-xs text-gray-500 line-through">Rp ${formatCurrency(p.price)}</p>
-                         <p class="text-blue-500 font-bold">Rp ${formatCurrency(discountedPrice)}</p>
-                       </div>`
-                    : `<p class="text-blue-500 font-bold">Rp ${formatCurrency(p.price)}</p>`
-                }
-                <p class="text-xs text-gray-500">Stok: ${stockDisplay}${lowStockIndicator}</p>
-            </div>
-        `}).join('');
-    });
+    return `
+    <div class="${itemClasses} relative" onclick="addToCart(${p.id})" data-name="${p.name.toLowerCase()}" data-category="${p.category ? p.category.toLowerCase() : ''}" data-barcode="${p.barcode || ''}">
+        ${hasDiscount ? `<span class="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full z-10">${discountText}</span>` : ''}
+        ${p.image ? `<img src="${p.image}" alt="${p.name}" class="product-image">` : `<div class="bg-gray-100 rounded-lg p-4 mb-2"><i class="fas fa-box text-3xl text-gray-400"></i></div>`}
+        <h3 class="font-semibold text-sm">${p.name}</h3>
+        ${hasDiscount
+            ? `<div>
+                 <p class="text-xs text-gray-500 line-through">Rp ${formatCurrency(p.price)}</p>
+                 <p class="text-blue-500 font-bold">Rp ${formatCurrency(discountedPrice)}</p>
+               </div>`
+            : `<p class="text-blue-500 font-bold">Rp ${formatCurrency(p.price)}</p>`
+        }
+        <p class="text-xs text-gray-500">Stok: ${stockDisplay}${lowStockIndicator}</p>
+    </div>`;
 }
 
-export async function loadProductsList() {
-    const list = document.getElementById('productsList');
-    const filterSelect = document.getElementById('productCategoryFilter');
-    
-    await populateCategoryDropdowns(['productCategoryFilter']);
-    
-    const selectedCategory = filterSelect ? filterSelect.value : 'all';
+function renderProductListItem(p) {
+    const profit = p.price - p.purchasePrice;
+    const profitMargin = p.purchasePrice > 0 ? ((profit / p.purchasePrice) * 100).toFixed(1) : '&#8734;';
+    const stockDisplay = p.stock === null ? '∞' : p.stock;
+    const stockButtonsDisabled = p.stock === null;
+    const decreaseButtonDisabled = stockButtonsDisabled || p.stock === 0;
 
-    getAllFromDB('products').then(products => {
-        const filteredProducts = selectedCategory === 'all' 
-            ? products 
-            : products.filter(p => p.category === selectedCategory);
+    const lowStockBadge = p.stock !== null && p.stock > 0 && p.stock <= window.app.lowStockThreshold ? '<span class="low-stock-badge">Stok Rendah</span>' : '';
+    const outOfStockClass = p.stock !== null && p.stock === 0 ? 'opacity-60' : '';
+    const lowStockClass = p.stock !== null && p.stock > 0 && p.stock <= window.app.lowStockThreshold ? 'low-stock-warning' : '';
 
-        if (filteredProducts.length === 0) {
-            if (products.length === 0) {
-                list.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon"><i class="fas fa-box-open"></i></div>
-                        <h3 class="empty-state-title">Belum Ada Produk</h3>
-                        <p class="empty-state-description">Mulai tambahkan produk untuk melihatnya di sini</p>
-                        <button onclick="showAddProductModal()" class="empty-state-action">
-                            <i class="fas fa-plus mr-2"></i>Tambah Produk Pertama
-                        </button>
-                    </div>
-                `;
-            } else {
-                list.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon"><i class="fas fa-search"></i></div>
-                        <h3 class="empty-state-title">Produk Tidak Ditemukan</h3>
-                        <p class="empty-state-description">Tidak ada produk dalam kategori "${selectedCategory}"</p>
-                    </div>
-                `;
-            }
-            return;
+    let hasDiscount = (p.discount && p.discount.value > 0) || (p.discountPercentage > 0);
+    let discountedPrice = p.price;
+    let discountBadge = '';
+
+    if(hasDiscount) {
+        const discount = p.discount || { type: 'percentage', value: p.discountPercentage };
+        if (discount.type === 'percentage') {
+            discountedPrice = p.price * (1 - discount.value / 100);
+            discountBadge = `<span class="bg-red-100 text-red-700 text-xs font-semibold px-2 py-0.5 rounded-full">Diskon ${discount.value}%</span>`;
+        } else { // fixed
+            discountedPrice = Math.max(0, p.price - discount.value);
+            discountBadge = `<span class="bg-red-100 text-red-700 text-xs font-semibold px-2 py-0.5 rounded-full">Diskon Rp</span>`;
         }
-        list.innerHTML = filteredProducts.sort((a, b) => a.name.localeCompare(b.name)).map(p => {
-            const profit = p.price - p.purchasePrice;
-            const profitMargin = p.purchasePrice > 0 ? ((profit / p.purchasePrice) * 100).toFixed(1) : '&#8734;';
-            const stockDisplay = p.stock === null ? '∞' : p.stock;
-            const stockButtonsDisabled = p.stock === null;
-            const decreaseButtonDisabled = stockButtonsDisabled || p.stock === 0;
+    }
 
-            const lowStockBadge = p.stock !== null && p.stock > 0 && p.stock <= window.app.lowStockThreshold ? '<span class="low-stock-badge">Stok Rendah</span>' : '';
-            const outOfStockClass = p.stock !== null && p.stock === 0 ? 'opacity-60' : '';
-            const lowStockClass = p.stock !== null && p.stock > 0 && p.stock <= window.app.lowStockThreshold ? 'low-stock-warning' : '';
-
-            let hasDiscount = (p.discount && p.discount.value > 0) || (p.discountPercentage > 0);
-            let discountedPrice = p.price;
-            let discountBadge = '';
-
-            if(hasDiscount) {
-                const discount = p.discount || { type: 'percentage', value: p.discountPercentage };
-                if (discount.type === 'percentage') {
-                    discountedPrice = p.price * (1 - discount.value / 100);
-                    discountBadge = `<span class="bg-red-100 text-red-700 text-xs font-semibold px-2 py-0.5 rounded-full">Diskon ${discount.value}%</span>`;
-                } else { // fixed
-                    discountedPrice = Math.max(0, p.price - discount.value);
-                    discountBadge = `<span class="bg-red-100 text-red-700 text-xs font-semibold px-2 py-0.5 rounded-full">Diskon Rp</span>`;
-                }
-            }
-
-            return `
-                <div class="card p-4 ${outOfStockClass} ${lowStockClass}">
-                    <div class="flex gap-3">
-                        ${p.image ? `<img src="${p.image}" alt="${p.name}" class="product-list-image">` : `<div class="bg-gray-100 rounded-lg p-4 flex items-center justify-center" style="width: 60px; height: 60px;"><i class="fas fa-box text-2xl text-gray-400"></i></div>`}
-                        <div class="flex-1">
-                            <div class="flex justify-between items-start mb-2">
-                                <div>
-                                    <h3 class="font-semibold">${p.name}</h3>
-                                    <p class="text-sm text-gray-600">${p.category}</p>
-                                </div>
-                                <div class="flex gap-2">
-                                    <button onclick="editProduct(${p.id})" class="text-blue-500 clickable"><i class="fas fa-edit"></i></button>
-                                    <button onclick="deleteProduct(${p.id})" class="text-red-500 clickable"><i class="fas fa-trash"></i></button>
-                                </div>
+    return `
+        <div id="product-card-${p.id}" class="card p-4 ${outOfStockClass} ${lowStockClass}">
+            <div class="flex gap-3">
+                ${p.image ? `<img src="${p.image}" alt="${p.name}" class="product-list-image">` : `<div class="bg-gray-100 rounded-lg p-4 flex items-center justify-center" style="width: 60px; height: 60px;"><i class="fas fa-box text-2xl text-gray-400"></i></div>`}
+                <div class="flex-1">
+                    <div class="flex justify-between items-start mb-2">
+                        <div>
+                            <h3 class="font-semibold">${p.name}</h3>
+                            <p class="text-sm text-gray-600">${p.category}</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="editProduct(${p.id})" class="text-blue-500 clickable"><i class="fas fa-edit"></i></button>
+                            <button onclick="deleteProduct(${p.id})" class="text-red-500 clickable"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <div>
+                            ${hasDiscount
+                                ? `<p class="text-xs text-gray-400 line-through">Rp ${formatCurrency(p.price)}</p>
+                                   <p class="text-blue-500 font-bold">Rp ${formatCurrency(discountedPrice)}</p>`
+                                : `<p class="text-blue-500 font-bold">Rp ${formatCurrency(p.price)}</p>`
+                            }
+                            <p class="text-xs text-gray-500">Beli: Rp ${formatCurrency(p.purchasePrice)}</p>
+                        </div>
+                        <div class="text-right">
+                            <div class="flex justify-end items-center gap-2 mb-1">
+                                ${discountBadge}
+                                ${lowStockBadge}
+                                <span class="profit-badge">+${profitMargin}%</span>
                             </div>
-                            <div class="flex justify-between items-center">
-                                <div>
-                                    ${hasDiscount
-                                        ? `<p class="text-xs text-gray-400 line-through">Rp ${formatCurrency(p.price)}</p>
-                                           <p class="text-blue-500 font-bold">Rp ${formatCurrency(discountedPrice)}</p>`
-                                        : `<p class="text-blue-500 font-bold">Rp ${formatCurrency(p.price)}</p>`
-                                    }
-                                    <p class="text-xs text-gray-500">Beli: Rp ${formatCurrency(p.purchasePrice)}</p>
-                                </div>
-                                <div class="text-right">
-                                    <div class="flex justify-end items-center gap-2 mb-1">
-                                        ${discountBadge}
-                                        ${lowStockBadge}
-                                        <span class="profit-badge">+${profitMargin}%</span>
-                                    </div>
-                                    <div class="flex items-center justify-end gap-1">
-                                        <span class="text-sm text-gray-500 mr-1">Stok:</span>
-                                        <button onclick="decreaseStock(${p.id})" class="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center clickable ${decreaseButtonDisabled ? 'opacity-50 cursor-not-allowed' : ''}" ${decreaseButtonDisabled ? 'disabled' : ''}><i class="fas fa-minus text-xs"></i></button>
-                                        <span class="font-semibold text-base w-8 text-center">${stockDisplay}</span>
-                                        <button onclick="increaseStock(${p.id})" class="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center clickable ${stockButtonsDisabled ? 'opacity-50 cursor-not-allowed' : ''}" ${stockButtonsDisabled ? 'disabled' : ''}><i class="fas fa-plus text-xs"></i></button>
-                                    </div>
-                                </div>
+                            <div class="flex items-center justify-end gap-1">
+                                <span class="text-sm text-gray-500 mr-1">Stok:</span>
+                                <button onclick="decreaseStock(${p.id})" class="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center clickable ${decreaseButtonDisabled ? 'opacity-50 cursor-not-allowed' : ''}" ${decreaseButtonDisabled ? 'disabled' : ''}><i class="fas fa-minus text-xs"></i></button>
+                                <span id="stock-display-${p.id}" class="font-semibold text-base w-8 text-center">${stockDisplay}</span>
+                                <button onclick="increaseStock(${p.id})" class="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center clickable ${stockButtonsDisabled ? 'opacity-50 cursor-not-allowed' : ''}" ${stockButtonsDisabled ? 'disabled' : ''}><i class="fas fa-plus text-xs"></i></button>
                             </div>
                         </div>
                     </div>
                 </div>
-            `;
-        }).join('');
-    });
+            </div>
+        </div>
+    `;
+}
+
+// Optimized Search Function
+export function searchProducts(e) {
+    const query = e.target.value.toLowerCase();
+    const isKasir = window.app.currentPage === 'kasir';
+    
+    // Filter from global cache
+    const matches = window.app.productsCache.filter(p => 
+        p.name.toLowerCase().includes(query) || 
+        (p.barcode && p.barcode.toLowerCase().includes(query)) ||
+        (p.category && p.category.toLowerCase().includes(query))
+    );
+
+    if (isKasir) {
+        window.app.filteredGridProducts = matches;
+        loadProductsGrid(true, true); // Reset to page 1, skip fetching DB
+    } else {
+        // For Produk page list
+        // Apply category filter if active
+        const catFilter = document.getElementById('productCategoryFilter')?.value;
+        if (catFilter && catFilter !== 'all') {
+             window.app.filteredListProducts = matches.filter(p => p.category === catFilter);
+        } else {
+             window.app.filteredListProducts = matches;
+        }
+        loadProductsList(true, true); // Reset to page 1, skip fetching DB
+    }
+}
+
+export async function loadProductsGrid(isReset = true, useCache = false) {
+    const grid = document.getElementById('productsGrid');
+    const loadMoreBtn = document.getElementById('loadMoreGridContainer');
+    
+    if (isReset) {
+        window.app.gridPage = 1;
+        grid.innerHTML = '';
+        
+        if (!useCache) {
+            // Only fetch from DB if explicitly requested (e.g. initial load or after update)
+            const products = await getAllFromDB('products');
+            window.app.productsCache = products;
+            // Also reset filtered list to all products initially
+            window.app.filteredGridProducts = products;
+        }
+    }
+
+    const { gridPage, itemsPerPage, filteredGridProducts } = window.app;
+    
+    if (filteredGridProducts.length === 0) {
+        grid.innerHTML = `
+            <div class="col-span-3 empty-state">
+                <div class="empty-state-icon"><i class="fas fa-box-open"></i></div>
+                <h3 class="empty-state-title">Produk Tidak Ditemukan</h3>
+                <p class="empty-state-description">Coba kata kunci lain atau tambah produk baru.</p>
+                <button onclick="showPage('produk')" class="empty-state-action">
+                    <i class="fas fa-plus mr-2"></i>Tambah Produk
+                </button>
+            </div>
+        `;
+        loadMoreBtn.classList.add('hidden');
+        return;
+    }
+
+    const start = (gridPage - 1) * itemsPerPage;
+    const end = start + itemsPerPage;
+    const itemsToShow = filteredGridProducts.slice(start, end);
+
+    const html = itemsToShow.map(p => renderProductGridItem(p)).join('');
+    
+    if (isReset) {
+        grid.innerHTML = html;
+    } else {
+        grid.insertAdjacentHTML('beforeend', html);
+    }
+
+    // Toggle Load More Button
+    if (end < filteredGridProducts.length) {
+        loadMoreBtn.classList.remove('hidden');
+    } else {
+        loadMoreBtn.classList.add('hidden');
+    }
+}
+
+export function loadMoreProductsGrid() {
+    window.app.gridPage++;
+    loadProductsGrid(false, true); // Append mode, use existing cache
+}
+
+export async function loadProductsList(isReset = true, useCache = false) {
+    const list = document.getElementById('productsList');
+    const loadMoreBtn = document.getElementById('loadMoreListContainer');
+    const filterSelect = document.getElementById('productCategoryFilter');
+    
+    // Only populate dropdown on fresh load if needed
+    if (!useCache && isReset) {
+        await populateCategoryDropdowns(['productCategoryFilter']);
+    }
+    
+    const selectedCategory = filterSelect ? filterSelect.value : 'all';
+
+    if (isReset) {
+        window.app.listPage = 1;
+        list.innerHTML = '';
+        
+        if (!useCache) {
+            const products = await getAllFromDB('products');
+            window.app.productsCache = products; // Sync cache
+        }
+        
+        // Filter Logic
+        let filtered = window.app.productsCache;
+        if (selectedCategory !== 'all') {
+            filtered = filtered.filter(p => p.category === selectedCategory);
+        }
+        // Sort alphabetically
+        filtered.sort((a, b) => a.name.localeCompare(b.name));
+        window.app.filteredListProducts = filtered;
+    }
+
+    const { listPage, itemsPerPage, filteredListProducts } = window.app;
+
+    if (filteredListProducts.length === 0) {
+        list.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon"><i class="fas fa-search"></i></div>
+                <h3 class="empty-state-title">Produk Tidak Ditemukan</h3>
+                <p class="empty-state-description">Tidak ada produk dalam kategori "${selectedCategory}"</p>
+                <button onclick="showAddProductModal()" class="empty-state-action">
+                    <i class="fas fa-plus mr-2"></i>Tambah Produk
+                </button>
+            </div>
+        `;
+        loadMoreBtn.classList.add('hidden');
+        return;
+    }
+
+    const start = (listPage - 1) * itemsPerPage;
+    const end = start + itemsPerPage;
+    const itemsToShow = filteredListProducts.slice(start, end);
+
+    const html = itemsToShow.map(p => renderProductListItem(p)).join('');
+
+    if (isReset) {
+        list.innerHTML = html;
+    } else {
+        list.insertAdjacentHTML('beforeend', html);
+    }
+
+    if (end < filteredListProducts.length) {
+        loadMoreBtn.classList.remove('hidden');
+    } else {
+        loadMoreBtn.classList.add('hidden');
+    }
+}
+
+export function loadMoreProductsList() {
+    window.app.listPage++;
+    loadProductsList(false, true);
+}
+
+// --- OPTIMIZED STOCK UPDATES (DOM MANIPULATION) ---
+
+async function updateProductStockInCache(productId, change) {
+    // Update Global Cache
+    const cachedProduct = window.app.productsCache.find(p => p.id === productId);
+    if (cachedProduct && cachedProduct.stock !== null) {
+        cachedProduct.stock += change;
+        if(cachedProduct.stock < 0) cachedProduct.stock = 0;
+    }
+    
+    // Update Filtered Lists Cache
+    const gridProduct = window.app.filteredGridProducts.find(p => p.id === productId);
+    if (gridProduct && gridProduct.stock !== null) {
+        gridProduct.stock += change;
+        if(gridProduct.stock < 0) gridProduct.stock = 0;
+    }
+    
+    const listProduct = window.app.filteredListProducts.find(p => p.id === productId);
+    if (listProduct && listProduct.stock !== null) {
+        listProduct.stock += change;
+        if(listProduct.stock < 0) listProduct.stock = 0;
+    }
 }
 
 export async function increaseStock(productId) {
     try {
         const product = await getFromDB('products', productId);
-        if (!product) {
-            showToast('Produk tidak ditemukan.');
-            return;
-        }
+        if (!product) return;
 
         if (product.stock === null) {
             showToast('Stok tidak dapat diubah untuk produk tak terbatas.');
@@ -566,35 +690,39 @@ export async function increaseStock(productId) {
         });
         await queueSyncAction('UPDATE_PRODUCT', sanitizeProduct(product));
 
-        if (window.app.currentPage === 'produk') {
-            await loadProductsList();
+        // Update Cache
+        updateProductStockInCache(productId, 1);
+
+        // Update DOM directly if element exists (Optimized)
+        const stockDisplay = document.getElementById(`stock-display-${productId}`);
+        if (stockDisplay) {
+            stockDisplay.textContent = product.stock;
+        } else {
+            // Fallback: reload grid if we are in Kasir/Dashboard
+            if (window.app.currentPage === 'kasir') {
+                 loadProductsGrid(true, true); 
+            }
         }
-        loadProductsGrid();
+        
         if (window.app.currentPage === 'dashboard') {
-            loadDashboard();
+            loadDashboard(); // Background update
         }
     } catch (error) {
         console.error('Failed to increase stock:', error);
-        showToast('Gagal memperbarui stok.');
     }
 }
 
 export async function decreaseStock(productId) {
     try {
         const product = await getFromDB('products', productId);
-        if (!product) {
-            showToast('Produk tidak ditemukan.');
-            return;
-        }
+        if (!product) return;
 
         if (product.stock === null) {
             showToast('Stok tidak dapat diubah untuk produk tak terbatas.');
             return;
         }
 
-        if (product.stock <= 0) {
-            return;
-        }
+        if (product.stock <= 0) return;
 
         const oldStock = product.stock;
         product.stock -= 1;
@@ -611,16 +739,30 @@ export async function decreaseStock(productId) {
         });
         await queueSyncAction('UPDATE_PRODUCT', sanitizeProduct(product));
 
-        if (window.app.currentPage === 'produk') {
-            await loadProductsList();
+        // Update Cache
+        updateProductStockInCache(productId, -1);
+
+        // Update DOM directly
+        const stockDisplay = document.getElementById(`stock-display-${productId}`);
+        if (stockDisplay) {
+            stockDisplay.textContent = product.stock;
+            // Handle visual disable if stock becomes 0
+            if (product.stock === 0) {
+                // Find parent card and add opacity class if needed, or disable minus button
+                const card = document.getElementById(`product-card-${productId}`);
+                if (card) card.classList.add('opacity-60');
+            }
+        } else {
+             if (window.app.currentPage === 'kasir') {
+                 loadProductsGrid(true, true);
+            }
         }
-        loadProductsGrid();
+
         if (window.app.currentPage === 'dashboard') {
             loadDashboard();
         }
     } catch (error) {
         console.error('Failed to decrease stock:', error);
-        showToast('Gagal memperbarui stok.');
     }
 }
 
@@ -824,8 +966,9 @@ export async function addProduct() {
 
         showToast('Produk berhasil ditambahkan');
         closeAddProductModal();
-        loadProductsList();
-        loadProductsGrid();
+        // Force reload from DB to include new item
+        loadProductsList(true, false);
+        loadProductsGrid(true, false);
     } catch (error) {
         console.error('Failed to add product:', error);
         showToast('Gagal menambahkan produk. Cek kembali data Anda.');
@@ -1087,8 +1230,9 @@ export async function updateProduct() {
             await queueSyncAction('UPDATE_PRODUCT', sanitizeProduct(product));
             showToast('Produk berhasil diperbarui');
             closeEditProductModal();
-            loadProductsList();
-            loadProductsGrid();
+            // Force reload
+            loadProductsList(true, false);
+            loadProductsGrid(true, false);
         }
     } catch (error) {
         console.error('Failed to update product:', error);
@@ -1109,8 +1253,9 @@ export function deleteProduct(id) {
                 transaction.oncomplete = async () => {
                     await queueSyncAction('DELETE_PRODUCT', sanitizeProduct(productToDelete));
                     showToast('Produk berhasil dihapus');
-                    loadProductsList();
-                    loadProductsGrid();
+                    // Force reload
+                    loadProductsList(true, false);
+                    loadProductsGrid(true, false);
                 };
             } catch (error) {
                 console.error('Failed to delete product:', error);
@@ -1120,16 +1265,6 @@ export function deleteProduct(id) {
         'Ya, Hapus',
         'bg-red-500'
     );
-}
-
-export function filterProductsInGrid(e) {
-    const searchTerm = e.target.value.toLowerCase();
-    document.querySelectorAll('#productsGrid .product-item').forEach(item => {
-        const name = item.dataset.name || '';
-        const barcode = item.dataset.barcode || '';
-        const isVisible = name.includes(searchTerm) || barcode.includes(searchTerm);
-        item.style.display = isVisible ? 'block' : 'none';
-    });
 }
 
 // --- STOCK HISTORY UI ---

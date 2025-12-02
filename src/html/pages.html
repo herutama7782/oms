@@ -12,6 +12,8 @@
 
 
 
+
+
 <!-- Dasbor Page -->
 <div id="dashboard" class="page active">
     <div class="p-4">
@@ -185,6 +187,13 @@
         <div class="grid grid-cols-3 gap-3 mb-4" id="productsGrid">
             <!-- Products will be loaded here -->
         </div>
+        
+        <!-- Load More Button -->
+        <div id="loadMoreGridContainer" class="text-center pb-4 hidden">
+            <button onclick="loadMoreProductsGrid()" class="btn bg-gray-200 text-gray-700 px-6 py-2 rounded-full text-sm font-semibold hover:bg-gray-300">
+                Muat Lebih Banyak
+            </button>
+        </div>
     </div>
     
      <!-- Cart Modal -->
@@ -294,6 +303,13 @@
         <!-- Products List -->
         <div id="productsList" class="space-y-3">
             <!-- Products will be loaded here -->
+        </div>
+        
+        <!-- Load More Button -->
+        <div id="loadMoreListContainer" class="text-center py-4 hidden">
+            <button onclick="loadMoreProductsList()" class="btn bg-gray-200 text-gray-700 px-6 py-2 rounded-full text-sm font-semibold hover:bg-gray-300">
+                Muat Lebih Banyak
+            </button>
         </div>
     </div>
 </div>

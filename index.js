@@ -51,6 +51,13 @@ window.app = {
     firebaseUser: null, // For Firebase auth user,
     onLoginSuccess: null,
     currentReportExpenses: [], // Store fetched expenses for report
+    // Pagination & Cache State
+    productsCache: [], // All products loaded from DB
+    filteredGridProducts: [], // Products currently shown in Grid (filtered by search)
+    filteredListProducts: [], // Products currently shown in List (filtered by search/cat)
+    gridPage: 1,
+    listPage: 1,
+    itemsPerPage: 24,
 };
 
 // --- GLOBAL FUNCTIONS ---
@@ -66,6 +73,8 @@ const functions = {
     updateDashboardSummaries: ui.updateDashboardSummaries,
     // product.js
     loadProductsList: product.loadProductsList,
+    loadMoreProductsList: product.loadMoreProductsList, // NEW
+    loadMoreProductsGrid: product.loadMoreProductsGrid, // NEW
     showAddProductModal: product.showAddProductModal,
     closeAddProductModal: product.closeAddProductModal,
     previewImage: product.previewImage,
@@ -247,7 +256,8 @@ async function initializeAppDependencies() {
     await product.populateCategoryDropdowns(['productCategory', 'editProductCategory', 'productCategoryFilter']);
     
     // Setup event listeners that are not onclick
-    document.getElementById('searchProduct')?.addEventListener('input', product.filterProductsInGrid);
+    // UPDATED: Use searchProducts instead of filterProductsInGrid
+    document.getElementById('searchProduct')?.addEventListener('input', product.searchProducts);
     document.getElementById('confirmButton')?.addEventListener('click', ui.executeConfirm);
     document.getElementById('cancelButton')?.addEventListener('click', ui.closeConfirmationModal);
     document.getElementById('cashPaidInput')?.addEventListener('input', cart.updatePaymentChange);
