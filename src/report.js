@@ -5,6 +5,7 @@ import { showToast, showConfirmationModal } from './ui.js';
 import { queueSyncAction } from './sync.js';
 import { formatCurrency } from './ui.js';
 import { getLocalDateString } from './ui.js';
+import { logStockChange } from './product.js';
 
 
 // --- REPORTS ---
@@ -295,13 +296,40 @@ async function processItemReturn(transactionId, itemIndex) {
         const product = await getFromDB('products', productIdToUpdate);
 
         if (product) {
+            const oldStock = product.stock;
+            let newStock = oldStock;
+            let variationName = null;
+
             if (product.stock === null) {
                 // Do not restock for unlimited stock items
             } else if (returnedItem.variationIndex !== undefined && product.variations && product.variations[returnedItem.variationIndex]) {
+                const oldVarStock = product.variations[returnedItem.variationIndex].stock || 0;
                 product.variations[returnedItem.variationIndex].stock += returnedItem.quantity;
-                product.stock = product.variations.reduce((total, v) => total + (v.stock || 0), 0);
+                newStock = product.variations.reduce((total, v) => total + (v.stock || 0), 0);
+                variationName = product.variations[returnedItem.variationIndex].name;
+                
+                await logStockChange({
+                    productId: product.id,
+                    productName: product.name,
+                    variationName: variationName,
+                    oldStock: oldVarStock,
+                    newStock: product.variations[returnedItem.variationIndex].stock,
+                    type: 'return',
+                    reason: `Retur Transaksi #${transactionId}`
+                });
+
             } else {
                 product.stock += returnedItem.quantity;
+                newStock = product.stock;
+                
+                await logStockChange({
+                    productId: product.id,
+                    productName: product.name,
+                    oldStock: oldStock,
+                    newStock: newStock,
+                    type: 'return',
+                    reason: `Retur Transaksi #${transactionId}`
+                });
             }
             product.updatedAt = new Date().toISOString();
             await putToDB('products', product);

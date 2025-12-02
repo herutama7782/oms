@@ -87,6 +87,8 @@ const functions = {
     updateTotalStock: product.updateTotalStock,
     addVariationWholesalePriceRow: product.addVariationWholesalePriceRow,
     toggleUnlimitedStock: product.toggleUnlimitedStock,
+    showStockHistoryModal: product.showStockHistoryModal,
+    closeStockHistoryModal: product.closeStockHistoryModal,
     // cart.js
     addToCart: cart.addToCart,
     addVariationToCart: cart.addVariationToCart,

@@ -6,7 +6,7 @@ import { playTone } from './audio.js';
 import { printReceipt } from './peripherals.js';
 import { queueSyncAction } from './sync.js';
 import { applyDefaultFees } from './settings.js';
-import { loadProductsGrid } from './product.js';
+import { loadProductsGrid, logStockChange } from './product.js';
 import { loadDashboard } from './ui.js';
 
 // State for payment method in the modal
@@ -821,11 +821,43 @@ export async function completeTransaction() {
             const product = await getFromDB('products', productId);
 
             if (product) {
+                const oldStock = product.stock;
+                let newStock = oldStock;
+                let variationName = null;
+
                 if (String(item.id).includes('-') && product.variations && product.variations[item.variationIndex] !== undefined) {
+                    const oldVarStock = product.variations[item.variationIndex].stock || 0;
                     product.variations[item.variationIndex].stock -= item.quantity;
-                    product.stock = product.variations.reduce((total, v) => total + (v.stock || 0), 0);
+                    newStock = product.variations.reduce((total, v) => total + (v.stock || 0), 0);
+                    variationName = product.variations[item.variationIndex].name;
+                    
+                    // Log variation stock change specifically if needed, but the main stock_history logic handles product level. 
+                    // However, we want detailed history per variation if possible.
+                    // The current DB schema for stock_history is simple. Let's assume we log the change for the product, 
+                    // but mention the variation in the log data if we want.
+                    // Actually, let's log the specific variation change.
+                    await logStockChange({
+                        productId: product.id,
+                        productName: product.name,
+                        variationName: variationName,
+                        oldStock: oldVarStock,
+                        newStock: product.variations[item.variationIndex].stock,
+                        type: 'sale',
+                        reason: `Penjualan #${addedId}`
+                    });
+
                 } else {
                     product.stock -= item.quantity;
+                    newStock = product.stock;
+                    
+                    await logStockChange({
+                        productId: product.id,
+                        productName: product.name,
+                        oldStock: oldStock,
+                        newStock: newStock,
+                        type: 'sale',
+                        reason: `Penjualan #${addedId}`
+                    });
                 }
                 
                 product.updatedAt = new Date().toISOString();

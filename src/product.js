@@ -1,7 +1,7 @@
 
 
 import { getAllFromDB, getFromDB, putToDB } from "./db.js";
-import { showToast, showConfirmationModal, formatCurrency } from "./ui.js";
+import { showToast, showConfirmationModal, formatCurrency, formatReceiptDate } from "./ui.js";
 import { queueSyncAction } from "./sync.js";
 import { loadDashboard } from "./ui.js";
 
@@ -35,6 +35,34 @@ function sanitizeCategory(category) {
         createdAt: category.createdAt,
         updatedAt: category.updatedAt
     };
+}
+
+// --- STOCK LOGGING HELPER ---
+export async function logStockChange({productId, productName, variationName, oldStock, newStock, type, reason, userId, userName}) {
+    if (oldStock === null || newStock === null) return; // Unlimited stock, no log needed
+    const changeAmount = newStock - oldStock;
+    if (changeAmount === 0) return;
+
+    const logEntry = {
+        productId,
+        productName,
+        variationName: variationName || null,
+        oldStock,
+        newStock,
+        changeAmount,
+        type, // 'Sale', 'Restock', 'Adjustment', 'Return'
+        reason,
+        userId: userId || (window.app.currentUser ? window.app.currentUser.id : null),
+        userName: userName || (window.app.currentUser ? window.app.currentUser.name : 'System'),
+        date: new Date().toISOString()
+    };
+
+    try {
+        await putToDB('stock_history', logEntry);
+        await queueSyncAction('CREATE_STOCK_LOG', logEntry);
+    } catch (e) {
+        console.error("Failed to log stock change", e);
+    }
 }
 
 let wholesalePriceRowId = 0;
@@ -523,10 +551,19 @@ export async function increaseStock(productId) {
             return;
         }
 
+        const oldStock = product.stock;
         product.stock += 1;
         product.updatedAt = new Date().toISOString();
 
         await putToDB('products', product);
+        await logStockChange({
+            productId: product.id,
+            productName: product.name,
+            oldStock: oldStock,
+            newStock: product.stock,
+            type: 'adjustment',
+            reason: 'Koreksi Cepat (+)'
+        });
         await queueSyncAction('UPDATE_PRODUCT', sanitizeProduct(product));
 
         if (window.app.currentPage === 'produk') {
@@ -559,10 +596,19 @@ export async function decreaseStock(productId) {
             return;
         }
 
+        const oldStock = product.stock;
         product.stock -= 1;
         product.updatedAt = new Date().toISOString();
 
         await putToDB('products', product);
+        await logStockChange({
+            productId: product.id,
+            productName: product.name,
+            oldStock: oldStock,
+            newStock: product.stock,
+            type: 'adjustment',
+            reason: 'Koreksi Cepat (-)'
+        });
         await queueSyncAction('UPDATE_PRODUCT', sanitizeProduct(product));
 
         if (window.app.currentPage === 'produk') {
@@ -749,6 +795,33 @@ export async function addProduct() {
     try {
         const addedId = await putToDB('products', newProduct);
         await queueSyncAction('CREATE_PRODUCT', { ...newProduct, id: addedId });
+        
+        // Log Initial Stock
+        if (variations.length > 0) {
+            for (const v of variations) {
+                if (v.stock !== null && v.stock > 0) {
+                    await logStockChange({
+                        productId: addedId,
+                        productName: name,
+                        variationName: v.name,
+                        oldStock: 0,
+                        newStock: v.stock,
+                        type: 'restock',
+                        reason: 'Stok Awal'
+                    });
+                }
+            }
+        } else if (newProduct.stock !== null && newProduct.stock > 0) {
+            await logStockChange({
+                productId: addedId,
+                productName: name,
+                oldStock: 0,
+                newStock: newProduct.stock,
+                type: 'restock',
+                reason: 'Stok Awal'
+            });
+        }
+
         showToast('Produk berhasil ditambahkan');
         closeAddProductModal();
         loadProductsList();
@@ -817,6 +890,22 @@ export async function editProduct(id) {
             // This needs to be after adding variations
             toggleUnlimitedStock('editProductModal');
             updateMainFieldsState('editProductModal');
+            
+            // Add Stock History Button logic to the edit modal footer or header
+            const footer = document.getElementById('editProductModal').querySelector('.flex.gap-3.mt-6');
+            if (footer) {
+                // Remove existing history button if present to prevent duplicates
+                const oldBtn = document.getElementById('btnViewStockHistory');
+                if(oldBtn) oldBtn.remove();
+
+                const historyBtn = document.createElement('button');
+                historyBtn.id = 'btnViewStockHistory';
+                historyBtn.className = "btn bg-orange-500 text-white flex-1 py-2";
+                historyBtn.innerHTML = `<i class="fas fa-history mr-2"></i>Kartu Stok`;
+                historyBtn.onclick = () => showStockHistoryModal(product.id, product.name);
+                // Insert as first child or specific position
+                footer.insertBefore(historyBtn, footer.firstChild);
+            }
 
 
             (document.getElementById('editProductModal')).classList.remove('hidden');
@@ -927,7 +1016,9 @@ export async function updateProduct() {
     }
     
     try {
-        const product = await getFromDB('products', id);
+        const oldProduct = await getFromDB('products', id);
+        const product = { ...oldProduct }; // Clone
+
         if (product) {
             product.name = name;
             product.barcode = barcode;
@@ -944,9 +1035,52 @@ export async function updateProduct() {
                product.price = variations.sort((a,b) => a.price - b.price)[0].price;
                product.purchasePrice = variations.sort((a,b) => a.purchasePrice - b.purchasePrice)[0].purchasePrice;
                product.stock = unlimitedStock ? null : variations.reduce((sum, v) => sum + (v.stock || 0), 0);
+               
+               // Logic to detect stock changes in variations
+               if (!unlimitedStock && oldProduct.variations) {
+                   for (let i = 0; i < variations.length; i++) {
+                       const newVar = variations[i];
+                       // Try to find matching old variation by name (fallback to index if name changed, but index usually correlates in UI order)
+                       const oldVar = oldProduct.variations.find(ov => ov.name === newVar.name) || oldProduct.variations[i];
+                       
+                       if (oldVar) {
+                           await logStockChange({
+                               productId: id,
+                               productName: name,
+                               variationName: newVar.name,
+                               oldStock: oldVar.stock,
+                               newStock: newVar.stock,
+                               type: 'adjustment',
+                               reason: 'Edit Manual'
+                           });
+                       } else {
+                           // New variation added
+                           await logStockChange({
+                               productId: id,
+                               productName: name,
+                               variationName: newVar.name,
+                               oldStock: 0,
+                               newStock: newVar.stock,
+                               type: 'adjustment',
+                               reason: 'Variasi Baru'
+                           });
+                       }
+                   }
+               }
+
             } else {
+               // Normal product stock change logic
                product.price = price;
                product.stock = unlimitedStock ? null : stock;
+               
+               await logStockChange({
+                   productId: id,
+                   productName: name,
+                   oldStock: oldProduct.stock,
+                   newStock: product.stock,
+                   type: 'adjustment',
+                   reason: 'Edit Manual'
+               });
             }
             
             await putToDB('products', product);
@@ -996,4 +1130,59 @@ export function filterProductsInGrid(e) {
         const isVisible = name.includes(searchTerm) || barcode.includes(searchTerm);
         item.style.display = isVisible ? 'block' : 'none';
     });
+}
+
+// --- STOCK HISTORY UI ---
+export async function showStockHistoryModal(productId, productName) {
+    const modal = document.getElementById('stockHistoryModal');
+    const title = document.getElementById('stockHistoryTitle');
+    const list = document.getElementById('stockHistoryList');
+    
+    title.textContent = `Riwayat Stok - ${productName}`;
+    list.innerHTML = '<p class="text-gray-500 text-center py-4">Memuat data...</p>';
+    modal.classList.remove('hidden');
+
+    try {
+        const allHistory = await getAllFromDB('stock_history', 'productId', productId);
+        
+        if (allHistory.length === 0) {
+            list.innerHTML = '<p class="text-gray-500 text-center py-4">Belum ada riwayat stok.</p>';
+            return;
+        }
+
+        // Sort desc by date
+        allHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        list.innerHTML = allHistory.map(log => {
+            const date = formatReceiptDate(log.date);
+            const isPositive = log.changeAmount > 0;
+            const colorClass = isPositive ? 'text-green-600' : 'text-red-600';
+            const sign = isPositive ? '+' : '';
+            const variationText = log.variationName ? `<span class="text-xs bg-gray-200 px-1 rounded ml-1">${log.variationName}</span>` : '';
+
+            return `
+                <div class="border-b py-3 last:border-0">
+                    <div class="flex justify-between items-center mb-1">
+                        <div class="flex items-center">
+                            <span class="font-bold text-sm text-gray-800">${log.reason || log.type}</span>
+                            ${variationText}
+                        </div>
+                        <span class="font-bold ${colorClass}">${sign}${log.changeAmount}</span>
+                    </div>
+                    <div class="flex justify-between items-center text-xs text-gray-500">
+                        <span>${date} • Oleh: ${log.userName || 'System'}</span>
+                        <span>Sisa: <strong>${log.newStock}</strong></span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+    } catch (e) {
+        console.error("Error loading history", e);
+        list.innerHTML = '<p class="text-red-500 text-center py-4">Gagal memuat riwayat.</p>';
+    }
+}
+
+export function closeStockHistoryModal() {
+    document.getElementById('stockHistoryModal').classList.add('hidden');
 }

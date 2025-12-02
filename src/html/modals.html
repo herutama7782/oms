@@ -8,6 +8,8 @@
 
 
 
+
+
 <!-- Add Product Modal -->
 <div id="addProductModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
     <div class="flex items-center justify-center h-full p-4">
@@ -205,6 +207,24 @@
                 <button onclick="updateProduct()" class="btn bg-blue-500 text-white flex-1 py-2">
                     Simpan Perubahan
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Stock History Modal (New) -->
+<div id="stockHistoryModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-[1600]">
+    <div class="flex items-center justify-center h-full p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold" id="stockHistoryTitle">Riwayat Stok</h2>
+                <button onclick="closeStockHistoryModal()" class="text-gray-500 text-2xl">&times;</button>
+            </div>
+            <div id="stockHistoryList" class="space-y-2">
+                <!-- History logs populated here -->
+            </div>
+            <div class="mt-6">
+                <button onclick="closeStockHistoryModal()" class="btn bg-gray-300 text-gray-700 w-full py-2">Tutup</button>
             </div>
         </div>
     </div>

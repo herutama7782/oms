@@ -24,7 +24,7 @@ export function initDB() {
             return;
         }
 
-        const request = indexedDB.open('POS_DB', 17); 
+        const request = indexedDB.open('POS_DB', 18); 
 
         request.onerror = function(event) {
             console.error("Database error:", event.target.error);
@@ -201,6 +201,13 @@ export function initDB() {
                 if (!window.app.db.objectStoreNames.contains('expenses')) {
                     const expenseStore = window.app.db.createObjectStore('expenses', { keyPath: 'id', autoIncrement: true });
                     expenseStore.createIndex('date', 'date', { unique: false });
+                }
+            }
+            if (event.oldVersion < 18) {
+                if (!window.app.db.objectStoreNames.contains('stock_history')) {
+                    const stockStore = window.app.db.createObjectStore('stock_history', { keyPath: 'id', autoIncrement: true });
+                    stockStore.createIndex('productId', 'productId', { unique: false });
+                    stockStore.createIndex('date', 'date', { unique: false });
                 }
             }
         };
