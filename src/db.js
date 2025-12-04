@@ -254,6 +254,50 @@ export function getAllFromDB(storeName, indexName, query) {
     });
 }
 
+/**
+ * Fetches all products but excludes the heavy image string.
+ * This significantly reduces RAM usage.
+ */
+export function getAllProductsLite() {
+    return new Promise((resolve, reject) => {
+        if (!window.app.db) {
+            reject('Database not initialized');
+            return;
+        }
+        const transaction = window.app.db.transaction(['products'], 'readonly');
+        const store = transaction.objectStore('products');
+        const request = store.openCursor();
+        const items = [];
+
+        request.onsuccess = (event) => {
+            const cursor = event.target.result;
+            if (cursor) {
+                const val = cursor.value;
+                // Create a lightweight object
+                items.push({
+                    id: val.id,
+                    name: val.name,
+                    price: val.price,
+                    purchasePrice: val.purchasePrice,
+                    stock: val.stock,
+                    barcode: val.barcode,
+                    category: val.category,
+                    discount: val.discount,
+                    discountPercentage: val.discountPercentage,
+                    // Check if image exists but DO NOT load the string into memory
+                    hasImage: !!val.image
+                });
+                cursor.continue();
+            } else {
+                resolve(items);
+            }
+        };
+        request.onerror = (event) => {
+            reject('Error fetching lite products: ' + event.target.error);
+        };
+    });
+}
+
 export function getFromDBByIndex(storeName, indexName, key) {
     return new Promise((resolve, reject) => {
         if (!window.app.db) {

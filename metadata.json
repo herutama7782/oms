@@ -1,5 +1,5 @@
 {
-  "name": "POS Mobile Lisensi + R2 + Piutang + Reset Akses Akun + Upload Produk",
+  "name": "POS Mobile Lisensi + R2 + Piutang + Reset Akses Akun + Upload Produk + Lazy Loading",
   "description": "",
   "requestFramePermissions": [
     "camera",

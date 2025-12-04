@@ -1,6 +1,6 @@
 
 
-import { getAllFromDB, getFromDB, putToDB } from "./db.js";
+import { getAllFromDB, getFromDB, putToDB, getAllProductsLite } from "./db.js";
 // REMOVED: import { showToast, showConfirmationModal, formatCurrency, formatReceiptDate } from "./ui.js";
 // REMOVED: import { loadDashboard } from "./ui.js";
 import { queueSyncAction } from "./sync.js";
@@ -369,7 +369,46 @@ export async function deleteCategory(id, name) {
     );
 }
 
-// --- PRODUCT MANAGEMENT (PAGINATION OPTIMIZED) ---
+// --- PRODUCT MANAGEMENT (PAGINATION & LAZY LOADING OPTIMIZED) ---
+
+// Lazy loading function to fetch images only for visible items
+async function loadVisibleImages() {
+    // Only target images that still have the data-lazy-id attribute
+    const lazyImages = document.querySelectorAll('img[data-lazy-id]');
+    
+    // Using IntersectionObserver could be better, but for simplicity in this architecture,
+    // we assume we want to load images for the current page content immediately.
+    // Given pagination is small (24 items), fetching 24 images individually is acceptable.
+    
+    for (const img of lazyImages) {
+        const id = parseInt(img.dataset.lazyId);
+        try {
+            // We fetch the full product just to get the image
+            const product = await getFromDB('products', id);
+            if (product && product.image) {
+                img.src = product.image;
+                img.onload = () => {
+                    img.classList.remove('opacity-50', 'bg-gray-200');
+                };
+                img.removeAttribute('data-lazy-id');
+            } else {
+                // If no image found in DB (maybe deleted?), fallback to default icon
+                const container = document.createElement('div');
+                container.className = "bg-gray-100 rounded-lg p-4 mb-2 flex items-center justify-center";
+                if(img.classList.contains('product-list-image')) {
+                    container.style.width = '60px';
+                    container.style.height = '60px';
+                    container.innerHTML = '<i class="fas fa-box text-2xl text-gray-400"></i>';
+                } else {
+                    container.innerHTML = '<i class="fas fa-box text-3xl text-gray-400"></i>';
+                }
+                img.replaceWith(container);
+            }
+        } catch (e) {
+            console.warn('Failed to load image for', id);
+        }
+    }
+}
 
 function renderProductGridItem(p) {
     const stockDisplay = p.stock === null ? '∞' : p.stock;
@@ -396,10 +435,24 @@ function renderProductGridItem(p) {
         }
     }
 
+    // Determine Image HTML (Full vs Lazy vs Placeholder)
+    let imageHtml = '';
+    if (p.image) {
+        // Full image data available (e.g. newly added/edited in session)
+        imageHtml = `<img src="${p.image}" alt="${p.name}" class="product-image">`;
+    } else if (p.hasImage) {
+        // Image exists in DB but not loaded in RAM (Lite Object)
+        // Use a transparent pixel placeholder or loading spinner
+        imageHtml = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxIDEiPjwvc3ZnPg==" data-lazy-id="${p.id}" alt="${p.name}" class="product-image bg-gray-200 transition-opacity duration-300 opacity-50">`;
+    } else {
+        // No image
+        imageHtml = `<div class="bg-gray-100 rounded-lg p-4 mb-2"><i class="fas fa-box text-3xl text-gray-400"></i></div>`;
+    }
+
     return `
     <div class="${itemClasses} relative" onclick="addToCart(${p.id})" data-name="${p.name.toLowerCase()}" data-category="${p.category ? p.category.toLowerCase() : ''}" data-barcode="${p.barcode || ''}">
         ${hasDiscount ? `<span class="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full z-10">${discountText}</span>` : ''}
-        ${p.image ? `<img src="${p.image}" alt="${p.name}" class="product-image">` : `<div class="bg-gray-100 rounded-lg p-4 mb-2"><i class="fas fa-box text-3xl text-gray-400"></i></div>`}
+        ${imageHtml}
         <h3 class="font-semibold text-sm">${p.name}</h3>
         ${hasDiscount
             ? `<div>
@@ -438,10 +491,20 @@ function renderProductListItem(p) {
         }
     }
 
+    // Determine Image HTML (Full vs Lazy vs Placeholder)
+    let imageHtml = '';
+    if (p.image) {
+        imageHtml = `<img src="${p.image}" alt="${p.name}" class="product-list-image">`;
+    } else if (p.hasImage) {
+        imageHtml = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxIDEiPjwvc3ZnPg==" data-lazy-id="${p.id}" alt="${p.name}" class="product-list-image bg-gray-200 transition-opacity duration-300 opacity-50">`;
+    } else {
+        imageHtml = `<div class="bg-gray-100 rounded-lg p-4 flex items-center justify-center" style="width: 60px; height: 60px;"><i class="fas fa-box text-2xl text-gray-400"></i></div>`;
+    }
+
     return `
         <div id="product-card-${p.id}" class="card p-4 ${outOfStockClass} ${lowStockClass}">
             <div class="flex gap-3">
-                ${p.image ? `<img src="${p.image}" alt="${p.name}" class="product-list-image">` : `<div class="bg-gray-100 rounded-lg p-4 flex items-center justify-center" style="width: 60px; height: 60px;"><i class="fas fa-box text-2xl text-gray-400"></i></div>`}
+                ${imageHtml}
                 <div class="flex-1">
                     <div class="flex justify-between items-start mb-2">
                         <div>
@@ -519,8 +582,9 @@ export async function loadProductsGrid(isReset = true, useCache = false) {
         grid.innerHTML = '';
         
         if (!useCache) {
-            // Only fetch from DB if explicitly requested (e.g. initial load or after update)
-            const products = await getAllFromDB('products');
+            // Only fetch LITE version from DB if explicitly requested
+            // This prevents loading all base64 images into memory
+            const products = await getAllProductsLite();
             window.app.productsCache = products;
             // Also reset filtered list to all products initially
             window.app.filteredGridProducts = products;
@@ -562,6 +626,9 @@ export async function loadProductsGrid(isReset = true, useCache = false) {
     } else {
         loadMoreBtn.classList.add('hidden');
     }
+
+    // Important: Fetch images for currently visible items
+    loadVisibleImages();
 }
 
 export function loadMoreProductsGrid() {
@@ -586,7 +653,8 @@ export async function loadProductsList(isReset = true, useCache = false) {
         list.innerHTML = '';
         
         if (!useCache) {
-            const products = await getAllFromDB('products');
+            // Use Lite Fetch
+            const products = await getAllProductsLite();
             window.app.productsCache = products; // Sync cache
         }
         
@@ -634,6 +702,9 @@ export async function loadProductsList(isReset = true, useCache = false) {
     } else {
         loadMoreBtn.classList.add('hidden');
     }
+
+    // Fetch images for visible items
+    loadVisibleImages();
 }
 
 export function loadMoreProductsList() {
