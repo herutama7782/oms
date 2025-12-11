@@ -1,0 +1,9 @@
+{
+  "name": "POS Mobile Lisensi + R3 Neumorphism Style",
+  "description": "",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "enabledApis": []
+}
