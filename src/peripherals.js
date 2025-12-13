@@ -1,5 +1,6 @@
 
 
+
 import { getSettingFromDB, getAllFromDB, getFromDB } from "./db.js";
 import { showToast, showConfirmationModal, formatCurrency, formatReceiptDate } from "./ui.js";
 import { addToCart } from "./cart.js";
@@ -758,6 +759,39 @@ export async function printReceipt(isAutoPrint = false) {
         }
     }
 };
+
+// NEW: WhatsApp Sharing Logic
+export async function shareReceiptViaWhatsApp() {
+    if (!window.app.currentReceiptTransaction) {
+        showToast('Tidak ada data struk untuk dibagikan.');
+        return;
+    }
+
+    try {
+        // Generate plain text receipt
+        const rawText = await _generateReceiptText(window.app.currentReceiptTransaction, false);
+        
+        // Encode for URL
+        const encodedText = encodeURIComponent("STRUK PEMBELIAN\n\n" + rawText);
+        
+        // Check if customer has phone number
+        let phone = "";
+        if (window.app.currentReceiptTransaction.customerId) {
+            const customer = await getFromDB('contacts', window.app.currentReceiptTransaction.customerId);
+            if (customer && customer.phone) {
+                // Normalize phone (replace 08 with 628)
+                phone = customer.phone.replace(/^0/, '62').replace(/\+/g, '');
+            }
+        }
+
+        const url = `https://wa.me/${phone}?text=${encodedText}`;
+        window.open(url, '_blank');
+
+    } catch (error) {
+        console.error("Share Error:", error);
+        showToast("Gagal membagikan struk.");
+    }
+}
 
 async function generateLabelEscPos() {
     if (!window.app.isPrinterReady) {

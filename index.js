@@ -219,6 +219,7 @@ const functions = {
     showPreviewReceiptModal: peripherals.showPreviewReceiptModal,
     closePreviewReceiptModal: peripherals.closePreviewReceiptModal,
     printCashierReport: peripherals.printCashierReport,
+    shareReceiptViaWhatsApp: peripherals.shareReceiptViaWhatsApp, // NEW
     // sync.js
     syncWithServer: sync.syncWithServer,
 };
@@ -269,7 +270,7 @@ async function initializeAppDependencies() {
     document.getElementById('confirmButton')?.addEventListener('click', ui.executeConfirm);
     document.getElementById('cancelButton')?.addEventListener('click', ui.closeConfirmationModal);
     document.getElementById('cashPaidInput')?.addEventListener('input', cart.updatePaymentChange);
-
+    
     report.setupChartViewToggle();
     peripherals.setupBarcodeGenerator();
 

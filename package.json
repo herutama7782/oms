@@ -1,5 +1,5 @@
 {
-  "name": "pos-mobile-lisensi-+-r3-neumorphism-style-+-stock-opname",
+  "name": "pos-mobile-lisensi-+-r3-neumorphism-style-+-sharewa",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-
+    "@google/genai": "^1.33.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

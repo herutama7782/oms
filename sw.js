@@ -1,4 +1,5 @@
 
+
 const CACHE_NAME = 'pos-mobile-cache-v13';
 
 const APP_SHELL_URLS = [
