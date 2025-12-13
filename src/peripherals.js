@@ -1,6 +1,3 @@
-
-
-
 import { getSettingFromDB, getAllFromDB, getFromDB } from "./db.js";
 import { showToast, showConfirmationModal, formatCurrency, formatReceiptDate } from "./ui.js";
 import { addToCart } from "./cart.js";
@@ -760,36 +757,108 @@ export async function printReceipt(isAutoPrint = false) {
     }
 };
 
-// NEW: WhatsApp Sharing Logic
+// NEW: WhatsApp Sharing Logic (Updated to Share Image)
 export async function shareReceiptViaWhatsApp() {
     if (!window.app.currentReceiptTransaction) {
         showToast('Tidak ada data struk untuk dibagikan.');
         return;
     }
+    
+    if (typeof html2canvas === 'undefined') {
+        showToast('Fitur share belum siap. Coba refresh halaman.');
+        return;
+    }
+
+    const button = document.querySelector('#receiptModal button[onclick="shareReceiptViaWhatsApp()"]');
+    let originalContent = '';
+    if (button) {
+        originalContent = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>Memproses...`;
+    }
 
     try {
-        // Generate plain text receipt
-        const rawText = await _generateReceiptText(window.app.currentReceiptTransaction, false);
+        const receiptElement = document.getElementById('receiptContent');
+        if (!receiptElement) throw new Error('Elemen struk tidak ditemukan');
+
+        // Clone to capture full height without scrollbars
+        const clone = receiptElement.cloneNode(true);
+        Object.assign(clone.style, {
+            position: 'absolute',
+            top: '-9999px',
+            left: '-9999px',
+            width: receiptElement.offsetWidth + 'px', // Maintain width
+            height: 'auto',
+            maxHeight: 'none',
+            overflow: 'visible',
+            backgroundColor: '#ffffff',
+            padding: '20px' // Add padding for better look
+        });
+        document.body.appendChild(clone);
+
+        // Capture
+        const canvas = await html2canvas(clone, {
+            scale: 2, // Better resolution
+            backgroundColor: '#ffffff',
+            useCORS: true,
+            logging: false
+        });
         
-        // Encode for URL
-        const encodedText = encodeURIComponent("STRUK PEMBELIAN\n\n" + rawText);
-        
-        // Check if customer has phone number
-        let phone = "";
-        if (window.app.currentReceiptTransaction.customerId) {
-            const customer = await getFromDB('contacts', window.app.currentReceiptTransaction.customerId);
-            if (customer && customer.phone) {
-                // Normalize phone (replace 08 with 628)
-                phone = customer.phone.replace(/^0/, '62').replace(/\+/g, '');
+        document.body.removeChild(clone);
+
+        // Convert to Blob
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+        const fileName = `Struk-${window.app.currentReceiptTransaction.id || Date.now()}.jpg`;
+        const file = new File([blob], fileName, { type: 'image/jpeg' });
+
+        // Web Share API
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+                files: [file],
+                title: 'Struk Belanja',
+                text: 'Terima kasih telah berbelanja.'
+            });
+        } else {
+            // Fallback for desktop or unsupported browsers
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            // Prepare WhatsApp Link (Text Only fallback/helper)
+            let phone = "";
+            if (window.app.currentReceiptTransaction.customerId) {
+                const customer = await getFromDB('contacts', window.app.currentReceiptTransaction.customerId);
+                if (customer && customer.phone) {
+                    phone = customer.phone.replace(/^0/, '62').replace(/\+/g, '');
+                }
+            }
+            
+            showToast("Struk telah diunduh sebagai gambar.");
+            
+            if (phone) {
+                setTimeout(() => {
+                    const text = "Struk pembelian terlampir.";
+                    const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+                    window.open(waUrl, '_blank');
+                }, 1500);
             }
         }
 
-        const url = `https://wa.me/${phone}?text=${encodedText}`;
-        window.open(url, '_blank');
-
     } catch (error) {
         console.error("Share Error:", error);
-        showToast("Gagal membagikan struk.");
+        if (error.name !== 'AbortError') {
+            showToast("Gagal membagikan struk.");
+        }
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = originalContent;
+        }
     }
 }
 
